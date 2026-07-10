@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../core/auth/auth_state.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
 import '../../core/storage/secure_storage.dart';
@@ -52,8 +53,11 @@ class AuthRepository {
 
   Future<User> getCurrentUser() => _remote.getCurrentUser();
 
+  /// Explicit logout: best-effort server-side revocation, then always clear
+  /// tokens AND user-scoped local data (notes, outbox, cursor). Callers that
+  /// care about unsynced changes should flush the outbox first — see
+  /// AppBootstrap.signOut.
   Future<void> logout() async {
-    // Best-effort server-side revocation, then always clear local state.
     final refreshToken = await SecureStorage.getRefreshToken();
     if (refreshToken != null) {
       try {
@@ -64,6 +68,7 @@ class AuthRepository {
     }
     await SecureStorage.clearTokens();
     await _meta.clearUserScopedData();
+    AuthState.instance.markSignedOut();
   }
 
   Future<void> _onAuthenticated(Map<String, dynamic> tokens) async {
@@ -74,7 +79,17 @@ class AuthRepository {
     );
     // Cache the user id so notes can be created offline with a real owner id.
     final userId = _subFromJwt(accessToken);
-    if (userId != null) await _meta.setUserId(userId);
+    if (userId != null) {
+      // A different account signed in on this install (e.g. after a session
+      // expiry kept the previous user's local data): never let one user see
+      // another's notes.
+      final cached = await _meta.getUserId();
+      if (cached != null && cached != userId) {
+        await _meta.clearUserScopedData();
+      }
+      await _meta.setUserId(userId);
+    }
+    AuthState.instance.markSignedIn();
   }
 
   /// Extract the `sub` (user id) claim from a JWT without verifying it — the

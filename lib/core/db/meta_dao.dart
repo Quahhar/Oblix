@@ -10,6 +10,7 @@ class MetaDao {
   static const _kCursor = 'last_sync_at';
   static const _kDeviceId = 'device_id';
   static const _kUserId = 'user_id';
+  static const _kClockSkewMs = 'server_clock_skew_ms';
 
   final AppDatabase _appDb;
   MetaDao(this._appDb);
@@ -53,6 +54,22 @@ class MetaDao {
     await _set(db, _kDeviceId, id);
     return id;
   }
+
+  // --- Server clock skew (serverTime - deviceTime, observed at last sync) ---
+  //
+  // Local write timestamps are shifted by this so a device with a wrong clock
+  // doesn't lose (or unfairly win) last-write-wins merges.
+
+  Future<Duration> getClockSkew() async {
+    final raw = await _get(await _appDb.database, _kClockSkewMs);
+    final ms = int.tryParse(raw ?? '');
+    return Duration(milliseconds: ms ?? 0);
+  }
+
+  /// Record the skew. Pass the sync transaction as [db] so it commits with the
+  /// cycle that observed it.
+  Future<void> setClockSkew(DatabaseExecutor db, Duration skew) =>
+      _set(db, _kClockSkewMs, skew.inMilliseconds.toString());
 
   // --- Cached user id (derived from the JWT `sub`) ---
 

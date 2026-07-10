@@ -1,22 +1,10 @@
 import '../models/note.dart';
 import '../models/notebook.dart';
 import '../models/tag.dart';
-import '../models/sync_payload.dart';
 
 /// Pure mapping helpers between local models and the sync wire format.
 /// The sync *flow* (cursor, transactions, outbox) lives in `SyncEngine`.
 class SyncRepository {
-  /// Build a SyncChangeItem from a locally modified note.
-  static SyncChangeItem noteToChange(Note note, String action) {
-    return SyncChangeItem(
-      entityType: 'note',
-      entityId: note.id,
-      action: action,
-      data: note.toJson(),
-      timestamp: note.updatedAt.toIso8601String(),
-    );
-  }
-
   /// Parse server `changes` entries of type `note` into Note models.
   static List<Note> parseNoteChanges(List<Map<String, dynamic>> changes) =>
       _parse(changes, 'note', Note.fromJson);

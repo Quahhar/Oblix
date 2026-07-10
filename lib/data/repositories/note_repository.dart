@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
+import '../../core/time/sync_clock.dart';
 import '../datasources/local/note_local_datasource.dart';
 import '../datasources/local/outbox_dao.dart';
 import '../models/note.dart';
@@ -15,6 +16,7 @@ class NoteRepository {
   final NoteLocalDataSource _local;
   final OutboxDao _outbox;
   final MetaDao _meta;
+  final SyncClock _clock;
   final Uuid _uuid;
 
   NoteRepository({
@@ -22,11 +24,14 @@ class NoteRepository {
     NoteLocalDataSource? local,
     OutboxDao? outbox,
     MetaDao? meta,
+    SyncClock? clock,
     Uuid? uuid,
   })  : _appDb = appDb ?? AppDatabase.instance,
         _local = local ?? NoteLocalDataSource(appDb ?? AppDatabase.instance),
         _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
         _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+        _clock = clock ??
+            SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
         _uuid = uuid ?? const Uuid();
 
   /// Fires whenever local note data changes, so callers can re-query.
@@ -34,17 +39,21 @@ class NoteRepository {
 
   // --- Reads (local) ---
 
+  /// [archived]/[deleted] are tri-state: false (default) excludes, true
+  /// returns only those (Archive/Trash views), null ignores the flag.
   Future<List<Note>> listNotes({
     String? notebookId,
-    bool includeArchived = false,
-    bool includeDeleted = false,
+    bool? archived = false,
+    bool? deleted = false,
     String? search,
+    String? tagName,
   }) {
     return _local.list(
       notebookId: notebookId,
-      includeArchived: includeArchived,
-      includeDeleted: includeDeleted,
+      archived: archived,
+      deleted: deleted,
       search: search,
+      tagName: tagName,
     );
   }
 
@@ -59,7 +68,7 @@ class NoteRepository {
     String? notebookId,
     List<String> tagNames = const [],
   }) async {
-    final now = DateTime.now().toUtc();
+    final now = await _clock.nowUtc();
     final note = Note(
       id: _uuid.v4(), // client-minted, stable across sync
       userId: await _meta.getUserId() ?? '',
@@ -85,22 +94,31 @@ class NoteRepository {
     bool? isArchived,
     List<String>? tagNames,
   }) async {
-    final existing = await _local.getById(noteId);
-    if (existing == null) {
-      throw StateError('Note $noteId not found locally');
-    }
+    final existing = await _require(noteId);
     final updated = existing.copyWith(
       title: title,
       content: content,
       contentType: contentType,
-      notebookId: notebookId,
+      notebookId: notebookId ?? existing.notebookId,
       isPinned: isPinned,
       isArchived: isArchived,
       tagNames: tagNames,
-      updatedAt: DateTime.now().toUtc(),
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
     );
     await _persist(updated, 'update');
     return updated;
+  }
+
+  /// Move a note into [notebookId], or out of any notebook when null.
+  /// (Separate from [updateNote] because there a null means "unchanged".)
+  Future<Note> moveToNotebook(String noteId, String? notebookId) async {
+    final existing = await _require(noteId);
+    final moved = existing.copyWith(
+      notebookId: notebookId,
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
+    );
+    await _persist(moved, 'update');
+    return moved;
   }
 
   Future<void> deleteNote(String noteId) async {
@@ -109,22 +127,27 @@ class NoteRepository {
     final deleted = existing.copyWith(
       isDeleted: true,
       isArchived: false,
-      updatedAt: DateTime.now().toUtc(),
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
     );
     await _persist(deleted, 'delete');
   }
 
   Future<Note> restoreNote(String noteId) async {
+    final existing = await _require(noteId);
+    final restored = existing.copyWith(
+      isDeleted: false,
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
+    );
+    await _persist(restored, 'update');
+    return restored;
+  }
+
+  Future<Note> _require(String noteId) async {
     final existing = await _local.getById(noteId);
     if (existing == null) {
       throw StateError('Note $noteId not found locally');
     }
-    final restored = existing.copyWith(
-      isDeleted: false,
-      updatedAt: DateTime.now().toUtc(),
-    );
-    await _persist(restored, 'update');
-    return restored;
+    return existing;
   }
 
   Future<void> _persist(Note note, String action) async {

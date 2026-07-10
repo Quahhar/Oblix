@@ -61,6 +61,16 @@ class NotebookLocalDataSource {
     return applied;
   }
 
+  /// Hard-delete synced tombstones older than [cutoffUtc].
+  Future<int> purgeDeletedBefore(DatabaseExecutor db, DateTime cutoffUtc) {
+    return db.delete(
+      'notebooks',
+      where: 'is_deleted = 1 AND updated_at < ? '
+          'AND id NOT IN (SELECT entity_id FROM outbox)',
+      whereArgs: [cutoffUtc.toIso8601String()],
+    );
+  }
+
   Map<String, Object?> _toRow(Notebook n) => {
     'id': n.id,
     'user_id': n.userId,

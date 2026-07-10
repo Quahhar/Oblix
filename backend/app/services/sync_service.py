@@ -162,6 +162,7 @@ class SyncService:
             if existing and existing.is_deleted:
                 # Resurrect the soft-deleted row instead of inserting a duplicate PK.
                 self._apply_note_fields(existing, client_data)
+                await self._apply_note_tags(db, user, existing, client_data)
                 existing.is_deleted = False
                 existing.deleted_at = None
                 existing.updated_at = datetime.now(timezone.utc)
@@ -172,6 +173,7 @@ class SyncService:
             )
             self._apply_note_fields(note, client_data)
             db.add(note)
+            await self._apply_note_tags(db, user, note, client_data)
             return {}
 
         elif change.action == "update":
@@ -182,6 +184,7 @@ class SyncService:
                 return {"conflict": True, "server_data": self._note_to_dict(existing),
                         "reason": "Server version is newer"}
             self._apply_note_fields(existing, client_data)
+            await self._apply_note_tags(db, user, existing, client_data)
             existing.updated_at = datetime.now(timezone.utc)
             return {}
 
@@ -206,6 +209,41 @@ class SyncService:
             note.notebook_id = (
                 uuid.UUID(client_data["notebook_id"]) if client_data["notebook_id"] else None
             )
+
+    async def _apply_note_tags(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
+        """Replace a note's tag links with the names the client sent.
+
+        Clients send `tags` as a list of names (strings); server payloads use
+        [{"name": ...}] — accept both. Missing tags are created; tombstoned
+        ones are resurrected. Absent `tags` key means "unchanged".
+        """
+        if "tags" not in client_data:
+            return
+        names: list[str] = []
+        for raw in client_data["tags"] or []:
+            name = raw.get("name") if isinstance(raw, dict) else raw
+            if isinstance(name, str) and name.strip():
+                if name.strip() not in names:
+                    names.append(name.strip())
+
+        tags: list[Tag] = []
+        if names:
+            result = await db.execute(
+                select(Tag).where(Tag.user_id == user.id, Tag.name.in_(names))
+            )
+            by_name = {t.name: t for t in result.scalars().all()}
+            for name in names:
+                tag = by_name.get(name)
+                if tag is None:
+                    tag = Tag(id=uuid.uuid4(), user_id=user.id, name=name)
+                    db.add(tag)
+                elif tag.is_deleted:
+                    tag.is_deleted = False
+                    tag.deleted_at = None
+                    tag.updated_at = datetime.now(timezone.utc)
+                tags.append(tag)
+
+        note.tags = [NoteTag(note_id=note.id, tag_id=t.id) for t in tags]
 
     async def _apply_notebook_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         existing = await self._get_one(db, Notebook, user, entity_id)
@@ -257,6 +295,10 @@ class SyncService:
         if change.action == "create":
             if existing:
                 existing.name = client_data.get("name", existing.name)
+                if existing.is_deleted:
+                    existing.is_deleted = False
+                    existing.deleted_at = None
+                existing.updated_at = datetime.now(timezone.utc)
                 return {}
             db.add(Tag(id=uuid.UUID(entity_id), user_id=user.id, name=client_data.get("name", "New Tag")))
             return {}
@@ -268,8 +310,12 @@ class SyncService:
             return {}
 
         elif change.action == "delete":
-            if existing:
-                await db.delete(existing)
+            # Tombstone instead of hard delete so other devices learn about the
+            # deletion through their next pull.
+            if existing and not existing.is_deleted:
+                existing.is_deleted = True
+                existing.deleted_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.now(timezone.utc)
             return {}
 
         return {}
@@ -360,11 +406,12 @@ class SyncService:
                 changes.append({
                     "entity_type": "tag",
                     "entity_id": str(tag.id),
-                    "action": "update",
+                    "action": "delete" if tag.is_deleted else "update",
                     "data": {
                         "id": str(tag.id),
                         "user_id": str(tag.user_id),
                         "name": tag.name,
+                        "is_deleted": tag.is_deleted,
                         "created_at": tag.created_at.isoformat(),
                         "updated_at": tag.updated_at.isoformat(),
                     },

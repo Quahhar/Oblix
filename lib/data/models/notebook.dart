@@ -49,9 +49,13 @@ class Notebook extends Equatable {
     'sort_order': sortOrder,
   };
 
+  /// Sentinel distinguishing "not passed" from an explicit null in [copyWith],
+  /// so a notebook can be moved to the top level (parentId: null).
+  static const Object _unset = Object();
+
   Notebook copyWith({
     String? name,
-    String? parentId,
+    Object? parentId = _unset,
     int? sortOrder,
     bool? isDeleted,
     DateTime? updatedAt,
@@ -61,7 +65,8 @@ class Notebook extends Equatable {
       id: id,
       userId: userId,
       name: name ?? this.name,
-      parentId: parentId ?? this.parentId,
+      parentId:
+          identical(parentId, _unset) ? this.parentId : parentId as String?,
       sortOrder: sortOrder ?? this.sortOrder,
       isDeleted: isDeleted ?? this.isDeleted,
       createdAt: createdAt,

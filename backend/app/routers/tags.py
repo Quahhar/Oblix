@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +20,9 @@ async def list_tags(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(Tag).where(Tag.user_id == current_user.id).order_by(Tag.name)
+        select(Tag)
+        .where(Tag.user_id == current_user.id, Tag.is_deleted == False)  # noqa: E712
+        .order_by(Tag.name)
     )
     tags = result.scalars().all()
     return tags
@@ -30,12 +34,21 @@ async def create_tag(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Check if tag with same name already exists
-    existing = await db.execute(
+    existing_result = await db.execute(
         select(Tag).where(Tag.user_id == current_user.id, Tag.name == data.name)
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tag with this name already exists")
+    existing = existing_result.scalar_one_or_none()
+    if existing:
+        if not existing.is_deleted:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tag with this name already exists")
+        # Reusing a tombstoned name resurrects the tag (keeps its id stable
+        # for clients that still hold it).
+        existing.is_deleted = False
+        existing.deleted_at = None
+        existing.updated_at = datetime.now(timezone.utc)
+        await db.flush()
+        await db.refresh(existing)
+        return existing
 
     tag = Tag(
         id=uuid.uuid4(),
@@ -58,8 +71,11 @@ async def delete_tag(
         select(Tag).where(Tag.id == tag_id, Tag.user_id == current_user.id)
     )
     tag = result.scalar_one_or_none()
-    if not tag:
+    if not tag or tag.is_deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
 
-    await db.delete(tag)
+    # Tombstone so the deletion reaches other devices through sync.
+    tag.is_deleted = True
+    tag.deleted_at = datetime.now(timezone.utc)
+    tag.updated_at = datetime.now(timezone.utc)
     await db.flush()

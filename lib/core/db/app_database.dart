@@ -24,12 +24,19 @@ class AppDatabase {
       AppDatabase._(dbFactory: dbFactory, path: path);
 
   static const _dbName = 'cyclux.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
 
   final DatabaseFactory? _dbFactory;
   final String? _pathOverride;
 
-  Database? _db;
+  /// The open is cached as a Future so concurrent first callers share one
+  /// open instead of racing (`_db ??= await _open()` would let both through).
+  Future<Database>? _dbFuture;
+
+  /// Whether the FTS5 index is available on this device (older Android builds
+  /// ship SQLite without FTS5). Search falls back to LIKE when false.
+  bool _ftsAvailable = false;
+  bool get ftsAvailable => _ftsAvailable;
 
   /// Broadcasts after any local data mutation so listeners (e.g. the UI, later)
   /// can refresh. Emits are coarse — "something changed" — which is enough to
@@ -41,7 +48,16 @@ class AppDatabase {
   }
 
   Future<Database> get database async {
-    return _db ??= await _open();
+    final cached = _dbFuture;
+    if (cached != null) return cached;
+    final opening = _open();
+    _dbFuture = opening;
+    try {
+      return await opening;
+    } catch (_) {
+      _dbFuture = null; // allow a retry after a failed open
+      rethrow;
+    }
   }
 
   Future<Database> _open() async {
@@ -54,21 +70,25 @@ class AppDatabase {
       onUpgrade: _onUpgrade,
     );
     final factory = _dbFactory;
-    if (factory != null) {
-      return factory.openDatabase(path, options: options);
-    }
-    return openDatabase(
-      path,
-      version: _dbVersion,
-      onConfigure: _onConfigure,
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    final db = factory != null
+        ? await factory.openDatabase(path, options: options)
+        : await openDatabase(
+            path,
+            version: _dbVersion,
+            onConfigure: _onConfigure,
+            onCreate: _onCreate,
+            onUpgrade: _onUpgrade,
+          );
+    _ftsAvailable = await _ensureFts(db);
+    return db;
   }
 
   Future<void> _onConfigure(Database db) async {
     // Enforce foreign keys (off by default in SQLite).
     await db.execute('PRAGMA foreign_keys = ON');
+    // INSERT OR REPLACE (our upsert strategy) must fire DELETE triggers so the
+    // FTS index drops the replaced row; that only happens with this pragma on.
+    await db.execute('PRAGMA recursive_triggers = ON');
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -84,6 +104,16 @@ class AppDatabase {
     if (oldVersion < 2) {
       await _createNotebooks(db);
       await _createTags(db);
+    }
+    // v2 -> v3: bounded push retries + tag tombstones. (The FTS index is
+    // created outside version callbacks — see _ensureFts.)
+    if (oldVersion < 3) {
+      await db.execute(
+        'ALTER TABLE outbox ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE tags ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0',
+      );
     }
   }
 
@@ -136,6 +166,7 @@ class AppDatabase {
         id          TEXT PRIMARY KEY,
         user_id     TEXT NOT NULL,
         name        TEXT NOT NULL,
+        is_deleted  INTEGER NOT NULL DEFAULT 0,
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
       )
@@ -144,7 +175,9 @@ class AppDatabase {
 
   Future<void> _createOutbox(Database db) async {
     // Durable queue of local mutations awaiting push. `seq` gives a stable FIFO
-    // order and an ack cursor.
+    // order and an ack cursor. `attempts` counts pushes the server did not
+    // acknowledge, so a poison entry is eventually dropped instead of blocking
+    // the queue forever.
     await db.execute('''
       CREATE TABLE outbox (
         seq          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,14 +186,15 @@ class AppDatabase {
         action       TEXT NOT NULL,
         data         TEXT NOT NULL,
         timestamp    TEXT NOT NULL,
-        device_id    TEXT
+        device_id    TEXT,
+        attempts     INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('CREATE INDEX idx_outbox_entity ON outbox(entity_id)');
   }
 
   Future<void> _createMeta(Database db) async {
-    // Key/value metadata: sync cursor, device id, cached user id.
+    // Key/value metadata: sync cursor, device id, cached user id, clock skew.
     await db.execute('''
       CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
@@ -169,9 +203,58 @@ class AppDatabase {
     ''');
   }
 
+  /// Create the FTS5 full-text index over notes if this SQLite build supports
+  /// it. Runs after every open (not in version callbacks) so it also self-heals
+  /// databases that were opened on an FTS-less build before. Returns whether
+  /// FTS search can be used.
+  Future<bool> _ensureFts(Database db) async {
+    try {
+      final existing = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes_fts'",
+      );
+      if (existing.isNotEmpty) return true;
+      await db.execute('''
+        CREATE VIRTUAL TABLE notes_fts USING fts5(
+          title, content,
+          content='notes', content_rowid='rowid'
+        )
+      ''');
+      await db.execute('''
+        CREATE TRIGGER notes_fts_ai AFTER INSERT ON notes BEGIN
+          INSERT INTO notes_fts(rowid, title, content)
+          VALUES (new.rowid, new.title, new.content);
+        END
+      ''');
+      await db.execute('''
+        CREATE TRIGGER notes_fts_ad AFTER DELETE ON notes BEGIN
+          INSERT INTO notes_fts(notes_fts, rowid, title, content)
+          VALUES ('delete', old.rowid, old.title, old.content);
+        END
+      ''');
+      await db.execute('''
+        CREATE TRIGGER notes_fts_au AFTER UPDATE ON notes BEGIN
+          INSERT INTO notes_fts(notes_fts, rowid, title, content)
+          VALUES ('delete', old.rowid, old.title, old.content);
+          INSERT INTO notes_fts(rowid, title, content)
+          VALUES (new.rowid, new.title, new.content);
+        END
+      ''');
+      // Index whatever already exists (relevant on upgrade from v2).
+      await db.execute("INSERT INTO notes_fts(notes_fts) VALUES ('rebuild')");
+      return true;
+    } catch (_) {
+      // FTS5 unavailable on this SQLite build — search falls back to LIKE.
+      return false;
+    }
+  }
+
   /// Test/util hook.
   Future<void> close() async {
-    await _db?.close();
-    _db = null;
+    final cached = _dbFuture;
+    _dbFuture = null;
+    if (cached != null) {
+      final db = await cached;
+      await db.close();
+    }
   }
 }

@@ -2,12 +2,9 @@ import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
 import '../../models/tag.dart';
 
-/// Local SQLite access for tags (offline-first mirror).
-///
-/// Note: the server hard-deletes tags, so a tag deleted on another device is
-/// not currently signalled through pull — this mirror learns about creates and
-/// renames, not remote deletions. (Tracked as a known gap; would need tombstones
-/// or soft-delete on the server.)
+/// Local SQLite access for tags (offline-first mirror). Deletions are
+/// tombstoned (is_deleted = 1) on both sides so they propagate across devices,
+/// then purged locally after the retention window.
 class TagLocalDataSource {
   final AppDatabase _appDb;
   TagLocalDataSource(this._appDb);
@@ -20,9 +17,13 @@ class TagLocalDataSource {
     return _fromRow(rows.first);
   }
 
-  Future<List<Tag>> list() async {
+  Future<List<Tag>> list({bool includeDeleted = false}) async {
     final db = await _appDb.database;
-    final rows = await db.query('tags', orderBy: 'name ASC');
+    final rows = await db.query(
+      'tags',
+      where: includeDeleted ? null : 'is_deleted = 0',
+      orderBy: 'name ASC',
+    );
     return rows.map(_fromRow).toList();
   }
 
@@ -38,7 +39,9 @@ class TagLocalDataSource {
     await db.delete('tags', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Apply server tags with last-write-wins on `updated_at`.
+  /// Apply server tags with last-write-wins on `updated_at`. Server tombstones
+  /// (is_deleted) land here like any other update, which is how a tag deleted
+  /// on another device disappears on this one.
   Future<int> applyServerTags(Transaction txn, List<Tag> serverTags) async {
     var applied = 0;
     for (final server in serverTags) {
@@ -63,10 +66,21 @@ class TagLocalDataSource {
     return applied;
   }
 
+  /// Hard-delete synced tombstones older than [cutoffUtc].
+  Future<int> purgeDeletedBefore(DatabaseExecutor db, DateTime cutoffUtc) {
+    return db.delete(
+      'tags',
+      where: 'is_deleted = 1 AND updated_at < ? '
+          'AND id NOT IN (SELECT entity_id FROM outbox)',
+      whereArgs: [cutoffUtc.toIso8601String()],
+    );
+  }
+
   Map<String, Object?> _toRow(Tag t) => {
     'id': t.id,
     'user_id': t.userId,
     'name': t.name,
+    'is_deleted': t.isDeleted ? 1 : 0,
     'created_at': t.createdAt.toUtc().toIso8601String(),
     'updated_at': t.updatedAt.toUtc().toIso8601String(),
   };
@@ -75,6 +89,7 @@ class TagLocalDataSource {
     id: r['id'] as String,
     userId: r['user_id'] as String,
     name: r['name'] as String? ?? '',
+    isDeleted: (r['is_deleted'] as int? ?? 0) == 1,
     createdAt: DateTime.parse(r['created_at'] as String),
     updatedAt: DateTime.parse(r['updated_at'] as String),
   );

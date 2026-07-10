@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
+import '../../core/time/sync_clock.dart';
 import '../datasources/local/notebook_local_datasource.dart';
 import '../datasources/local/outbox_dao.dart';
 import '../models/notebook.dart';
@@ -14,6 +15,7 @@ class NotebookRepository {
   final NotebookLocalDataSource _local;
   final OutboxDao _outbox;
   final MetaDao _meta;
+  final SyncClock _clock;
   final Uuid _uuid;
 
   NotebookRepository({
@@ -21,12 +23,15 @@ class NotebookRepository {
     NotebookLocalDataSource? local,
     OutboxDao? outbox,
     MetaDao? meta,
+    SyncClock? clock,
     Uuid? uuid,
   })  : _appDb = appDb ?? AppDatabase.instance,
         _local =
             local ?? NotebookLocalDataSource(appDb ?? AppDatabase.instance),
         _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
         _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+        _clock = clock ??
+            SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
         _uuid = uuid ?? const Uuid();
 
   Stream<void> get onChanged => _appDb.onChanged;
@@ -45,7 +50,7 @@ class NotebookRepository {
     String? parentId,
     int sortOrder = 0,
   }) async {
-    final now = DateTime.now().toUtc();
+    final now = await _clock.nowUtc();
     final notebook = Notebook(
       id: _uuid.v4(),
       userId: await _meta.getUserId() ?? '',
@@ -65,18 +70,27 @@ class NotebookRepository {
     String? parentId,
     int? sortOrder,
   }) async {
-    final existing = await _local.getById(id);
-    if (existing == null) {
-      throw StateError('Notebook $id not found locally');
-    }
+    final existing = await _require(id);
     final updated = existing.copyWith(
       name: name,
-      parentId: parentId,
+      parentId: parentId ?? existing.parentId,
       sortOrder: sortOrder,
-      updatedAt: DateTime.now().toUtc(),
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
     );
     await _persist(updated, 'update');
     return updated;
+  }
+
+  /// Re-parent a notebook; null moves it to the top level. (Separate from
+  /// [updateNotebook] because there a null means "unchanged".)
+  Future<Notebook> moveNotebook(String id, String? parentId) async {
+    final existing = await _require(id);
+    final moved = existing.copyWith(
+      parentId: parentId,
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
+    );
+    await _persist(moved, 'update');
+    return moved;
   }
 
   Future<void> deleteNotebook(String id) async {
@@ -84,9 +98,17 @@ class NotebookRepository {
     if (existing == null) return;
     final deleted = existing.copyWith(
       isDeleted: true,
-      updatedAt: DateTime.now().toUtc(),
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
     );
     await _persist(deleted, 'delete');
+  }
+
+  Future<Notebook> _require(String id) async {
+    final existing = await _local.getById(id);
+    if (existing == null) {
+      throw StateError('Notebook $id not found locally');
+    }
+    return existing;
   }
 
   Future<void> _persist(Notebook notebook, String action) async {

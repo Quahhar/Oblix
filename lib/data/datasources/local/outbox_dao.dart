@@ -3,11 +3,13 @@ import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
 import '../../models/sync_payload.dart';
 
-/// A queued local mutation plus its stable sequence number (the ack cursor).
+/// A queued local mutation plus its stable sequence number (the ack cursor)
+/// and how many pushes the server has not acknowledged it for.
 class OutboxEntry {
   final int seq;
+  final int attempts;
   final SyncChangeItem change;
-  const OutboxEntry(this.seq, this.change);
+  const OutboxEntry(this.seq, this.change, {this.attempts = 0});
 }
 
 /// Durable queue of local changes waiting to be pushed. FIFO by `seq`.
@@ -44,15 +46,44 @@ class OutboxDao {
           deviceId: r['device_id'] as String?,
           timestamp: r['timestamp'] as String,
         ),
+        attempts: r['attempts'] as int? ?? 0,
       );
     }).toList();
   }
 
-  /// Delete every entry with `seq <= throughSeq` — i.e. exactly the batch that
-  /// was just pushed. Entries enqueued during the push have a higher seq and
-  /// survive for the next cycle. Runs inside the sync transaction.
-  Future<void> deleteThrough(DatabaseExecutor db, int throughSeq) async {
-    await db.delete('outbox', where: 'seq <= ?', whereArgs: [throughSeq]);
+  /// Settle a pushed batch. [ackedSeqs] were acknowledged by the server
+  /// (applied or conflict-resolved) and are removed. [retrySeqs] were never
+  /// mentioned in the response: their attempt count is bumped and, once it
+  /// reaches [maxAttempts], they are dropped as poison entries rather than
+  /// blocking the queue forever. Returns how many entries were dropped.
+  /// Runs inside the sync transaction.
+  Future<int> settleBatch(
+    DatabaseExecutor db, {
+    required List<int> ackedSeqs,
+    required List<int> retrySeqs,
+    required int maxAttempts,
+  }) async {
+    if (ackedSeqs.isNotEmpty) {
+      await db.delete(
+        'outbox',
+        where: 'seq IN (${List.filled(ackedSeqs.length, '?').join(',')})',
+        whereArgs: ackedSeqs,
+      );
+    }
+    var dropped = 0;
+    if (retrySeqs.isNotEmpty) {
+      final marks = List.filled(retrySeqs.length, '?').join(',');
+      await db.rawUpdate(
+        'UPDATE outbox SET attempts = attempts + 1 WHERE seq IN ($marks)',
+        retrySeqs,
+      );
+      dropped = await db.delete(
+        'outbox',
+        where: 'seq IN ($marks) AND attempts >= ?',
+        whereArgs: [...retrySeqs, maxAttempts],
+      );
+    }
+    return dropped;
   }
 
   Future<int> pendingCount() async {

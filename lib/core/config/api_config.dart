@@ -18,4 +18,16 @@ class ApiConfig {
   // Sync
   static const Duration syncInterval = Duration(minutes: 5);
   static const int maxSyncBatchSize = 100;
+
+  /// Pushes of an outbox entry the server never acknowledges before the entry
+  /// is dropped as poison (so one bad change can't block the queue forever).
+  static const int maxPushAttempts = 5;
+
+  /// How long soft-deleted rows are kept locally after they've been synced,
+  /// before being purged for good.
+  static const Duration tombstoneRetention = Duration(days: 30);
+
+  /// Backoff after consecutive sync failures: base * 2^failures, capped.
+  static const Duration syncBackoffBase = Duration(minutes: 1);
+  static const Duration syncBackoffMax = Duration(minutes: 30);
 }

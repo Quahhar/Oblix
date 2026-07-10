@@ -73,13 +73,18 @@ class Note extends Equatable {
     'is_deleted': isDeleted,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
+    'tags': tagNames,
   };
+
+  /// Sentinel distinguishing "not passed" from an explicit null in [copyWith],
+  /// so a note can be moved OUT of a notebook (notebookId: null).
+  static const Object _unset = Object();
 
   Note copyWith({
     String? title,
     String? content,
     String? contentType,
-    String? notebookId,
+    Object? notebookId = _unset,
     bool? isPinned,
     bool? isArchived,
     bool? isDeleted,
@@ -90,7 +95,9 @@ class Note extends Equatable {
     return Note(
       id: id,
       userId: userId,
-      notebookId: notebookId ?? this.notebookId,
+      notebookId: identical(notebookId, _unset)
+          ? this.notebookId
+          : notebookId as String?,
       title: title ?? this.title,
       content: content ?? this.content,
       contentType: contentType ?? this.contentType,
@@ -115,7 +122,9 @@ class Note extends Equatable {
     isPinned,
     isArchived,
     isDeleted,
+    createdAt,
     updatedAt,
+    tagNames,
   ];
 }
 

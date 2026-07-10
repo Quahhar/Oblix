@@ -1,18 +1,21 @@
 import 'package:uuid/uuid.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
+import '../../core/time/sync_clock.dart';
 import '../datasources/local/outbox_dao.dart';
 import '../datasources/local/tag_local_datasource.dart';
 import '../models/sync_payload.dart';
 import '../models/tag.dart';
 
-/// Offline-first tags. Tags are hard-deleted (matching the server), so delete
-/// removes the local row rather than tombstoning it.
+/// Offline-first tags. Deletes are tombstoned (matching the server) so they
+/// propagate to other devices; synced tombstones are purged after the
+/// retention window.
 class TagRepository {
   final AppDatabase _appDb;
   final TagLocalDataSource _local;
   final OutboxDao _outbox;
   final MetaDao _meta;
+  final SyncClock _clock;
   final Uuid _uuid;
 
   TagRepository({
@@ -20,11 +23,14 @@ class TagRepository {
     TagLocalDataSource? local,
     OutboxDao? outbox,
     MetaDao? meta,
+    SyncClock? clock,
     Uuid? uuid,
   })  : _appDb = appDb ?? AppDatabase.instance,
         _local = local ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
         _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
         _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+        _clock = clock ??
+            SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
         _uuid = uuid ?? const Uuid();
 
   Stream<void> get onChanged => _appDb.onChanged;
@@ -38,7 +44,7 @@ class TagRepository {
   // --- Writes (local + outbox, one transaction) ---
 
   Future<Tag> createTag(String name) async {
-    final now = DateTime.now().toUtc();
+    final now = await _clock.nowUtc();
     final tag = Tag(
       id: _uuid.v4(),
       userId: await _meta.getUserId() ?? '',
@@ -46,7 +52,7 @@ class TagRepository {
       createdAt: now,
       updatedAt: now,
     );
-    await _persist(tag, 'create', delete: false);
+    await _persist(tag, 'create');
     return tag;
   }
 
@@ -57,19 +63,23 @@ class TagRepository {
     }
     final updated = existing.copyWith(
       name: name,
-      updatedAt: DateTime.now().toUtc(),
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
     );
-    await _persist(updated, 'update', delete: false);
+    await _persist(updated, 'update');
     return updated;
   }
 
   Future<void> deleteTag(String id) async {
     final existing = await _local.getById(id);
     if (existing == null) return;
-    await _persist(existing, 'delete', delete: true);
+    final deleted = existing.copyWith(
+      isDeleted: true,
+      updatedAt: await _clock.nextAfter(existing.updatedAt),
+    );
+    await _persist(deleted, 'delete');
   }
 
-  Future<void> _persist(Tag tag, String action, {required bool delete}) async {
+  Future<void> _persist(Tag tag, String action) async {
     final deviceId = await _meta.getOrCreateDeviceId();
     final change = SyncChangeItem(
       entityType: 'tag',
@@ -81,11 +91,7 @@ class TagRepository {
     );
     final db = await _appDb.database;
     await db.transaction((txn) async {
-      if (delete) {
-        await _local.delete(txn, tag.id);
-      } else {
-        await _local.upsert(txn, tag);
-      }
+      await _local.upsert(txn, tag);
       await _outbox.enqueue(txn, change);
     });
     _appDb.notifyChanged();

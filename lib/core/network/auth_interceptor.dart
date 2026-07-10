@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
+import '../auth/auth_state.dart';
+import '../config/api_config.dart';
 import '../storage/secure_storage.dart';
-import '../../core/config/api_config.dart';
 
 class AuthInterceptor extends Interceptor {
   final Dio dio;
@@ -87,8 +88,11 @@ class AuthInterceptor extends Interceptor {
       // fall through to clear tokens
     }
 
-    // Refresh failed — clear tokens; the user must re-login.
+    // Refresh failed — clear tokens and tell the app the session is gone so
+    // the UI routes to login and the sync scheduler stops. Local data is kept:
+    // an expired session must not destroy unsynced notes.
     await SecureStorage.clearTokens();
+    AuthState.instance.markSignedOut();
     return null;
   }
 }
