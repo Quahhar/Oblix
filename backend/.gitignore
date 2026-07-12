@@ -1,0 +1,17 @@
+# Secrets & local config — never commit these
+.env
+.env.*
+!.env.example
+
+# Runtime data
+uploads/
+caddy_data/
+caddy_config/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/

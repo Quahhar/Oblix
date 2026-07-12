@@ -1,0 +1,11 @@
+# Caddy auto-obtains and renews a Let's Encrypt certificate for $DOMAIN and
+# reverse-proxies HTTPS traffic to the API container. DOMAIN and ACME_EMAIL are
+# injected from the environment by docker-compose.prod.yml.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	reverse_proxy api:8000
+}
