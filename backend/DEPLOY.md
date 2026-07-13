@@ -111,6 +111,36 @@ location /oblix/ {
 | Back up the database | `docker compose -f docker-compose.prod.yml exec db pg_dump -U $POSTGRES_USER $POSTGRES_DB > backup.sql` |
 | Stop everything | `docker compose -f docker-compose.prod.yml down` (add `-v` to also wipe data) |
 
+## Backups
+
+`scripts/backup.sh` dumps the database (plain SQL, gzipped) into
+`/var/backups/oblix`, keeping the last 14 days; `scripts/restore.sh` restores
+one. Both read `.env` for the DB credentials and talk to the running `db`
+container, so they need no separate config.
+
+Install the daily cron job (runs 03:30 UTC):
+
+```bash
+chmod +x /var/oblix/scripts/*.sh
+printf '30 3 * * * root /var/oblix/scripts/backup.sh >> /var/log/oblix-backup.log 2>&1\n' \
+  | sudo tee /etc/cron.d/oblix-backup
+```
+
+Run one on demand / list / restore:
+
+```bash
+/var/oblix/scripts/backup.sh                 # take one now
+ls -lh /var/backups/oblix                    # list dumps
+/var/oblix/scripts/restore.sh /var/backups/oblix/oblix-<ts>.sql.gz   # DESTRUCTIVE
+```
+
+Tunable via env: `OBLIX_BACKUP_DIR`, `OBLIX_BACKUP_RETENTION_DAYS`.
+
+> These backups live on the same server, so they cover DB corruption, a bad
+> migration, or an accidental delete — **not** loss of the server itself. For
+> true durability, copy `/var/backups/oblix` offsite (S3/Backblaze/another host)
+> — that needs a destination + credentials you provide.
+
 ## Updating
 
 ```bash
