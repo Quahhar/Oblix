@@ -1,8 +1,8 @@
 # Oblix
 
 Offline-first note-taking app (Evernote-style): notes, notebooks, tags, archive
-and trash, full-text search, and background sync. Flutter client + FastAPI
-backend (in `backend/`).
+and trash, full-text search, background sync, and import/export. Flutter client
++ FastAPI backend (in `backend/`).
 
 ## Architecture
 
@@ -54,6 +54,19 @@ bearer token, coalesces concurrent 401s into a single refresh, and retries the
 failed request once. The JWT `sub` is cached so notes created offline carry a
 real owner id; signing into a *different* account on the same install wipes
 the previous user's local data first.
+
+### Import / export
+
+- **Import** Evernote `.enex` (title, body, tags, timestamps; ENML is flattened
+  to text, embedded media is counted and skipped for now) or a native `.oblix`
+  file. Imported notes are created fresh on the current account and sync like
+  any other edit.
+- **Export** the whole account to `.oblix` — a ZIP holding `manifest.json` +
+  `data.json` (notes reference notebooks by name, so an export is portable
+  across accounts). Room for an `attachments/` folder in a later version.
+
+Parsing/serialization live in `lib/data/io/` and are covered by round-trip
+tests; the file-pick/share glue is in the notes screen.
 
 ## Running
 

@@ -150,6 +150,33 @@ class NoteRepository {
     return existing;
   }
 
+  /// Persist a batch of imported notes in one transaction — each with a
+  /// `create` outbox entry so the import syncs. Callers mint the ids and
+  /// preserve source timestamps. Far cheaper than N separate transactions for
+  /// a large import.
+  Future<void> importNotes(List<Note> notes) async {
+    if (notes.isEmpty) return;
+    final deviceId = await _meta.getOrCreateDeviceId();
+    final db = await _appDb.database;
+    await db.transaction((txn) async {
+      for (final note in notes) {
+        await _local.upsert(txn, note);
+        await _outbox.enqueue(
+          txn,
+          SyncChangeItem(
+            entityType: 'note',
+            entityId: note.id,
+            action: 'create',
+            data: note.toJson(),
+            deviceId: deviceId,
+            timestamp: note.updatedAt.toIso8601String(),
+          ),
+        );
+      }
+    });
+    _appDb.notifyChanged();
+  }
+
   Future<void> _persist(Note note, String action) async {
     final deviceId = await _meta.getOrCreateDeviceId();
     final change = SyncChangeItem(

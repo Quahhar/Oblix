@@ -1,5 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/app_bootstrap.dart';
 import '../../data/models/note.dart';
 import '../../data/models/notebook.dart';
@@ -7,6 +12,7 @@ import '../../data/models/tag.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
 import '../../data/repositories/tag_repository.dart';
+import '../../domain/services/import_export_service.dart';
 import 'note_editor_screen.dart';
 
 enum NotesView { all, archive, trash }
@@ -26,6 +32,7 @@ class _NotesScreenState extends State<NotesScreen> {
   final _notes = NoteRepository();
   final _notebooks = NotebookRepository();
   final _tags = TagRepository();
+  final _io = ImportExportService();
 
   NotesView _view = NotesView.all;
   Notebook? _notebookFilter;
@@ -325,6 +332,80 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
+  // --- Import / export ---
+
+  Future<void> _import() async {
+    Navigator.pop(context); // close drawer
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['enex', 'oblix'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      _snack('Could not read that file.');
+      return;
+    }
+    try {
+      final ext = (file.extension ?? '').toLowerCase();
+      final ImportResult result;
+      if (ext == 'enex') {
+        final base = file.name.replaceAll(
+            RegExp(r'\.enex$', caseSensitive: false), '');
+        result = await _io.importEnex(
+          utf8.decode(bytes),
+          notebookName: base.isEmpty ? 'Imported' : base,
+        );
+      } else {
+        result = await _io.importOblix(bytes);
+      }
+      _snack(
+        'Imported ${result.notesImported} '
+        '${result.notesImported == 1 ? 'note' : 'notes'}'
+        '${result.notebooksCreated > 0 ? ', ${result.notebooksCreated} notebooks' : ''}'
+        '${result.skippedAttachments > 0 ? ' — ${result.skippedAttachments} attachments skipped' : ''}',
+      );
+      // The onChanged stream refreshes the list automatically.
+    } on FormatException catch (e) {
+      _snack(e.message);
+    } catch (e) {
+      _snack('Import failed: $e');
+    }
+  }
+
+  Future<void> _export() async {
+    Navigator.pop(context); // close drawer
+    try {
+      final bytes = await _io.exportOblix();
+      final dir = await getTemporaryDirectory();
+      final stamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(RegExp(r'[:.]'), '-')
+          .split('T')
+          .first;
+      final path = '${dir.path}/oblix-export-$stamp.oblix';
+      await File(path).writeAsBytes(bytes, flush: true);
+      if (!mounted) return;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path, mimeType: 'application/zip', name: 'oblix-export-$stamp.oblix')],
+          text: 'Oblix export',
+        ),
+      );
+    } catch (e) {
+      _snack('Export failed: $e');
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   // --- Build ---
 
   @override
@@ -555,6 +636,19 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                 ),
             ],
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('Import notes'),
+              subtitle: const Text('Evernote .enex or Oblix .oblix'),
+              onTap: _import,
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_upload_outlined),
+              title: const Text('Export all notes'),
+              subtitle: const Text('Save an .oblix backup'),
+              onTap: _export,
+            ),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout),
