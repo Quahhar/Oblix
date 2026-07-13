@@ -1,0 +1,3 @@
+# Also lives here (not just repo root) so `git archive HEAD:backend` — the
+# subtree used to deploy — carries the eol rule and ships shell scripts as LF.
+*.sh text eol=lf
