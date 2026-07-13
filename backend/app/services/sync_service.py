@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import select, inspect as sa_inspect
+from sqlalchemy import select, delete, inspect as sa_inspect
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
@@ -243,7 +243,28 @@ class SyncService:
                     tag.updated_at = datetime.now(timezone.utc)
                 tags.append(tag)
 
-        note.tags = [NoteTag(note_id=note.id, tag_id=t.id) for t in tags]
+        # Reconcile the association rows directly — never assign note.tags:
+        # that would lazy-load the collection, which raises greenlet_spawn
+        # errors under the async engine (the tag SELECT above autoflushes the
+        # pending note, making it persistent before the assignment).
+        existing_ids = set(
+            (
+                await db.execute(
+                    select(NoteTag.tag_id).where(NoteTag.note_id == note.id)
+                )
+            ).scalars()
+        )
+        desired_ids = {t.id for t in tags}
+        to_remove = existing_ids - desired_ids
+        if to_remove:
+            await db.execute(
+                delete(NoteTag)
+                .where(NoteTag.note_id == note.id, NoteTag.tag_id.in_(to_remove))
+                .execution_options(synchronize_session=False)
+            )
+        for t in tags:
+            if t.id not in existing_ids:
+                db.add(NoteTag(note_id=note.id, tag_id=t.id))
 
     async def _apply_notebook_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         existing = await self._get_one(db, Notebook, user, entity_id)
