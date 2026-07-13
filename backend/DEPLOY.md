@@ -22,7 +22,7 @@ sudo usermod -aG docker $USER   # log out and back in afterwards
 ## 2. Get the code
 
 ```bash
-git clone <your-repo-url> oblix
+git clone https://github.com/Quahhar/Oblix.git oblix
 cd oblix/backend
 ```
 
