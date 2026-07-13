@@ -6,7 +6,11 @@ DEFAULT_SECRET_KEY = "change-me-in-production-use-openssl-rand-hex-32"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # extra="ignore": the .env is shared with docker-compose, which owns keys
+    # (POSTGRES_*, DOMAIN, ...) that are not app settings — don't choke on them.
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Application
     APP_NAME: str = "Oblix Notes API"

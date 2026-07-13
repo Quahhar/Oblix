@@ -1,0 +1,13 @@
+# Never bake secrets or local state into the image. Runtime config comes from
+# compose `environment:`, not from a copied .env.
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+uploads/
+.git
+.gitignore
+docker-compose*.yml
+Caddyfile
+DEPLOY.md
