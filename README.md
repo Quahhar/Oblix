@@ -63,6 +63,13 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000   # Android emulator
 flutter test
 ```
 
+## Deployment
+
+The backend ships as a Docker stack (Postgres + FastAPI + Caddy auto-HTTPS, or
+a behind-nginx variant). See [backend/DEPLOY.md](backend/DEPLOY.md) for the full
+procedure. Point a release build at your server with
+`--dart-define=API_BASE_URL=https://your-host`.
+
 ## Known gaps / roadmap
 
 - **Attachments**: the server has file endpoints and sync relink/delete; the
@@ -72,5 +79,4 @@ flutter test
 - **Tag rename fan-out**: notes store tag *names* denormalized; renaming a tag
   doesn't rewrite existing notes' tag lists.
 - **Google sign-in**: API support exists (`/auth/google`), no client button.
-- Backend changes in this repo (note-tag application, tag tombstones,
-  migration `0002_tag_soft_delete`) have not been run against a live server.
+- **Email verification / OTP**: not implemented — registration is instant.
