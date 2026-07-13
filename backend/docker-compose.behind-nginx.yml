@@ -1,0 +1,15 @@
+# Override for servers where an existing nginx already owns ports 80/443
+# (instead of the bundled Caddy). The API is published only on localhost:8001;
+# add an nginx location block that proxies to it (see DEPLOY.md).
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.behind-nginx.yml up -d --build
+
+services:
+  api:
+    ports:
+      - "127.0.0.1:8001:8000"
+
+  # Parked behind a profile so it never starts: nginx terminates TLS instead.
+  caddy:
+    profiles: ["disabled"]

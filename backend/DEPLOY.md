@@ -73,6 +73,34 @@ Build the Flutter app with your domain baked in:
 flutter build apk --dart-define=API_BASE_URL=https://notes.yourdomain.com
 ```
 
+## Variant: server already runs nginx on 80/443
+
+Caddy can't bind 80/443 if nginx already owns them. Use the behind-nginx
+override instead — it skips Caddy and publishes the API on `127.0.0.1:8001`:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.behind-nginx.yml up -d --build
+```
+
+Then add a location block to your existing nginx vhost (path-based, no new
+DNS record needed; the trailing slash on `proxy_pass` strips the `/oblix`
+prefix before it reaches the API):
+
+```nginx
+location /oblix/ {
+    proxy_pass http://127.0.0.1:8001/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 50m;   # match MAX_UPLOAD_SIZE_MB
+}
+```
+
+`nginx -t && systemctl reload nginx`, and the API is live at
+`https://yourdomain.com/oblix`. Build the app with
+`--dart-define=API_BASE_URL=https://yourdomain.com/oblix`.
+(`DOMAIN`/`ACME_EMAIL` in `.env` are unused in this variant.)
+
 ## Day-2 operations
 
 | Task | Command |
