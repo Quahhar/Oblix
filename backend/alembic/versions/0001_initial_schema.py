@@ -47,9 +47,17 @@ def upgrade() -> None:
     entity_type.create(bind, checkfirst=True)
     sync_action.create(bind, checkfirst=True)
 
-    content_type_col = sa.Enum(ContentType, name="contenttype", create_type=False)
-    entity_type_col = sa.Enum(EntityType, name="entitytype", create_type=False)
-    sync_action_col = sa.Enum(SyncAction, name="syncaction", create_type=False)
+    # NOTE: create_type is a postgresql.ENUM parameter — the generic sa.Enum
+    # silently ignores it and would re-issue CREATE TYPE on every create_table.
+    content_type_col = postgresql.ENUM(
+        ContentType, name="contenttype", create_type=False
+    )
+    entity_type_col = postgresql.ENUM(
+        EntityType, name="entitytype", create_type=False
+    )
+    sync_action_col = postgresql.ENUM(
+        SyncAction, name="syncaction", create_type=False
+    )
 
     # --- users ---
     op.create_table(
