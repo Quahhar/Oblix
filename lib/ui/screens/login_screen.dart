@@ -87,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       size: 64, color: theme.colorScheme.primary),
                   const SizedBox(height: 8),
                   Text(
-                    'Cyclux',
+                    'Oblix',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium,
                   ),

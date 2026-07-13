@@ -1,4 +1,4 @@
-# Cyclux
+# Oblix
 
 Offline-first note-taking app (Evernote-style): notes, notebooks, tags, archive
 and trash, full-text search, and background sync. Flutter client + FastAPI

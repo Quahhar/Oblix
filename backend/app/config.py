@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     # Application
-    APP_NAME: str = "Cyclux Notes API"
+    APP_NAME: str = "Oblix Notes API"
     ENVIRONMENT: str = "development"  # "development" | "production"
     DEBUG: bool = True
     SECRET_KEY: str = DEFAULT_SECRET_KEY
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT.lower() == "production"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/cyclux"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/oblix"
 
     # JWT
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

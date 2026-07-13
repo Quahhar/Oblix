@@ -3,13 +3,13 @@ import '../core/auth/auth_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/notes_screen.dart';
 
-class CycluxApp extends StatelessWidget {
-  const CycluxApp({super.key});
+class OblixApp extends StatelessWidget {
+  const OblixApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cyclux',
+      title: 'Oblix',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
       ),

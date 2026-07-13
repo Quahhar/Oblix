@@ -1,4 +1,4 @@
-# Deploying the Cyclux backend to a Linux server
+# Deploying the Oblix backend to a Linux server
 
 Production stack: **Postgres + FastAPI + Caddy** (automatic HTTPS), all in Docker.
 The API runs with `ENVIRONMENT=production`, so Alembic migrations — not
@@ -22,8 +22,8 @@ sudo usermod -aG docker $USER   # log out and back in afterwards
 ## 2. Get the code
 
 ```bash
-git clone <your-repo-url> cyclux
-cd cyclux/backend
+git clone <your-repo-url> oblix
+cd oblix/backend
 ```
 
 ## 3. Configure secrets

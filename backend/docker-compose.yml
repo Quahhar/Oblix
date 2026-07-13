@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: cyclux
+      POSTGRES_DB: oblix
     ports:
       - "5432:5432"
     volumes:
@@ -19,7 +19,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/cyclux
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/oblix
       SECRET_KEY: dev-secret-key-change-in-production
     volumes:
       - ./uploads:/app/uploads

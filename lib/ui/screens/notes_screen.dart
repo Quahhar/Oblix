@@ -485,7 +485,7 @@ class _NotesScreenState extends State<NotesScreen> {
           children: [
             ListTile(
               leading: Icon(Icons.edit_note, color: theme.colorScheme.primary),
-              title: Text('Cyclux', style: theme.textTheme.titleLarge),
+              title: Text('Oblix', style: theme.textTheme.titleLarge),
             ),
             const Divider(),
             ListTile(

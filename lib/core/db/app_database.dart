@@ -23,7 +23,7 @@ class AppDatabase {
   }) =>
       AppDatabase._(dbFactory: dbFactory, path: path);
 
-  static const _dbName = 'cyclux.db';
+  static const _dbName = 'oblix.db';
   static const _dbVersion = 3;
 
   final DatabaseFactory? _dbFactory;

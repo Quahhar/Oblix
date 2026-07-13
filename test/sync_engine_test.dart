@@ -11,18 +11,18 @@
 //   * synced tombstones are purged after the retention window,
 //   * FTS search (including the INSERT OR REPLACE update path) works.
 
-import 'package:cyclux/core/db/app_database.dart';
-import 'package:cyclux/core/db/meta_dao.dart';
-import 'package:cyclux/core/network/api_exceptions.dart';
-import 'package:cyclux/data/datasources/local/note_local_datasource.dart';
-import 'package:cyclux/data/datasources/local/notebook_local_datasource.dart';
-import 'package:cyclux/data/datasources/local/outbox_dao.dart';
-import 'package:cyclux/data/datasources/local/tag_local_datasource.dart';
-import 'package:cyclux/data/datasources/remote/sync_remote_datasource.dart';
-import 'package:cyclux/data/models/sync_payload.dart';
-import 'package:cyclux/data/models/tag.dart';
-import 'package:cyclux/data/repositories/note_repository.dart';
-import 'package:cyclux/domain/usecases/sync_notes.dart';
+import 'package:oblix/core/db/app_database.dart';
+import 'package:oblix/core/db/meta_dao.dart';
+import 'package:oblix/core/network/api_exceptions.dart';
+import 'package:oblix/data/datasources/local/note_local_datasource.dart';
+import 'package:oblix/data/datasources/local/notebook_local_datasource.dart';
+import 'package:oblix/data/datasources/local/outbox_dao.dart';
+import 'package:oblix/data/datasources/local/tag_local_datasource.dart';
+import 'package:oblix/data/datasources/remote/sync_remote_datasource.dart';
+import 'package:oblix/data/models/sync_payload.dart';
+import 'package:oblix/data/models/tag.dart';
+import 'package:oblix/data/repositories/note_repository.dart';
+import 'package:oblix/domain/usecases/sync_notes.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

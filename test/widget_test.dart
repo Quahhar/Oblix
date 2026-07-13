@@ -1,6 +1,6 @@
 // Widget tests for screens that don't need platform plugins.
 
-import 'package:cyclux/ui/screens/login_screen.dart';
+import 'package:oblix/ui/screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
