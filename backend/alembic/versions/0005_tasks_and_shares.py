@@ -46,10 +46,13 @@ def upgrade() -> None:
     share_entity_type.create(bind, checkfirst=True)
     share_role.create(bind, checkfirst=True)
 
-    entity_type_col = sa.Enum(
+    # NOTE: create_type is a postgresql.ENUM parameter — the generic sa.Enum
+    # silently ignores it and would re-issue CREATE TYPE on every create_table
+    # (same trap documented in 0001).
+    entity_type_col = postgresql.ENUM(
         ShareEntityType, name="shareentitytype", create_type=False
     )
-    role_col = sa.Enum(ShareRole, name="sharerole", create_type=False)
+    role_col = postgresql.ENUM(ShareRole, name="sharerole", create_type=False)
 
     # --- tasks ---
     op.create_table(
