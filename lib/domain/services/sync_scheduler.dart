@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/widgets.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/config/api_config.dart';
+import '../../data/repositories/attachment_repository.dart';
 import '../usecases/sync_notes.dart';
 
 /// Fires the [SyncEngine] on the triggers that matter for an offline-first app:
@@ -17,6 +18,7 @@ import '../usecases/sync_notes.dart';
 /// response stops the scheduler and flips the app-wide auth state.
 class SyncScheduler with WidgetsBindingObserver {
   final SyncEngine _engine;
+  final AttachmentRepository _attachments;
   final Duration _interval;
 
   Timer? _timer;
@@ -26,8 +28,12 @@ class SyncScheduler with WidgetsBindingObserver {
   int _consecutiveFailures = 0;
   DateTime? _backoffUntil;
 
-  SyncScheduler({SyncEngine? engine, Duration? interval})
-      : _engine = engine ?? SyncEngine(),
+  SyncScheduler({
+    SyncEngine? engine,
+    AttachmentRepository? attachments,
+    Duration? interval,
+  })  : _engine = engine ?? SyncEngine(),
+        _attachments = attachments ?? AttachmentRepository(),
         _interval = interval ?? ApiConfig.syncInterval;
 
   void start() {
@@ -92,6 +98,9 @@ class SyncScheduler with WidgetsBindingObserver {
     }
     if (result.success) {
       _resetBackoff();
+      // The note batch reached the server, so any attachment whose note just
+      // synced is now uploadable. Best-effort and self-retrying; don't block.
+      unawaited(_attachments.processSync());
       return;
     }
     _consecutiveFailures++;

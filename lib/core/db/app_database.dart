@@ -24,7 +24,7 @@ class AppDatabase {
       AppDatabase._(dbFactory: dbFactory, path: path);
 
   static const _dbName = 'oblix.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
 
   final DatabaseFactory? _dbFactory;
   final String? _pathOverride;
@@ -97,6 +97,7 @@ class AppDatabase {
     await _createTags(db);
     await _createOutbox(db);
     await _createMeta(db);
+    await _createAttachments(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -114,6 +115,10 @@ class AppDatabase {
       await db.execute(
         'ALTER TABLE tags ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0',
       );
+    }
+    // v3 -> v4: local attachments mirror + upload state.
+    if (oldVersion < 4) {
+      await _createAttachments(db);
     }
   }
 
@@ -201,6 +206,37 @@ class AppDatabase {
         value TEXT
       )
     ''');
+  }
+
+  Future<void> _createAttachments(Database db) async {
+    // Local mirror of a note's files plus their upload state. `id` is a
+    // client-minted local id; `remote_id` is the server's file id, set once
+    // the bytes are uploaded (the server mints file ids, unlike notes).
+    // `local_path` points at the cached bytes on disk (null for a server file
+    // not yet downloaded). Binaries never travel in the JSON outbox — uploads
+    // go through the multipart /files endpoint after the owning note has synced.
+    await db.execute('''
+      CREATE TABLE attachments (
+        id            TEXT PRIMARY KEY,
+        remote_id     TEXT,
+        note_id       TEXT NOT NULL,
+        user_id       TEXT NOT NULL,
+        filename      TEXT NOT NULL DEFAULT '',
+        original_name TEXT NOT NULL DEFAULT '',
+        mime_type     TEXT NOT NULL DEFAULT 'application/octet-stream',
+        size_bytes    INTEGER NOT NULL DEFAULT 0,
+        local_path    TEXT,
+        is_uploaded   INTEGER NOT NULL DEFAULT 0,
+        is_deleted    INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_attachments_note ON attachments(note_id)');
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_attachments_remote ON attachments(remote_id) '
+      'WHERE remote_id IS NOT NULL',
+    );
   }
 
   /// Create the FTS5 full-text index over notes if this SQLite build supports
