@@ -93,17 +93,28 @@ class NoteService:
         }
 
     async def get_note(self, db: AsyncSession, user: User, note_id: str) -> Note:
-        """Get a single note with tags and versions."""
+        """Get a single note with tags and versions.
+
+        Readable by the owner and by anyone it (or its notebook) is shared
+        with. The trash stays private: a tombstoned note is 404 for grantees.
+        """
+        note, _role = await self.get_note_with_role(db, user, note_id)
+        return note
+
+    async def get_note_with_role(self, db: AsyncSession, user: User, note_id: str) -> tuple[Note, str]:
+        from app.services.share_service import share_service
+
         note_uuid = _uuid_or_error(note_id, "Note not found", status.HTTP_404_NOT_FOUND)
         result = await db.execute(
             select(Note)
-            .where(Note.id == note_uuid, Note.user_id == user.id)
+            .where(Note.id == note_uuid)
             .options(selectinload(Note.tags).selectinload(NoteTag.tag), selectinload(Note.versions))
         )
         note = result.scalar_one_or_none()
-        if not note:
+        role = await share_service.note_role(db, user, note) if note else None
+        if note is None or role is None or (note.is_deleted and role != "owner"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
-        return note
+        return note, role
 
     async def create_note(self, db: AsyncSession, user: User, data: NoteCreate) -> Note:
         """Create a new note."""
@@ -148,9 +159,28 @@ class NoteService:
 
         return await self.get_note(db, user, str(note.id))
 
+    # Fields only the owner may change: they express how the owner organizes
+    # their own account. Editors on a shared note may change content only.
+    _OWNER_ONLY_FIELDS = ("notebook_id", "is_pinned", "is_archived", "tag_ids")
+
     async def update_note(self, db: AsyncSession, user: User, note_id: str, data: NoteUpdate) -> Note:
-        """Update an existing note. Creates a new version on content change."""
-        note = await self.get_note(db, user, note_id)
+        """Update an existing note. Creates a new version on content change.
+
+        Owners have full control. Share grantees with the `editor` role may
+        edit content fields (title/content/content_type); `viewer`s and any
+        attempt by a non-owner to touch organizational fields get 403.
+        """
+        note, role = await self.get_note_with_role(db, user, note_id)
+        if role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="You have view-only access to this note")
+        if role == "editor":
+            touched = [f for f in self._OWNER_ONLY_FIELDS if f in data.model_fields_set]
+            if touched:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Only the note's owner can change: {', '.join(touched)}",
+                )
 
         content_changed = False
         update_fields = {}
@@ -246,8 +276,11 @@ class NoteService:
             )
 
     async def delete_note(self, db: AsyncSession, user: User, note_id: str) -> None:
-        """Soft-delete a note."""
-        note = await self.get_note(db, user, note_id)
+        """Soft-delete a note. Owner only — the trash is the owner's space."""
+        note, role = await self.get_note_with_role(db, user, note_id)
+        if role != "owner":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Only the note's owner can delete it")
         note.is_deleted = True
         note.is_archived = False
         note.deleted_at = datetime.now(timezone.utc)

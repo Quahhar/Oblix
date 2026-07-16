@@ -5,7 +5,7 @@ from app.models.note import ContentType
 
 
 class SyncChangeItem(BaseModel):
-    entity_type: str = Field(..., pattern="^(note|notebook|tag|file)$")
+    entity_type: str = Field(..., pattern="^(note|notebook|tag|file|task)$")
     entity_id: str
     action: str = Field(..., pattern="^(create|update|delete)$")
     data: dict = Field(default_factory=dict)

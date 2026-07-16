@@ -5,6 +5,8 @@ from app.models.tag import Tag, NoteTag
 from app.models.file import File
 from app.models.sync import SyncLog
 from app.models.session import Session
+from app.models.share import Share
+from app.models.task import Task
 
 __all__ = [
     "User",
@@ -16,4 +18,6 @@ __all__ = [
     "File",
     "SyncLog",
     "Session",
+    "Share",
+    "Task",
 ]

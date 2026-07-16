@@ -75,6 +75,31 @@ class FileService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
         return file
 
+    async def get_readable_file(self, db: AsyncSession, user: User, file_id: str) -> File:
+        """Like get_file, but also honors collaboration: an attachment is
+        readable by anyone who can read the note it's attached to. Writes
+        (delete/relink) still go through the owner-only get_file."""
+        from app.models.note import Note
+        from app.services.share_service import share_service
+
+        try:
+            file_uuid = uuid.UUID(str(file_id))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        file = (await db.execute(
+            select(File).where(File.id == file_uuid, File.is_deleted == False)  # noqa: E712
+        )).scalar_one_or_none()
+        if file is not None:
+            if file.user_id == user.id:
+                return file
+            if file.note_id is not None:
+                note = (await db.execute(select(Note).where(
+                    Note.id == file.note_id, Note.is_deleted == False  # noqa: E712
+                ))).scalar_one_or_none()
+                if note is not None and await share_service.note_role(db, user, note):
+                    return file
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
     async def list_files(self, db: AsyncSession, user: User, note_id: Optional[str] = None) -> list[File]:
         """List all files for a user, optionally filtered by note."""
         query = select(File).where(File.user_id == user.id, File.is_deleted == False)

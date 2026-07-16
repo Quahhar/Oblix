@@ -31,6 +31,7 @@ class User(Base):
     files: Mapped[list["File"]] = relationship("File", back_populates="user", lazy="raise", passive_deletes=True, cascade="all, delete-orphan")
     sync_logs: Mapped[list["SyncLog"]] = relationship("SyncLog", back_populates="user", lazy="raise", passive_deletes=True, cascade="all, delete-orphan")
     sessions: Mapped[list["Session"]] = relationship("Session", back_populates="user", lazy="raise", passive_deletes=True, cascade="all, delete-orphan")
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="user", lazy="raise", passive_deletes=True, cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"

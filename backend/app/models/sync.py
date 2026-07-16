@@ -12,6 +12,7 @@ class EntityType(str, PyEnum):
     NOTEBOOK = "notebook"
     TAG = "tag"
     FILE = "file"
+    TASK = "task"
 
 
 class SyncAction(str, PyEnum):

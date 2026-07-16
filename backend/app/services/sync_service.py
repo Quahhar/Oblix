@@ -11,6 +11,7 @@ from app.models.note import Note, NoteVersion, ContentType
 from app.models.notebook import Notebook
 from app.models.tag import Tag, NoteTag
 from app.models.file import File
+from app.models.task import Task
 from app.models.sync import SyncLog, EntityType, SyncAction
 from app.schemas.sync import SyncChangeItem
 
@@ -178,6 +179,8 @@ class SyncService:
             return await self._apply_tag_change(db, user, change.entity_id, change)
         elif entity_type == "file":
             return await self._apply_file_change(db, user, change.entity_id, change)
+        elif entity_type == "task":
+            return await self._apply_task_change(db, user, change.entity_id, change)
         else:
             return {"conflict": True, "reason": f"Unknown entity type: {entity_type}"}
 
@@ -427,6 +430,90 @@ class SyncService:
             return {}
 
         return {}
+
+    async def _apply_task_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
+        existing = await self._get_one(db, Task, user, entity_id)
+        client_data = change.data
+        client_ts = _parse_ts(change.timestamp)
+
+        if change.action == "create":
+            if existing and not existing.is_deleted:
+                return {"conflict": True, "server_data": self._task_to_dict(existing),
+                        "reason": "Task already exists on server"}
+            if existing and existing.is_deleted:
+                await self._apply_task_fields(db, user, existing, client_data)
+                existing.is_deleted = False
+                existing.deleted_at = None
+                now = datetime.now(timezone.utc)
+                existing.edited_at = client_ts or now
+                existing.updated_at = now
+                return {}
+            task = Task(id=uuid.UUID(entity_id), user_id=user.id, title="Untitled task")
+            await self._apply_task_fields(db, user, task, client_data)
+            created = _parse_ts(client_data.get("created_at"))
+            if created is not None:
+                task.created_at = created
+            task.updated_at = datetime.now(timezone.utc)
+            task.edited_at = client_ts or created or task.updated_at
+            db.add(task)
+            return {}
+
+        elif change.action == "update":
+            if not existing or existing.is_deleted:
+                return {"conflict": True, "reason": "Task not found on server"}
+            basis = existing.edited_at or existing.updated_at
+            if client_ts is not None and basis is not None and basis > client_ts:
+                return {"conflict": True, "server_data": self._task_to_dict(existing),
+                        "reason": "Server version is newer"}
+            await self._apply_task_fields(db, user, existing, client_data)
+            now = datetime.now(timezone.utc)
+            existing.edited_at = client_ts or now
+            existing.updated_at = now
+            return {}
+
+        elif change.action == "delete":
+            if existing and not existing.is_deleted:
+                existing.is_deleted = True
+                existing.deleted_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.now(timezone.utc)
+            return {}
+
+        return {"conflict": True, "reason": f"Unknown action: {change.action}"}
+
+    async def _apply_task_fields(self, db: AsyncSession, user: User, task: Task, client_data: dict) -> None:
+        if "title" in client_data:
+            title = str(client_data["title"] or "").strip()
+            task.title = title[:500] if title else "Untitled task"
+        if "description" in client_data:
+            task.description = str(client_data["description"] or "")
+        if "sort_order" in client_data:
+            try:
+                task.sort_order = int(client_data["sort_order"])
+            except (ValueError, TypeError):
+                pass
+        if "is_completed" in client_data:
+            completed = bool(client_data["is_completed"])
+            if completed != task.is_completed:
+                task.is_completed = completed
+                task.completed_at = datetime.now(timezone.utc) if completed else None
+        if "due_date" in client_data:
+            # null/garbage clears; a valid ISO timestamp sets.
+            task.due_date = _parse_ts(client_data["due_date"])
+        if "note_id" in client_data:
+            task.note_id = await self._owned_note_id(db, user, client_data["note_id"])
+
+    @staticmethod
+    async def _owned_note_id(db: AsyncSession, user: User, raw) -> Optional[uuid.UUID]:
+        """Same defensive coercion as _owned_notebook_id, for task→note links."""
+        if not raw:
+            return None
+        try:
+            n_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            return None
+        return (await db.execute(
+            select(Note.id).where(Note.id == n_id, Note.user_id == user.id)
+        )).scalar_one_or_none()
 
     async def _apply_file_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         # Files are created via the multipart upload endpoint, not via sync push

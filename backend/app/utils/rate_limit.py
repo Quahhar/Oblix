@@ -65,3 +65,7 @@ login_limiter = SlidingWindowLimiter(limit=10, window_seconds=300)
 # Account creation and Google sign-in are capped per client only.
 register_limiter = SlidingWindowLimiter(limit=20, window_seconds=3600)
 google_limiter = SlidingWindowLimiter(limit=20, window_seconds=60)
+# AI calls cost real provider money: capped per USER id (not IP).
+ai_limiter = SlidingWindowLimiter(
+    limit=settings.AI_RATE_LIMIT_PER_HOUR, window_seconds=3600
+)

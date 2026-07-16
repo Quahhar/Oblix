@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     # Disable for load tests / multi-worker deployments where it can't be fair.
     RATE_LIMIT_ENABLED: bool = True
 
+    # AI features (app/services/ai_service.py). Disabled unless the key is set.
+    ANTHROPIC_API_KEY: Optional[str] = None
+    AI_MODEL: str = "claude-sonnet-5"
+    # Messages-API-compatible endpoint; override to route through a proxy.
+    AI_BASE_URL: str = "https://api.anthropic.com"
+    AI_TIMEOUT_SECONDS: float = 60.0
+    # Hard cap on note characters sent per request (cost control).
+    AI_MAX_INPUT_CHARS: int = 150_000
+    # Per-user AI calls per hour (in-process sliding window, like auth limits).
+    AI_RATE_LIMIT_PER_HOUR: int = 30
+
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> "Settings":
         """Refuse to run in production with insecure defaults.

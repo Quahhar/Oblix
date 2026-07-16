@@ -58,7 +58,7 @@ async def get_file_metadata(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    file_record = await file_service.get_file(db, current_user, file_id)
+    file_record = await file_service.get_readable_file(db, current_user, file_id)
     return file_record
 
 
@@ -68,7 +68,7 @@ async def download_file(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    file_record = await file_service.get_file(db, current_user, file_id)
+    file_record = await file_service.get_readable_file(db, current_user, file_id)
     try:
         file_path = await storage.download_path(file_record.storage_path)
     except FileNotFoundError:

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, notes, notebooks, tags, files, sync, transfer
+from app.routers import auth, notes, notebooks, tags, files, sync, transfer, shares, tasks, ai
 
 
 @asynccontextmanager
@@ -40,6 +40,9 @@ app.include_router(tags.router, prefix=settings.API_V1_PREFIX)
 app.include_router(files.router, prefix=settings.API_V1_PREFIX)
 app.include_router(sync.router, prefix=settings.API_V1_PREFIX)
 app.include_router(transfer.router, prefix=settings.API_V1_PREFIX)
+app.include_router(shares.router, prefix=settings.API_V1_PREFIX)
+app.include_router(tasks.router, prefix=settings.API_V1_PREFIX)
+app.include_router(ai.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")
