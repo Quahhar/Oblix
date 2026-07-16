@@ -473,9 +473,12 @@ class SyncService:
 
         elif change.action == "delete":
             if existing and not existing.is_deleted:
+                now = datetime.now(timezone.utc)
                 existing.is_deleted = True
-                existing.deleted_at = datetime.now(timezone.utc)
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.deleted_at = now
+                existing.updated_at = now
+                # A delete is an edit for LWW (see the note-delete rationale).
+                existing.edited_at = client_ts or now
             return {}
 
         return {"conflict": True, "reason": f"Unknown action: {change.action}"}
@@ -617,6 +620,16 @@ class SyncService:
             "timestamp": f.updated_at.isoformat(),
         }
 
+    @staticmethod
+    def _task_change(t: Task) -> dict:
+        return {
+            "entity_type": "task",
+            "entity_id": str(t.id),
+            "action": "delete" if t.is_deleted else "update",
+            "data": SyncService._task_to_dict(t),
+            "timestamp": t.updated_at.isoformat(),
+        }
+
     def _type_specs(self, target_types):
         """(name, model, change-builder, query-options) for the requested types."""
         specs = [
@@ -624,6 +637,7 @@ class SyncService:
             ("notebook", Notebook, self._notebook_change, ()),
             ("tag", Tag, self._tag_change, ()),
             ("file", File, self._file_change, ()),
+            ("task", Task, self._task_change, ()),
         ]
         return [s for s in specs if s[0] in target_types]
 
@@ -638,7 +652,7 @@ class SyncService:
         row is harmless.
         """
         changes: list[dict] = []
-        target_types = entity_types or ["note", "notebook", "tag", "file"]
+        target_types = entity_types or ["note", "notebook", "tag", "file", "task"]
         since_dt = _parse_ts(since)
 
         for _name, model, builder, opts in self._type_specs(target_types):
@@ -659,7 +673,7 @@ class SyncService:
         """Paginated read: at most `limit` changes ordered by (updated_at, id),
         plus has_more and an opaque next_cursor. Each per-type query is capped so
         one huge table can't pull an unbounded result set into memory."""
-        target_types = entity_types or ["note", "notebook", "tag", "file"]
+        target_types = entity_types or ["note", "notebook", "tag", "file", "task"]
         since_dt = _parse_ts(since)
         cur = _decode_cursor(cursor) if cursor else None
 
@@ -726,6 +740,25 @@ class SyncService:
             # edit until the next push round-trips.
             "edited_at": note.edited_at.isoformat() if note.edited_at else None,
             "tags": SyncService._loaded_tag_names(note),
+        }
+
+    @staticmethod
+    def _task_to_dict(task: Task) -> dict:
+        return {
+            "id": str(task.id),
+            "user_id": str(task.user_id),
+            "note_id": str(task.note_id) if task.note_id else None,
+            "title": task.title,
+            "description": task.description,
+            "is_completed": task.is_completed,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "sort_order": task.sort_order,
+            "is_deleted": task.is_deleted,
+            "created_at": task.created_at.isoformat(),
+            "updated_at": task.updated_at.isoformat(),
+            # LWW basis, same contract as notes.
+            "edited_at": task.edited_at.isoformat() if task.edited_at else None,
         }
 
     @staticmethod
