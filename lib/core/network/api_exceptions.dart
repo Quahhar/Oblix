@@ -20,10 +20,20 @@ class ApiException implements Exception {
         return NotFoundException(message);
       case 409:
         return ConflictException(message);
+      case 429:
+        return RateLimitedException(
+          message,
+          _retryAfter(e.response?.headers.value('retry-after')),
+        );
       default:
         if (status >= 500) return ServerException(message);
         return ApiException(message, statusCode: status);
     }
+  }
+
+  static Duration? _retryAfter(String? header) {
+    final seconds = int.tryParse(header ?? '');
+    return seconds == null ? null : Duration(seconds: seconds);
   }
 
   /// FastAPI reports errors as {"detail": ...}.
@@ -58,4 +68,12 @@ class ServerException extends ApiException {
 
 class NetworkException extends ApiException {
   NetworkException([super.message = 'Network error']);
+}
+
+/// 429 — the auth endpoints rate-limit by IP+email. [retryAfter] comes from
+/// the Retry-After header when the server sent one.
+class RateLimitedException extends ApiException {
+  final Duration? retryAfter;
+  RateLimitedException([super.message = 'Too many attempts', this.retryAfter])
+    : super(statusCode: 429);
 }

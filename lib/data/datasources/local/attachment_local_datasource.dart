@@ -150,13 +150,23 @@ class AttachmentLocalDataSource {
         if (server.isDeleted) continue; // nothing to create for a tombstone
         await upsert(db, server.copyWithLocalId(newLocalId()));
         applied++;
+      } else if (server.isDeleted) {
+        // The server already deleted this file — drop the row outright. It
+        // must NOT become a local tombstone, or pendingRemoteDeletes would
+        // re-issue a DELETE for a file that's already gone, 404 forever.
+        // (Cached bytes on disk, if any, are swept opportunistically later.)
+        await db.delete(
+          'attachments',
+          where: 'id = ?',
+          whereArgs: [existing.first['id']],
+        );
+        applied++;
       } else {
         final row = _fromRow(existing.first);
-        // Keep our local bytes/path; just track deletion + metadata.
+        // Keep our local bytes/path; just track relink + metadata.
         await db.update(
           'attachments',
           {
-            'is_deleted': server.isDeleted ? 1 : row.isDeleted ? 1 : 0,
             'note_id': server.noteId.isEmpty ? row.noteId : server.noteId,
             'size_bytes': server.sizeBytes,
             'updated_at': server.updatedAt.toUtc().toIso8601String(),

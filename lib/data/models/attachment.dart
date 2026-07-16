@@ -69,14 +69,17 @@ class Attachment extends Equatable {
     );
   }
 
-  /// Build from the server's `FileResponse` shape (a file pulled from /files).
-  /// [noteFallback] is used when the server record has no note link.
+  /// Build from a server file record — either the `/files` REST shape or the
+  /// leaner `file` entity in sync `server_changes` (which omits `created_at`
+  /// and `user_id`). [noteFallback] is used when the record has no note link.
   factory Attachment.fromServerJson(
     Map<String, dynamic> json, {
     required String localId,
     String noteFallback = '',
   }) {
-    final created = DateTime.parse(json['created_at'] as String);
+    final created = DateTime.tryParse(json['created_at'] as String? ?? '');
+    final updated = DateTime.tryParse(json['updated_at'] as String? ?? '');
+    final basis = created ?? updated ?? DateTime.now().toUtc();
     return Attachment(
       id: localId,
       remoteId: json['id'] as String,
@@ -88,10 +91,8 @@ class Attachment extends Equatable {
       sizeBytes: json['size_bytes'] as int? ?? 0,
       isUploaded: true,
       isDeleted: json['is_deleted'] as bool? ?? false,
-      createdAt: created,
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : created,
+      createdAt: basis,
+      updatedAt: updated ?? basis,
     );
   }
 

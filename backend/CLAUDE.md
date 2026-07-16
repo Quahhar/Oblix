@@ -1,7 +1,8 @@
 # Oblix — project guide for Claude Code
 
-Self-hosted, Evernote-style notes app. **This repo is the backend only.** The
-client is a separate **Flutter** mobile app that talks to this API.
+Self-hosted, Evernote-style notes app. **This is the `backend/` half of a
+monorepo**: the repo root is the Flutter client (`lib/`, `test/`), and this
+directory is the FastAPI backend it talks to.
 
 ## Stack & runtime
 - **FastAPI + async SQLAlchemy 2.0 + Postgres**, packaged with Docker.
@@ -55,11 +56,31 @@ client is a separate **Flutter** mobile app that talks to this API.
   `NoteService._VERSION_COALESCE_WINDOW` fold into the latest snapshot) and
   **capped** at `NoteService._MAX_VERSIONS` per note.
 
-## Frontend (Flutter) — FILL THIS IN so backend changes stay compatible
-<!-- TODO(owner): describe the app so future sessions align. Suggested points: -->
-- Local store used (SQLite / Drift / Hive / Isar?): …
-- State management (Riverpod / Bloc / Provider?): …
-- How tokens are stored & refreshed (flutter_secure_storage? auto-refresh on 401?): …
-- Autosave/debounce implementation location: …
-- Which endpoints the app actually calls, and any field expectations: …
-- Repo location of the Flutter code (this backend repo does not contain it): …
+## Frontend (Flutter) — keep backend changes compatible with this
+- **Repo location**: the monorepo root (`../lib`, `../test`); this backend dir
+  sits alongside it.
+- **Local store**: raw **sqflite** (no Drift/Hive) — schema v4 in
+  `lib/core/db/app_database.dart` (notes/notebooks/tags/outbox/meta/attachments
+  + FTS5 index with LIKE fallback). Local DB is the source of truth; every
+  mutation writes the row + an outbox entry in one transaction.
+- **State management**: none of the big frameworks — plain StatefulWidgets +
+  repository classes + a coarse `AppDatabase.onChanged` broadcast stream the
+  screens re-query on. Session state is `AuthState` (a ValueNotifier).
+- **Tokens**: flutter_secure_storage; `AuthInterceptor` injects the Bearer
+  token and on 401 does a single-flight `POST /auth/refresh` + one retry;
+  a failed refresh clears tokens and flips `AuthState` to signedOut.
+- **Autosave**: 600 ms debounce in `lib/ui/screens/note_editor_screen.dart`;
+  the sync scheduler pushes ~30 s after local edits (outbox-gated debounce in
+  `lib/domain/services/sync_scheduler.dart`), plus timer/connectivity/foreground
+  triggers with exponential failure backoff.
+- **Endpoints used**: `/auth/register|login|refresh|logout|me`, `/sync/push`
+  (the only sync call — its `server_changes` doubles as the pull),
+  `/files` + `/files/upload|{id}/download|{id}` for attachments, and the
+  import/export transfer endpoints.
+- **Field expectations**: note `data` includes `tags` as a list of names
+  (strings or `{"name": …}` both parse); clients merge notes by
+  **`edited_at`** (fallback `updated_at`) — keep emitting it in
+  `_note_to_dict`; `applied`/`conflicts` entity ids drive outbox acks
+  (an id never mentioned = retried, bounded); `server_time` is the next
+  cursor; file sync changes carry no binary — bytes go through multipart
+  upload only after the owning note has synced.

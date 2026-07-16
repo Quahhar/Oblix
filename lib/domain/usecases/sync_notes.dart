@@ -1,7 +1,9 @@
+import 'package:uuid/uuid.dart';
 import '../../core/config/api_config.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
 import '../../core/network/api_exceptions.dart';
+import '../../data/datasources/local/attachment_local_datasource.dart';
 import '../../data/datasources/local/note_local_datasource.dart';
 import '../../data/datasources/local/notebook_local_datasource.dart';
 import '../../data/datasources/local/outbox_dao.dart';
@@ -27,7 +29,9 @@ class SyncEngine {
   final NoteLocalDataSource _notes;
   final NotebookLocalDataSource _notebooks;
   final TagLocalDataSource _tags;
+  final AttachmentLocalDataSource _attachments;
   final MetaDao _meta;
+  final Uuid _uuid;
   final int _batchSize;
   final int _maxPushAttempts;
 
@@ -41,7 +45,9 @@ class SyncEngine {
     NoteLocalDataSource? notes,
     NotebookLocalDataSource? notebooks,
     TagLocalDataSource? tags,
+    AttachmentLocalDataSource? attachments,
     MetaDao? meta,
+    Uuid? uuid,
     int batchSize = ApiConfig.maxSyncBatchSize,
     int maxPushAttempts = ApiConfig.maxPushAttempts,
   })  : _appDb = appDb ?? AppDatabase.instance,
@@ -51,7 +57,10 @@ class SyncEngine {
         _notebooks = notebooks ??
             NotebookLocalDataSource(appDb ?? AppDatabase.instance),
         _tags = tags ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
+        _attachments = attachments ??
+            AttachmentLocalDataSource(appDb ?? AppDatabase.instance),
         _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+        _uuid = uuid ?? const Uuid(),
         _batchSize = batchSize,
         _maxPushAttempts = maxPushAttempts;
 
@@ -113,6 +122,7 @@ class SyncEngine {
       final serverNotebooks =
           SyncRepository.parseNotebookChanges(resp.serverChanges);
       final serverTags = SyncRepository.parseTagChanges(resp.serverChanges);
+      final serverFiles = SyncRepository.parseFileChanges(resp.serverChanges);
 
       // Entities the server explicitly decided on — applied or conflict-
       // resolved (LWW favoured the server; its copy arrives in
@@ -140,6 +150,11 @@ class SyncEngine {
         await _notes.applyServerNotes(txn, serverNotes);
         await _notebooks.applyServerNotebooks(txn, serverNotebooks);
         await _tags.applyServerTags(txn, serverTags);
+        await _attachments.applyServerFiles(
+          txn,
+          serverFiles,
+          newLocalId: _uuid.v4,
+        );
         droppedThisRound = await _outbox.settleBatch(
           txn,
           ackedSeqs: ackedSeqs,
@@ -157,8 +172,10 @@ class SyncEngine {
       pushed += ackedSeqs.length;
       rejected += droppedThisRound;
       conflicts.addAll(resp.conflicts);
-      final pulledThisRound =
-          serverNotes.length + serverNotebooks.length + serverTags.length;
+      final pulledThisRound = serverNotes.length +
+          serverNotebooks.length +
+          serverTags.length +
+          serverFiles.length;
       pulled += pulledThisRound;
       anythingChanged = anythingChanged ||
           pulledThisRound > 0 ||

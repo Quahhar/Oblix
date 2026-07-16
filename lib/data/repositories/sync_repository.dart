@@ -1,3 +1,4 @@
+import '../models/attachment.dart';
 import '../models/note.dart';
 import '../models/notebook.dart';
 import '../models/tag.dart';
@@ -18,6 +19,18 @@ class SyncRepository {
   /// Parse server `changes` entries of type `tag` into Tag models.
   static List<Tag> parseTagChanges(List<Map<String, dynamic>> changes) =>
       _parse(changes, 'tag', Tag.fromJson);
+
+  /// Parse server `changes` entries of type `file` into Attachment models.
+  /// The local id is minted at apply time (see applyServerFiles), so the
+  /// placeholder here is never persisted.
+  static List<Attachment> parseFileChanges(
+    List<Map<String, dynamic>> changes,
+  ) =>
+      _parse(
+        changes,
+        'file',
+        (json) => Attachment.fromServerJson(json, localId: ''),
+      );
 
   static List<T> _parse<T>(
     List<Map<String, dynamic>> changes,

@@ -238,10 +238,16 @@ class SyncService:
 
         elif change.action == "delete":
             if existing and not existing.is_deleted:
+                now = datetime.now(timezone.utc)
                 existing.is_deleted = True
                 existing.is_archived = False
-                existing.deleted_at = datetime.now(timezone.utc)
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.deleted_at = now
+                existing.updated_at = now
+                # A delete is an edit for LWW purposes: without this, the
+                # tombstone would carry the note's last content-edit time and
+                # lose merges against devices that edited just before the
+                # delete, resurrecting the note there.
+                existing.edited_at = client_ts or now
             return {}
 
         return {"conflict": True, "reason": f"Unknown action: {change.action}"}
@@ -627,6 +633,11 @@ class SyncService:
             "is_deleted": note.is_deleted,
             "created_at": note.created_at.isoformat(),
             "updated_at": note.updated_at.isoformat(),
+            # The LWW basis. Clients must merge by this (fallback updated_at),
+            # not by updated_at alone: updated_at is the server APPLY time, so
+            # an older edit synced later would otherwise clobber a newer local
+            # edit until the next push round-trips.
+            "edited_at": note.edited_at.isoformat() if note.edited_at else None,
             "tags": SyncService._loaded_tag_names(note),
         }
 

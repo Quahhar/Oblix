@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
+import '../../core/network/api_exceptions.dart';
 import '../datasources/local/attachment_local_datasource.dart';
 import '../datasources/remote/files_remote_datasource.dart';
 import '../models/attachment.dart';
@@ -169,6 +170,10 @@ class AttachmentRepository {
     for (final a in await _local.pendingRemoteDeletes()) {
       try {
         await _remote.delete(a.remoteId!);
+        await _local.hardDelete(a.id);
+        deleted++;
+      } on NotFoundException {
+        // Already gone server-side — the deletion is done, settle the row.
         await _local.hardDelete(a.id);
         deleted++;
       } catch (_) {

@@ -19,6 +19,10 @@ class ApiConfig {
   static const Duration syncInterval = Duration(minutes: 5);
   static const int maxSyncBatchSize = 100;
 
+  /// Quiet period after a local edit before pushing it (typing bursts
+  /// coalesce into one sync; the backend docs assume ~30s cadence).
+  static const Duration syncDebounceAfterEdit = Duration(seconds: 30);
+
   /// Pushes of an outbox entry the server never acknowledges before the entry
   /// is dropped as poison (so one bad change can't block the queue forever).
   static const int maxPushAttempts = 5;

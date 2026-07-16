@@ -43,7 +43,12 @@ class Note extends Equatable {
       isArchived: json['is_archived'] as bool? ?? false,
       isDeleted: json['is_deleted'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      // Prefer the server's LWW basis (edited_at = when a human last edited)
+      // over updated_at (= when the server applied it). Locally, updatedAt
+      // always means "last edit time", so merges compare edit-vs-edit and an
+      // older edit that merely synced later can't clobber a newer local edit.
+      updatedAt: DateTime.tryParse(json['edited_at'] as String? ?? '') ??
+          DateTime.parse(json['updated_at'] as String),
       tagNames:
           (json['tags'] as List<dynamic>?)
               ?.map(

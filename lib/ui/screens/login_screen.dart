@@ -57,6 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
       // AuthState is now signedIn; the AuthGate takes it from here.
     } on UnauthorizedException {
       setState(() => _error = 'Wrong email or password.');
+    } on RateLimitedException catch (e) {
+      final wait = e.retryAfter;
+      setState(() => _error = wait == null
+          ? 'Too many attempts. Please wait a moment and try again.'
+          : 'Too many attempts. Try again in ${wait.inSeconds}s.');
     } on NetworkException {
       setState(() => _error = 'Cannot reach the server. Are you online?');
     } on ApiException catch (e) {

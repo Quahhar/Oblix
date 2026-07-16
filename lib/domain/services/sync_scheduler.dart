@@ -4,10 +4,13 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/widgets.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/config/api_config.dart';
+import '../../core/db/app_database.dart';
+import '../../data/datasources/local/outbox_dao.dart';
 import '../../data/repositories/attachment_repository.dart';
 import '../usecases/sync_notes.dart';
 
 /// Fires the [SyncEngine] on the triggers that matter for an offline-first app:
+///  - shortly after local edits (debounced, so typing bursts coalesce),
 ///  - a periodic timer (fallback / drains anything still queued),
 ///  - regained connectivity,
 ///  - app returning to the foreground.
@@ -19,10 +22,15 @@ import '../usecases/sync_notes.dart';
 class SyncScheduler with WidgetsBindingObserver {
   final SyncEngine _engine;
   final AttachmentRepository _attachments;
+  final AppDatabase _appDb;
+  final OutboxDao _outbox;
   final Duration _interval;
+  final Duration _editDebounceFor;
 
   Timer? _timer;
+  Timer? _editDebounce;
   StreamSubscription<List<ConnectivityResult>>? _connSub;
+  StreamSubscription<void>? _changeSub;
   bool _started = false;
 
   int _consecutiveFailures = 0;
@@ -31,10 +39,16 @@ class SyncScheduler with WidgetsBindingObserver {
   SyncScheduler({
     SyncEngine? engine,
     AttachmentRepository? attachments,
+    AppDatabase? appDb,
+    OutboxDao? outbox,
     Duration? interval,
+    Duration? editDebounce,
   })  : _engine = engine ?? SyncEngine(),
         _attachments = attachments ?? AttachmentRepository(),
-        _interval = interval ?? ApiConfig.syncInterval;
+        _appDb = appDb ?? AppDatabase.instance,
+        _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
+        _interval = interval ?? ApiConfig.syncInterval,
+        _editDebounceFor = editDebounce ?? ApiConfig.syncDebounceAfterEdit;
 
   void start() {
     if (_started) return;
@@ -51,6 +65,11 @@ class SyncScheduler with WidgetsBindingObserver {
       }
     });
 
+    // Push soon after a local edit instead of waiting for the timer. The
+    // change stream also fires for sync-applied changes, so the debounced
+    // check is gated on the outbox actually holding something to push.
+    _changeSub = _appDb.onChanged.listen((_) => _scheduleEditSync());
+
     WidgetsBinding.instance.addObserver(this);
 
     // Kick an initial sync on startup.
@@ -62,9 +81,22 @@ class SyncScheduler with WidgetsBindingObserver {
     _started = false;
     _timer?.cancel();
     _timer = null;
+    _editDebounce?.cancel();
+    _editDebounce = null;
     _connSub?.cancel();
     _connSub = null;
+    _changeSub?.cancel();
+    _changeSub = null;
     WidgetsBinding.instance.removeObserver(this);
+  }
+
+  void _scheduleEditSync() {
+    _editDebounce?.cancel();
+    _editDebounce = Timer(_editDebounceFor, () async {
+      if (!_started) return;
+      if (await _outbox.pendingCount() == 0) return; // nothing local to push
+      _trigger();
+    });
   }
 
   @override
