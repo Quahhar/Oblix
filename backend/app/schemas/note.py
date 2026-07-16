@@ -1,5 +1,6 @@
+import uuid
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from app.models.note import ContentType
 
@@ -23,39 +24,53 @@ class NoteUpdate(BaseModel):
 
 
 class TagResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
 
     model_config = {"from_attributes": True}
 
 
 class NoteVersionResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     title: str
     content: str
     content_type: str
     version_number: int
-    created_at: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 class NoteResponse(BaseModel):
-    id: str
-    user_id: str
-    notebook_id: Optional[str] = None
+    id: uuid.UUID
+    user_id: uuid.UUID
+    notebook_id: Optional[uuid.UUID] = None
     title: str
     content: str
     content_type: str
     is_pinned: bool
     is_archived: bool
     is_deleted: bool
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
     tags: list[TagResponse] = Field(default_factory=list)
     versions: list[NoteVersionResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _unwrap_note_tags(cls, value):
+        # Note.tags is a list of NoteTag association rows; expose the underlying
+        # Tag (skipping soft-deleted ones) so it matches the TagResponse shape.
+        if not value:
+            return value
+        unwrapped = []
+        for item in value:
+            tag = getattr(item, "tag", item)
+            if tag is not None and not getattr(tag, "is_deleted", False):
+                unwrapped.append(tag)
+        return unwrapped
 
 
 class NoteListResponse(BaseModel):

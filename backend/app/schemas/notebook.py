@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -16,14 +17,14 @@ class NotebookUpdate(BaseModel):
 
 
 class NotebookResponse(BaseModel):
-    id: str
-    user_id: str
+    id: uuid.UUID
+    user_id: uuid.UUID
     name: str
-    parent_id: Optional[str] = None
+    parent_id: Optional[uuid.UUID] = None
     sort_order: int
     is_deleted: bool
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
     children: list["NotebookResponse"] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

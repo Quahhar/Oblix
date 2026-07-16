@@ -52,6 +52,30 @@ class LocalStorage:
         storage_path = f"{user_id}/{generated_name}"
         return storage_path, generated_name, size_bytes
 
+    async def save_bytes(self, user_id: str, data: bytes, ext: str = "") -> tuple[str, str, int]:
+        """Persist an in-memory blob (used by the .enex/.oblix importers).
+
+        Mirrors upload(): returns (storage_path, generated_filename, size_bytes)
+        and enforces the same size ceiling.
+        """
+        max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        if len(data) > max_bytes:
+            raise FileTooLargeError(
+                f"File exceeds the {settings.MAX_UPLOAD_SIZE_MB} MB limit"
+            )
+        user_dir = self._get_user_dir(user_id)
+        generated_name = f"{uuid.uuid4().hex}{ext}"
+        file_path = user_dir / generated_name
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(data)
+        return f"{user_id}/{generated_name}", generated_name, len(data)
+
+    async def read_bytes(self, storage_path: str) -> bytes:
+        """Read a stored blob into memory (used by the .oblix exporter)."""
+        full_path = self.base_dir / storage_path
+        async with aiofiles.open(full_path, "rb") as f:
+            return await f.read()
+
     async def download_path(self, storage_path: str) -> Path:
         """Resolve storage_path to absolute filesystem path."""
         full_path = self.base_dir / storage_path

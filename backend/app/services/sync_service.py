@@ -1,7 +1,9 @@
 import uuid
+import json
+import base64
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import select, delete, inspect as sa_inspect
+from sqlalchemy import select, delete, and_, or_, inspect as sa_inspect
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
@@ -44,6 +46,23 @@ def _parse_ts(value: Optional[str]) -> Optional[datetime]:
     return dt
 
 
+def _encode_cursor(ts_iso: str, entity_id: str) -> str:
+    """Opaque pagination cursor pointing at the last returned (updated_at, id)."""
+    return base64.urlsafe_b64encode(
+        json.dumps({"t": ts_iso, "i": entity_id}).encode()
+    ).decode()
+
+
+def _decode_cursor(cursor: str):
+    """Decode a cursor to (datetime, uuid), or None if it's malformed (then the
+    read simply falls back to the `since` floor rather than erroring)."""
+    try:
+        d = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+        return _parse_ts(d["t"]), uuid.UUID(d["i"])
+    except Exception:
+        return None
+
+
 class SyncService:
 
     async def push_changes(
@@ -82,13 +101,14 @@ class SyncService:
                     "reason": r.get("reason", "Conflict"),
                 })
                 continue
-            except Exception as e:  # noqa: BLE001 - report per-change failure, keep going
+            except Exception:  # noqa: BLE001 - report per-change failure, keep going
+                # Don't leak internal error text (SQL/driver detail) to clients.
                 conflicts.append({
                     "entity_type": change.entity_type,
                     "entity_id": change.entity_id,
                     "server_data": {},
                     "client_data": change.data,
-                    "reason": str(e),
+                    "reason": "Failed to apply change",
                 })
                 continue
 
@@ -122,18 +142,29 @@ class SyncService:
         user: User,
         since: Optional[str] = None,
         entity_types: Optional[list[str]] = None,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
     ) -> dict:
-        """Return all changes since a given timestamp.
+        """Return changes since a given timestamp.
 
         server_time is captured BEFORE reading rows so the client can safely use
         it as the next cursor without a race window dropping concurrent writes.
+
+        Pagination is opt-in: without `limit` this returns every change (the
+        original behaviour). With `limit` it returns at most that many changes
+        plus `has_more`/`next_cursor`, so a first sync of a large account can be
+        pulled in bounded pages instead of one giant response.
         """
         server_time = datetime.now(timezone.utc).isoformat()
-        changes = await self._get_changes_since(db, user, since, entity_types)
-        return {
-            "changes": changes,
-            "server_time": server_time,
-        }
+        if limit is None:
+            changes = await self._get_changes_since(db, user, since, entity_types)
+            return {"changes": changes, "server_time": server_time,
+                    "has_more": False, "next_cursor": None}
+        changes, has_more, next_cursor = await self._get_changes_page(
+            db, user, since, entity_types, limit, cursor
+        )
+        return {"changes": changes, "server_time": server_time,
+                "has_more": has_more, "next_cursor": next_cursor}
 
     async def _apply_change(self, db: AsyncSession, user: User, change: SyncChangeItem) -> dict:
         """Apply a single sync change. Returns conflict info if applicable."""
@@ -161,17 +192,28 @@ class SyncService:
                         "reason": "Note already exists on server"}
             if existing and existing.is_deleted:
                 # Resurrect the soft-deleted row instead of inserting a duplicate PK.
-                self._apply_note_fields(existing, client_data)
+                await self._apply_note_fields(db, user, existing, client_data)
                 await self._apply_note_tags(db, user, existing, client_data)
                 existing.is_deleted = False
                 existing.deleted_at = None
-                existing.updated_at = datetime.now(timezone.utc)
+                now = datetime.now(timezone.utc)
+                existing.edited_at = client_ts or now
+                existing.updated_at = now
                 return {}
             note = Note(
                 id=uuid.UUID(entity_id),
                 user_id=user.id,
             )
-            self._apply_note_fields(note, client_data)
+            await self._apply_note_fields(db, user, note, client_data)
+            # Preserve the note's real creation time (it was created offline on
+            # the client); otherwise func.now() stamps it with the sync time and
+            # the note shows "created today" on every other device. Stamp
+            # updated_at on the server clock so it lines up with the sync cursor.
+            created = _parse_ts(client_data.get("created_at"))
+            if created is not None:
+                note.created_at = created
+            note.updated_at = datetime.now(timezone.utc)
+            note.edited_at = client_ts or created or note.updated_at
             db.add(note)
             await self._apply_note_tags(db, user, note, client_data)
             return {}
@@ -179,13 +221,19 @@ class SyncService:
         elif change.action == "update":
             if not existing or existing.is_deleted:
                 return {"conflict": True, "reason": "Note not found on server"}
-            if client_ts is not None and existing.updated_at > client_ts:
-                # Server has a strictly newer version → last-write-wins keeps server.
+            # Last-write-wins by EDIT time, not server apply time: compare the
+            # incoming edit against the last recorded edit (edited_at), falling
+            # back to updated_at for rows that predate edited_at. Otherwise a
+            # note that merely synced later could beat one edited more recently.
+            basis = existing.edited_at or existing.updated_at
+            if client_ts is not None and basis is not None and basis > client_ts:
                 return {"conflict": True, "server_data": self._note_to_dict(existing),
                         "reason": "Server version is newer"}
-            self._apply_note_fields(existing, client_data)
+            await self._apply_note_fields(db, user, existing, client_data)
             await self._apply_note_tags(db, user, existing, client_data)
-            existing.updated_at = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            existing.edited_at = client_ts or now
+            existing.updated_at = now
             return {}
 
         elif change.action == "delete":
@@ -199,16 +247,35 @@ class SyncService:
         return {"conflict": True, "reason": f"Unknown action: {change.action}"}
 
     @staticmethod
-    def _apply_note_fields(note: Note, client_data: dict) -> None:
+    async def _owned_notebook_id(db: AsyncSession, user: User, raw) -> Optional[uuid.UUID]:
+        """Coerce a client-supplied notebook/parent id to a UUID the user owns.
+
+        Sync push bypasses REST validation, so a hostile or buggy client can
+        send another user's notebook id, a random UUID, or garbage. Any of
+        those degrade to None (unfiled / top level) instead of failing the
+        change or creating a cross-tenant reference. Deliberately does NOT
+        filter is_deleted: a tombstoned notebook may be resurrected by another
+        device later in the same batch or a later sync.
+        """
+        if not raw:
+            return None
+        try:
+            nb_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            return None
+        owned = (await db.execute(
+            select(Notebook.id).where(Notebook.id == nb_id, Notebook.user_id == user.id)
+        )).scalar_one_or_none()
+        return owned
+
+    async def _apply_note_fields(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
         for key in ("title", "content", "is_pinned", "is_archived"):
             if key in client_data:
                 setattr(note, key, client_data[key])
         if "content_type" in client_data:
             note.content_type = _coerce_content_type(client_data["content_type"])
         if "notebook_id" in client_data:
-            note.notebook_id = (
-                uuid.UUID(client_data["notebook_id"]) if client_data["notebook_id"] else None
-            )
+            note.notebook_id = await self._owned_notebook_id(db, user, client_data["notebook_id"])
 
     async def _apply_note_tags(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
         """Replace a note's tag links with the names the client sent.
@@ -279,11 +346,17 @@ class SyncService:
                 existing.deleted_at = None
             target = existing or Notebook(id=uuid.UUID(entity_id), user_id=user.id)
             target.name = client_data.get("name", "New Notebook")
-            target.parent_id = uuid.UUID(client_data["parent_id"]) if client_data.get("parent_id") else None
+            parent_id = await self._owned_notebook_id(db, user, client_data.get("parent_id"))
+            if parent_id == target.id:
+                parent_id = None  # a notebook can't be its own parent
+            target.parent_id = parent_id
             if "sort_order" in client_data:
                 target.sort_order = client_data["sort_order"]
             target.updated_at = datetime.now(timezone.utc)
             if existing is None:
+                created = _parse_ts(client_data.get("created_at"))
+                if created is not None:
+                    target.created_at = created
                 db.add(target)
             return {}
 
@@ -296,7 +369,10 @@ class SyncService:
                 if key in client_data:
                     setattr(existing, key, client_data[key])
             if "parent_id" in client_data:
-                existing.parent_id = uuid.UUID(client_data["parent_id"]) if client_data["parent_id"] else None
+                parent_id = await self._owned_notebook_id(db, user, client_data["parent_id"])
+                if parent_id == existing.id:
+                    parent_id = None  # a notebook can't be its own parent
+                existing.parent_id = parent_id
             existing.updated_at = datetime.now(timezone.utc)
             return {}
 
@@ -321,7 +397,12 @@ class SyncService:
                     existing.deleted_at = None
                 existing.updated_at = datetime.now(timezone.utc)
                 return {}
-            db.add(Tag(id=uuid.UUID(entity_id), user_id=user.id, name=client_data.get("name", "New Tag")))
+            tag = Tag(id=uuid.UUID(entity_id), user_id=user.id, name=client_data.get("name", "New Tag"))
+            created = _parse_ts(client_data.get("created_at"))
+            if created is not None:
+                tag.created_at = created
+            tag.updated_at = datetime.now(timezone.utc)
+            db.add(tag)
             return {}
 
         elif change.action == "update":
@@ -349,8 +430,23 @@ class SyncService:
 
         if change.action == "update":
             if existing and "note_id" in client_data:
-                existing.note_id = uuid.UUID(client_data["note_id"]) if client_data["note_id"] else None
-                existing.updated_at = datetime.now(timezone.utc)
+                raw = client_data["note_id"]
+                if not raw:
+                    existing.note_id = None
+                    existing.updated_at = datetime.now(timezone.utc)
+                else:
+                    try:
+                        target_note_id = uuid.UUID(str(raw))
+                    except (ValueError, TypeError):
+                        return {}
+                    # Only relink to a note the caller actually owns; ignore
+                    # foreign/unknown note ids rather than creating a dangling ref.
+                    owned = (await db.execute(
+                        select(Note.id).where(Note.id == target_note_id, Note.user_id == user.id)
+                    )).scalar_one_or_none()
+                    if owned:
+                        existing.note_id = target_note_id
+                        existing.updated_at = datetime.now(timezone.utc)
             return {}
 
         elif change.action == "delete":
@@ -361,6 +457,82 @@ class SyncService:
             return {}
 
         return {}
+
+    # ---- change-dict builders (shared by the full and paginated readers) ----
+
+    def _note_change(self, note: Note) -> dict:
+        return {
+            "entity_type": "note",
+            "entity_id": str(note.id),
+            "action": "delete" if note.is_deleted else "update",
+            "data": self._note_to_dict(note),
+            "timestamp": note.updated_at.isoformat(),
+        }
+
+    @staticmethod
+    def _notebook_change(nb: Notebook) -> dict:
+        return {
+            "entity_type": "notebook",
+            "entity_id": str(nb.id),
+            "action": "delete" if nb.is_deleted else "update",
+            "data": {
+                "id": str(nb.id),
+                "user_id": str(nb.user_id),
+                "name": nb.name,
+                "parent_id": str(nb.parent_id) if nb.parent_id else None,
+                "sort_order": nb.sort_order,
+                "is_deleted": nb.is_deleted,
+                "created_at": nb.created_at.isoformat(),
+                "updated_at": nb.updated_at.isoformat(),
+            },
+            "timestamp": nb.updated_at.isoformat(),
+        }
+
+    @staticmethod
+    def _tag_change(tag: Tag) -> dict:
+        return {
+            "entity_type": "tag",
+            "entity_id": str(tag.id),
+            "action": "delete" if tag.is_deleted else "update",
+            "data": {
+                "id": str(tag.id),
+                "user_id": str(tag.user_id),
+                "name": tag.name,
+                "is_deleted": tag.is_deleted,
+                "created_at": tag.created_at.isoformat(),
+                "updated_at": tag.updated_at.isoformat(),
+            },
+            "timestamp": tag.updated_at.isoformat(),
+        }
+
+    @staticmethod
+    def _file_change(f: File) -> dict:
+        return {
+            "entity_type": "file",
+            "entity_id": str(f.id),
+            "action": "delete" if f.is_deleted else "update",
+            "data": {
+                "id": str(f.id),
+                "filename": f.filename,
+                "original_name": f.original_name,
+                "mime_type": f.mime_type,
+                "size_bytes": f.size_bytes,
+                "note_id": str(f.note_id) if f.note_id else None,
+                "is_deleted": f.is_deleted,
+                "updated_at": f.updated_at.isoformat(),
+            },
+            "timestamp": f.updated_at.isoformat(),
+        }
+
+    def _type_specs(self, target_types):
+        """(name, model, change-builder, query-options) for the requested types."""
+        specs = [
+            ("note", Note, self._note_change, (selectinload(Note.tags).selectinload(NoteTag.tag),)),
+            ("notebook", Notebook, self._notebook_change, ()),
+            ("tag", Tag, self._tag_change, ()),
+            ("file", File, self._file_change, ()),
+        ]
+        return [s for s in specs if s[0] in target_types]
 
     async def _get_changes_since(
         self, db: AsyncSession, user: User, since: Optional[str] = None,
@@ -376,94 +548,54 @@ class SyncService:
         target_types = entity_types or ["note", "notebook", "tag", "file"]
         since_dt = _parse_ts(since)
 
-        # Notes (tags eagerly loaded so _note_to_dict can include them safely)
-        if "note" in target_types:
-            note_query = select(Note).where(Note.user_id == user.id).options(
-                selectinload(Note.tags).selectinload(NoteTag.tag)
-            )
+        for _name, model, builder, opts in self._type_specs(target_types):
+            q = select(model).where(model.user_id == user.id)
+            for opt in opts:
+                q = q.options(opt)
             if since_dt is not None:
-                note_query = note_query.where(Note.updated_at >= since_dt)
-            note_result = await db.execute(note_query)
-            for note in note_result.scalars().unique().all():
-                changes.append({
-                    "entity_type": "note",
-                    "entity_id": str(note.id),
-                    "action": "delete" if note.is_deleted else "update",
-                    "data": self._note_to_dict(note),
-                    "timestamp": note.updated_at.isoformat(),
-                })
-
-        # Notebooks
-        if "notebook" in target_types:
-            nb_query = select(Notebook).where(Notebook.user_id == user.id)
-            if since_dt is not None:
-                nb_query = nb_query.where(Notebook.updated_at >= since_dt)
-            nb_result = await db.execute(nb_query)
-            for nb in nb_result.scalars().all():
-                changes.append({
-                    "entity_type": "notebook",
-                    "entity_id": str(nb.id),
-                    "action": "delete" if nb.is_deleted else "update",
-                    "data": {
-                        "id": str(nb.id),
-                        "user_id": str(nb.user_id),
-                        "name": nb.name,
-                        "parent_id": str(nb.parent_id) if nb.parent_id else None,
-                        "sort_order": nb.sort_order,
-                        "is_deleted": nb.is_deleted,
-                        "created_at": nb.created_at.isoformat(),
-                        "updated_at": nb.updated_at.isoformat(),
-                    },
-                    "timestamp": nb.updated_at.isoformat(),
-                })
-
-        # Tags
-        if "tag" in target_types:
-            tag_query = select(Tag).where(Tag.user_id == user.id)
-            if since_dt is not None:
-                tag_query = tag_query.where(Tag.updated_at >= since_dt)
-            tag_result = await db.execute(tag_query)
-            for tag in tag_result.scalars().all():
-                changes.append({
-                    "entity_type": "tag",
-                    "entity_id": str(tag.id),
-                    "action": "delete" if tag.is_deleted else "update",
-                    "data": {
-                        "id": str(tag.id),
-                        "user_id": str(tag.user_id),
-                        "name": tag.name,
-                        "is_deleted": tag.is_deleted,
-                        "created_at": tag.created_at.isoformat(),
-                        "updated_at": tag.updated_at.isoformat(),
-                    },
-                    "timestamp": tag.updated_at.isoformat(),
-                })
-
-        # Files
-        if "file" in target_types:
-            file_query = select(File).where(File.user_id == user.id)
-            if since_dt is not None:
-                file_query = file_query.where(File.updated_at >= since_dt)
-            file_result = await db.execute(file_query)
-            for f in file_result.scalars().all():
-                changes.append({
-                    "entity_type": "file",
-                    "entity_id": str(f.id),
-                    "action": "delete" if f.is_deleted else "update",
-                    "data": {
-                        "id": str(f.id),
-                        "filename": f.filename,
-                        "original_name": f.original_name,
-                        "mime_type": f.mime_type,
-                        "size_bytes": f.size_bytes,
-                        "note_id": str(f.note_id) if f.note_id else None,
-                        "is_deleted": f.is_deleted,
-                        "updated_at": f.updated_at.isoformat(),
-                    },
-                    "timestamp": f.updated_at.isoformat(),
-                })
+                q = q.where(model.updated_at >= since_dt)
+            for row in (await db.execute(q)).scalars().unique().all():
+                changes.append(builder(row))
 
         return changes
+
+    async def _get_changes_page(
+        self, db: AsyncSession, user: User, since: Optional[str],
+        entity_types: Optional[list[str]], limit: int, cursor: Optional[str],
+    ) -> tuple[list[dict], bool, Optional[str]]:
+        """Paginated read: at most `limit` changes ordered by (updated_at, id),
+        plus has_more and an opaque next_cursor. Each per-type query is capped so
+        one huge table can't pull an unbounded result set into memory."""
+        target_types = entity_types or ["note", "notebook", "tag", "file"]
+        since_dt = _parse_ts(since)
+        cur = _decode_cursor(cursor) if cursor else None
+
+        merged: list[tuple] = []  # (updated_at, entity_uuid, change_dict)
+        for _name, model, builder, opts in self._type_specs(target_types):
+            q = select(model).where(model.user_id == user.id)
+            for opt in opts:
+                q = q.options(opt)
+            if cur is not None:
+                cdt, cid = cur
+                # Strictly after the cursor position in (updated_at, id) order.
+                q = q.where(or_(model.updated_at > cdt,
+                                and_(model.updated_at == cdt, model.id > cid)))
+            elif since_dt is not None:
+                q = q.where(model.updated_at >= since_dt)
+            q = q.order_by(model.updated_at.asc(), model.id.asc()).limit(limit + 1)
+            for row in (await db.execute(q)).scalars().unique().all():
+                merged.append((row.updated_at, row.id, builder(row)))
+
+        # Global order across all types; uuid sorts by int, matching the DB's
+        # ordering of the id column, so the cursor and this slice agree.
+        merged.sort(key=lambda t: (t[0], t[1]))
+        page = merged[:limit]
+        has_more = len(merged) > limit
+        next_cursor = None
+        if has_more and page:
+            last_dt, last_id, _ = page[-1]
+            next_cursor = _encode_cursor(last_dt.isoformat(), str(last_id))
+        return [c for _, _, c in page], has_more, next_cursor
 
     @staticmethod
     async def _get_one(db: AsyncSession, model, user: User, entity_id: str):
@@ -509,7 +641,9 @@ class SyncService:
             return []
         names: list[dict] = []
         for nt in note.tags:
-            if "tag" not in sa_inspect(nt).unloaded and nt.tag is not None:
+            # Skip tombstoned tags: a deleted tag's name must not resurface on
+            # other devices through the note payloads in a sync pull.
+            if "tag" not in sa_inspect(nt).unloaded and nt.tag is not None and not nt.tag.is_deleted:
                 names.append({"name": nt.tag.name})
         return names
 

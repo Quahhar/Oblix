@@ -67,8 +67,12 @@ async def delete_tag(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    try:
+        tag_uuid = uuid.UUID(tag_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
     result = await db.execute(
-        select(Tag).where(Tag.id == tag_id, Tag.user_id == current_user.id)
+        select(Tag).where(Tag.id == tag_uuid, Tag.user_id == current_user.id)
     )
     tag = result.scalar_one_or_none()
     if not tag or tag.is_deleted:

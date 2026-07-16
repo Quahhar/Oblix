@@ -34,6 +34,16 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+    device_id: Optional[str] = Field(default=None, max_length=255)
+
+
+class ProfileUpdate(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+
+
 class UserResponse(BaseModel):
     id: str
     email: str

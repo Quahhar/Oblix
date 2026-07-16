@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from app.database import get_db
@@ -24,9 +24,13 @@ async def push_changes(
 async def pull_changes(
     since: Optional[str] = None,
     entity_types: Optional[str] = None,
+    limit: Optional[int] = Query(None, ge=1, le=1000),
+    cursor: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Pagination is opt-in: omit `limit` for the original "everything" response;
+    # pass `limit` (and the returned `next_cursor`) to page a large first sync.
     types_list = entity_types.split(",") if entity_types else None
-    result = await sync_service.pull_changes(db, current_user, since, types_list)
+    result = await sync_service.pull_changes(db, current_user, since, types_list, limit, cursor)
     return result

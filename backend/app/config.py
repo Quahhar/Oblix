@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     ALGORITHM: str = "HS256"
+    # Grace window for refresh-token rotation: if a just-rotated token is
+    # replayed within this many seconds AND its successor is still unused, treat
+    # it as a benign client retry (a lost rotation response) and re-hand the
+    # successor tokens, instead of assuming theft and logging the user out of
+    # every device. Real reuse (stale replay, or a successor already rotated on)
+    # still revokes the whole family.
+    REFRESH_REUSE_GRACE_SECONDS: int = 60
 
     # Google OAuth
     GOOGLE_CLIENT_ID: Optional[str] = None
@@ -38,9 +45,17 @@ class Settings(BaseSettings):
     # File Storage
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
+    # An .enex/.oblix import bundles many notes+attachments, so it gets a larger
+    # ceiling than a single attachment. Also caps the total *uncompressed* size
+    # of an .oblix archive, to defuse zip bombs.
+    MAX_IMPORT_SIZE_MB: int = 200
 
     # CORS
     CORS_ORIGINS: list[str] = ["*"]
+
+    # Auth rate limiting (in-process sliding window; see app/utils/rate_limit.py).
+    # Disable for load tests / multi-worker deployments where it can't be fair.
+    RATE_LIMIT_ENABLED: bool = True
 
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> "Settings":

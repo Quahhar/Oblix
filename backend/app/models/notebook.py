@@ -21,9 +21,15 @@ class Notebook(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="notebooks")
-    notes: Mapped[list["Note"]] = relationship("Note", back_populates="notebook", lazy="selectin")
+    # notes/children are deliberately NOT eager-loaded. They used to be
+    # lazy="selectin", which auto-loaded every note in a notebook (and,
+    # recursively, every child notebook) on ANY notebook query — even though
+    # list_notebooks builds the whole tree from one flat SELECT and never walks
+    # these relationships. lazy="raise" turns any accidental access into a loud
+    # error instead of a silent fan-out of extra queries.
+    notes: Mapped[list["Note"]] = relationship("Note", back_populates="notebook", lazy="raise")
     parent: Mapped["Notebook | None"] = relationship("Notebook", remote_side="Notebook.id", back_populates="children")
-    children: Mapped[list["Notebook"]] = relationship("Notebook", back_populates="parent", lazy="selectin", cascade="all, delete-orphan")
+    children: Mapped[list["Notebook"]] = relationship("Notebook", back_populates="parent", lazy="raise", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Notebook {self.name}>"

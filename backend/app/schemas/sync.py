@@ -41,3 +41,7 @@ class SyncPullRequest(BaseModel):
 class SyncPullResponse(BaseModel):
     changes: list[dict]
     server_time: str  # Current server timestamp for next sync
+    # Pagination (only meaningful when the client passed `limit`). Older clients
+    # ignore these; `has_more`=False and `next_cursor`=None on an unpaginated pull.
+    has_more: bool = False
+    next_cursor: Optional[str] = None
