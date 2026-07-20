@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import '../../core/auth/profile_cache.dart';
 import '../screens/home_timeline_screen.dart';
 import '../screens/notebooks_screen.dart';
+import '../screens/settings_screen.dart';
 import '../screens/tasks_screen.dart';
 import '../sheets/capture_sheet.dart';
 import '../theme/oblix_theme.dart';
+import '../widgets/paper.dart';
 
 /// The signed-in shell: Notes / Books / + / Tasks. The center "+" is not a
 /// tab — it opens the capture sheet over whatever is showing.
@@ -72,8 +74,53 @@ class _HomeShellState extends State<HomeShell> {
                   selected: _tab == 2,
                   onTap: () => setState(() => _tab = 2),
                 ),
+                _ProfileNavItem(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ),
+                ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Profile entry in the nav bar: the account avatar (not a tab) — tapping it
+/// opens Settings, mirroring the other nav items' shape/label.
+class _ProfileNavItem extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ProfileNavItem({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = OblixColors.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: 64,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<String?>(
+                valueListenable: ProfileCache.instance.name,
+                builder: (context, name, _) =>
+                    OblixAvatar(name: name, size: 22),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Profile',
+                style: OblixType.ui(c,
+                    size: 10, weight: FontWeight.w400, color: c.inkFaint),
+              ),
+            ],
           ),
         ),
       ),

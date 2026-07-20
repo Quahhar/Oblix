@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/app_bootstrap.dart';
-import '../../core/auth/profile_cache.dart';
 import '../../data/models/note.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
@@ -95,15 +94,13 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                       children: [
                         Text(Formats.dateEyebrow(DateTime.now()),
                             style: OblixType.eyebrow(c)),
-                        ValueListenableBuilder<String?>(
-                          valueListenable: ProfileCache.instance.name,
-                          builder: (context, name, _) => OblixAvatar(
-                            name: name,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const SettingsScreen()),
-                            ),
+                        IconButton(
+                          icon: Icon(Icons.settings_outlined,
+                              size: 22, color: c.inkMuted),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const SettingsScreen()),
                           ),
                         ),
                       ],
