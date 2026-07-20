@@ -11,8 +11,8 @@ class AuthRepository {
   final MetaDao _meta;
 
   AuthRepository({AuthRemoteDataSource? remote, MetaDao? meta})
-      : _remote = remote ?? AuthRemoteDataSource(),
-        _meta = meta ?? MetaDao(AppDatabase.instance);
+    : _remote = remote ?? AuthRemoteDataSource(),
+      _meta = meta ?? MetaDao(AppDatabase.instance);
 
   /// Whether the user is currently authenticated (has stored tokens).
   Future<bool> get isAuthenticated async {
@@ -66,27 +66,51 @@ class AuthRepository {
         // Ignore — the token may already be invalid or we're offline.
       }
     }
-    await SecureStorage.clearTokens();
-    await _meta.clearUserScopedData();
+    // Always clear local state.  If the DB or secure storage throws we still
+    // mark signed-out so the UI doesn't get stuck on the wrong route.
+    await _clearLocalSession();
     AuthState.instance.markSignedOut();
+  }
+
+  /// Best-effort local cleanup.  Failures are swallowed so that the caller
+  /// (logout or _onAuthenticated) can always flip [AuthState] afterwards.
+  Future<void> _clearLocalSession() async {
+    try {
+      await SecureStorage.clearTokens();
+    } catch (_) {}
+    try {
+      await _meta.clearUserScopedData();
+    } catch (_) {}
   }
 
   Future<void> _onAuthenticated(Map<String, dynamic> tokens) async {
     final accessToken = tokens['access_token'] as String;
+    // 1) Always blow away any stale tokens from a previous session first, and
+    //    clear user-scoped data if the incoming user differs from the cached
+    //    one (or if there's no cached id — a previous broken logout may have
+    //    left partial state).  This is intentionally done *before* saving the
+    //    new tokens so the interceptor never picks up a stale token while the
+    //    database still contains the old user's data.
+    final userId = _subFromJwt(accessToken);
+
+    // 2) Defensive: if a prior logout crashed, stale user data may remain.
+    //    Always clean up the old session's local data before writing the new
+    //    user's id so they don't see leftover notes/notebooks.
+    final cachedId = await _meta.getUserId();
+    if (cachedId != null && cachedId != userId && userId != null) {
+      await _clearLocalSession();
+    } else if (cachedId == null) {
+      // Never had a user id (fresh install) or a previous logout left token
+      // cleanup but not data cleanup.  Wipe again just to be safe.
+      await _clearLocalSession();
+    }
+
+    // 3) Save tokens and user id.
     await SecureStorage.saveTokens(
       accessToken: accessToken,
       refreshToken: tokens['refresh_token'] as String,
     );
-    // Cache the user id so notes can be created offline with a real owner id.
-    final userId = _subFromJwt(accessToken);
     if (userId != null) {
-      // A different account signed in on this install (e.g. after a session
-      // expiry kept the previous user's local data): never let one user see
-      // another's notes.
-      final cached = await _meta.getUserId();
-      if (cached != null && cached != userId) {
-        await _meta.clearUserScopedData();
-      }
       await _meta.setUserId(userId);
     }
     AuthState.instance.markSignedIn();
@@ -100,8 +124,9 @@ class AuthRepository {
       if (parts.length != 3) return null;
       var payload = parts[1].replaceAll('-', '+').replaceAll('_', '/');
       payload = payload.padRight((payload.length + 3) & ~3, '=');
-      final map = jsonDecode(utf8.decode(base64.decode(payload)))
-          as Map<String, dynamic>;
+      final map =
+          jsonDecode(utf8.decode(base64.decode(payload)))
+              as Map<String, dynamic>;
       return map['sub'] as String?;
     } catch (_) {
       return null;

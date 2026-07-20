@@ -1,8 +1,10 @@
 import 'package:flutter/widgets.dart';
 import '../data/repositories/auth_repository.dart';
 import '../domain/services/sync_scheduler.dart';
+import '../ui/theme/theme_controller.dart';
 import 'auth/auth_state.dart';
 import 'db/app_database.dart';
+import 'db/db_platform_init.dart';
 import 'db/meta_dao.dart';
 
 /// Wires up the app's logic layer before the UI runs: opens the local database,
@@ -17,9 +19,13 @@ class AppBootstrap {
   static Future<void> init() async {
     WidgetsFlutterBinding.ensureInitialized();
 
+    // Desktop platforms need the FFI SQLite backend before any openDatabase.
+    initDatabasePlatform();
+
     // Open/create the database and ensure a device id exists.
     await AppDatabase.instance.database;
     await MetaDao(AppDatabase.instance).getOrCreateDeviceId();
+    await ThemeController.instance.load();
 
     AuthState.instance.status.addListener(_onAuthChanged);
     // Leaving `unknown` always changes the value, so the listener fires and

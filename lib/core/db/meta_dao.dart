@@ -78,6 +78,21 @@ class MetaDao {
   Future<void> setUserId(String userId) async =>
       _set(await _appDb.database, _kUserId, userId);
 
+  // --- Free-form settings (appearance, cached profile, …) ---
+  //
+  // Device-scoped preferences survive logout; user-scoped keys must be listed
+  // in clearUserScopedData below.
+
+  Future<String?> getSetting(String key) async =>
+      _get(await _appDb.database, key);
+
+  Future<void> setSetting(String key, String? value) async =>
+      _set(await _appDb.database, key, value);
+
+  /// Cached profile (shown offline in Settings / the home avatar).
+  static const kProfileName = 'profile_name';
+  static const kProfileEmail = 'profile_email';
+
   Future<void> clearUserScopedData() async {
     // On logout: forget the sync cursor and user id, and drop all local entities
     // + the outbox so the next user doesn't see this user's data. The device id
@@ -87,9 +102,11 @@ class MetaDao {
       await txn.delete('notes');
       await txn.delete('notebooks');
       await txn.delete('tags');
+      await txn.delete('tasks');
+      await txn.delete('attachments');
       await txn.delete('outbox');
-      await txn.delete('meta', where: 'key IN (?, ?)',
-          whereArgs: [_kCursor, _kUserId]);
+      await txn.delete('meta', where: 'key IN (?, ?, ?, ?)',
+          whereArgs: [_kCursor, _kUserId, kProfileName, kProfileEmail]);
     });
   }
 }

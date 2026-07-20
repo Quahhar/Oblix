@@ -24,7 +24,7 @@ class AppDatabase {
       AppDatabase._(dbFactory: dbFactory, path: path);
 
   static const _dbName = 'oblix.db';
-  static const _dbVersion = 4;
+  static const _dbVersion = 5;
 
   final DatabaseFactory? _dbFactory;
   final String? _pathOverride;
@@ -98,6 +98,7 @@ class AppDatabase {
     await _createOutbox(db);
     await _createMeta(db);
     await _createAttachments(db);
+    await _createTasks(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -119,6 +120,10 @@ class AppDatabase {
     // v3 -> v4: local attachments mirror + upload state.
     if (oldVersion < 4) {
       await _createAttachments(db);
+    }
+    // v4 -> v5: tasks (synced like notes, entity_type 'task').
+    if (oldVersion < 5) {
+      await _createTasks(db);
     }
   }
 
@@ -236,6 +241,29 @@ class AppDatabase {
     await db.execute(
       'CREATE UNIQUE INDEX idx_attachments_remote ON attachments(remote_id) '
       'WHERE remote_id IS NOT NULL',
+    );
+  }
+
+  Future<void> _createTasks(Database db) async {
+    await db.execute('''
+      CREATE TABLE tasks (
+        id            TEXT PRIMARY KEY,
+        user_id       TEXT NOT NULL,
+        note_id       TEXT,
+        title         TEXT NOT NULL DEFAULT 'Untitled task',
+        description   TEXT NOT NULL DEFAULT '',
+        is_completed  INTEGER NOT NULL DEFAULT 0,
+        completed_at  TEXT,
+        due_date      TEXT,
+        sort_order    INTEGER NOT NULL DEFAULT 0,
+        is_deleted    INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_tasks_due ON tasks(due_date)');
+    await db.execute(
+      'CREATE INDEX idx_tasks_state ON tasks(is_deleted, is_completed)',
     );
   }
 

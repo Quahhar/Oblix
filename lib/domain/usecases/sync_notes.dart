@@ -8,6 +8,7 @@ import '../../data/datasources/local/note_local_datasource.dart';
 import '../../data/datasources/local/notebook_local_datasource.dart';
 import '../../data/datasources/local/outbox_dao.dart';
 import '../../data/datasources/local/tag_local_datasource.dart';
+import '../../data/datasources/local/task_local_datasource.dart';
 import '../../data/datasources/remote/sync_remote_datasource.dart';
 import '../../data/models/sync_payload.dart';
 import '../../data/repositories/sync_repository.dart';
@@ -29,6 +30,7 @@ class SyncEngine {
   final NoteLocalDataSource _notes;
   final NotebookLocalDataSource _notebooks;
   final TagLocalDataSource _tags;
+  final TaskLocalDataSource _tasks;
   final AttachmentLocalDataSource _attachments;
   final MetaDao _meta;
   final Uuid _uuid;
@@ -45,6 +47,7 @@ class SyncEngine {
     NoteLocalDataSource? notes,
     NotebookLocalDataSource? notebooks,
     TagLocalDataSource? tags,
+    TaskLocalDataSource? tasks,
     AttachmentLocalDataSource? attachments,
     MetaDao? meta,
     Uuid? uuid,
@@ -57,6 +60,7 @@ class SyncEngine {
         _notebooks = notebooks ??
             NotebookLocalDataSource(appDb ?? AppDatabase.instance),
         _tags = tags ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
+        _tasks = tasks ?? TaskLocalDataSource(appDb ?? AppDatabase.instance),
         _attachments = attachments ??
             AttachmentLocalDataSource(appDb ?? AppDatabase.instance),
         _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
@@ -122,6 +126,7 @@ class SyncEngine {
       final serverNotebooks =
           SyncRepository.parseNotebookChanges(resp.serverChanges);
       final serverTags = SyncRepository.parseTagChanges(resp.serverChanges);
+      final serverTasks = SyncRepository.parseTaskChanges(resp.serverChanges);
       final serverFiles = SyncRepository.parseFileChanges(resp.serverChanges);
 
       // Entities the server explicitly decided on — applied or conflict-
@@ -150,6 +155,7 @@ class SyncEngine {
         await _notes.applyServerNotes(txn, serverNotes);
         await _notebooks.applyServerNotebooks(txn, serverNotebooks);
         await _tags.applyServerTags(txn, serverTags);
+        await _tasks.applyServerTasks(txn, serverTasks);
         await _attachments.applyServerFiles(
           txn,
           serverFiles,
@@ -175,6 +181,7 @@ class SyncEngine {
       final pulledThisRound = serverNotes.length +
           serverNotebooks.length +
           serverTags.length +
+          serverTasks.length +
           serverFiles.length;
       pulled += pulledThisRound;
       anythingChanged = anythingChanged ||
@@ -209,6 +216,7 @@ class SyncEngine {
       await _notes.purgeDeletedBefore(txn, cutoff);
       await _notebooks.purgeDeletedBefore(txn, cutoff);
       await _tags.purgeDeletedBefore(txn, cutoff);
+      await _tasks.purgeDeletedBefore(txn, cutoff);
     });
   }
 }

@@ -10,17 +10,22 @@ import '../../data/repositories/attachment_repository.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
 import '../../data/repositories/tag_repository.dart';
+import '../../data/repositories/task_repository.dart';
+import '../sheets/ai_actions_sheet.dart';
+import '../theme/oblix_theme.dart';
+import '../util/formats.dart';
+import '../widgets/paper.dart';
 
 /// Full-screen note editor with debounced autosave. A brand-new note is only
-/// created once something is typed (no empty notes from an accidental FAB
-/// tap); after that every pause persists locally and syncs in the background.
+/// created once something is typed (no empty notes from an accidental tap);
+/// after that every pause persists locally and syncs in the background.
 class NoteEditorScreen extends StatefulWidget {
   const NoteEditorScreen({super.key, this.noteId, this.initialNotebookId});
 
   /// Existing note to edit; null starts a new draft.
   final String? noteId;
 
-  /// Notebook a new note is filed into (the list's active filter).
+  /// Notebook a new note is filed into (e.g. created from a notebook screen).
   final String? initialNotebookId;
 
   @override
@@ -31,12 +36,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   final _repo = NoteRepository();
   final _notebooks = NotebookRepository();
   final _tags = TagRepository();
+  final _tasks = TaskRepository();
   final _attachmentRepo = AttachmentRepository();
 
   final _title = TextEditingController();
   final _content = TextEditingController();
 
   Note? _note;
+  String? _notebookName;
   List<Attachment> _attachments = const [];
   bool _loading = true;
   bool _dirty = false;
@@ -59,11 +66,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         _attachments = await _attachmentRepo.listForNote(note.id);
       }
     }
+    await _loadNotebookName();
     // Attach listeners only after the initial text is in, so loading a note
     // doesn't count as an edit.
     _title.addListener(_onEdited);
     _content.addListener(_onEdited);
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadNotebookName() async {
+    final id = _note?.notebookId ?? widget.initialNotebookId;
+    if (id == null) {
+      _notebookName = null;
+      return;
+    }
+    final books = await _notebooks.listNotebooks();
+    for (final b in books) {
+      if (b.id == id) {
+        _notebookName = b.name;
+        return;
+      }
+    }
+    _notebookName = null;
   }
 
   @override
@@ -80,7 +104,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void _onEdited() {
     _dirty = true;
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 600), _save);
+    _debounce = Timer(const Duration(milliseconds: 600), () async {
+      await _save();
+      if (mounted) setState(() {}); // refresh the meta line
+    });
   }
 
   Future<void> _save() async {
@@ -113,13 +140,15 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   /// Run [action] with autosave settled first, so it operates on the saved row.
-  Future<void> _withSavedNote(
-    Future<void> Function(Note note) action,
-  ) async {
+  Future<void> _withSavedNote(Future<void> Function(Note note) action) async {
     _debounce?.cancel();
     await _save();
     final note = _note;
-    if (note != null) await action(note);
+    if (note != null) {
+      await action(note);
+    } else if (mounted) {
+      _toast('Write something first');
+    }
   }
 
   Future<void> _togglePin() => _withSavedNote((note) async {
@@ -137,34 +166,65 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         if (mounted) Navigator.pop(context);
       });
 
+  Future<void> _share() => _withSavedNote((note) async {
+        final body = note.title.isEmpty || note.title == 'Untitled'
+            ? note.content
+            : '${note.title}\n\n${note.content}';
+        await SharePlus.instance.share(ShareParams(text: body));
+      });
+
+  Future<void> _aiActions() => _withSavedNote((note) async {
+        final summary = await showAiActionsSheet(context, note);
+        if (summary == null || summary.isEmpty) return;
+        // Insert the recap at the top of the body, leaving the original text.
+        _content.text = '$summary\n\n${_content.text}';
+        _onEdited();
+      });
+
+  /// Turn the current note into a task (the note's title seeds it).
+  Future<void> _createTask() => _withSavedNote((note) async {
+        await _tasks.createTask(
+          title: note.title == 'Untitled' ? 'Follow up' : note.title,
+          noteId: note.id,
+        );
+        if (mounted) _toast('Task added');
+      });
+
   Future<void> _moveToNotebook() => _withSavedNote((note) async {
         final notebooks = await _notebooks.listNotebooks();
         if (!mounted) return;
         final choice = await showModalBottomSheet<List<String?>>(
           context: context,
-          builder: (context) => SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.folder_off_outlined),
-                  title: const Text('No notebook'),
-                  selected: note.notebookId == null,
-                  onTap: () => Navigator.pop(context, [null]),
-                ),
-                for (final nb in notebooks)
+          builder: (context) {
+            final c = OblixColors.of(context);
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  const SheetGrabHandle(),
                   ListTile(
-                    leading: const Icon(Icons.folder_outlined),
-                    title: Text(nb.name),
-                    selected: nb.id == note.notebookId,
-                    onTap: () => Navigator.pop(context, [nb.id]),
+                    leading:
+                        Icon(Icons.folder_off_outlined, color: c.inkSecondary),
+                    title: Text('No notebook', style: OblixType.ui(c, size: 15)),
+                    selected: note.notebookId == null,
+                    onTap: () => Navigator.pop(context, [null]),
                   ),
-              ],
-            ),
-          ),
+                  for (final nb in notebooks)
+                    ListTile(
+                      leading: Icon(Icons.menu_book_outlined,
+                          color: c.inkSecondary),
+                      title: Text(nb.name, style: OblixType.ui(c, size: 15)),
+                      selected: nb.id == note.notebookId,
+                      onTap: () => Navigator.pop(context, [nb.id]),
+                    ),
+                ],
+              ),
+            );
+          },
         );
         if (choice != null) {
           _note = await _repo.moveToNotebook(note.id, choice.single);
+          await _loadNotebookName();
           if (mounted) setState(() {});
         }
       });
@@ -233,7 +293,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _editTags() => _withSavedNote((note) async {
@@ -271,8 +332,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           if (name.isNotEmpty && !names.contains(name)) names.add(name);
         }
         _note = await _repo.updateNote(note.id, tagNames: names);
-        // Make sure every name exists as a Tag entity so it shows up in the
-        // drawer immediately (the server would create it on sync anyway).
+        // Make sure every name exists as a Tag entity so it shows up on the
+        // Books tab immediately (the server would create it on sync anyway).
         final known = (await _tags.listTags()).map((t) => t.name).toSet();
         for (final name in names) {
           if (!known.contains(name)) await _tags.createTag(name);
@@ -280,122 +341,284 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         if (mounted) setState(() {});
       });
 
-  Widget _attachmentsStrip() {
-    return SizedBox(
-      height: 96,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: _attachments.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final a = _attachments[i];
-          return _AttachmentCard(
-            attachment: a,
-            onOpen: () => _openAttachment(a),
-            onRemove: () => _removeAttachment(a),
-          );
-        },
-      ),
-    );
+  String get _metaLine {
+    final note = _note;
+    final parts = <String>[
+      if (_notebookName != null) 'In $_notebookName',
+      if (note != null)
+        'Edited ${Formats.time(note.updatedAt)}'
+      else
+        'Not saved yet',
+      Formats.wordCount(_content.text),
+    ];
+    return parts.join(' · ');
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = OblixColors.of(context);
     final note = _note;
+    final pinned = note?.isPinned ?? false;
+
     return Scaffold(
-      appBar: AppBar(
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.attach_file),
-            tooltip: 'Attach file',
-            onPressed: _addAttachment,
-          ),
-          IconButton(
-            icon: Icon(
-              (note?.isPinned ?? false)
-                  ? Icons.push_pin
-                  : Icons.push_pin_outlined,
-            ),
-            tooltip: (note?.isPinned ?? false) ? 'Unpin' : 'Pin',
-            onPressed: _togglePin,
-          ),
-          PopupMenuButton<String>(
-            onSelected: (action) => switch (action) {
-              'move' => _moveToNotebook(),
-              'tags' => _editTags(),
-              'archive' => _toggleArchive(),
-              'delete' => _delete(),
-              _ => Future<void>.value(),
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'move', child: Text('Move to notebook')),
-              const PopupMenuItem(value: 'tags', child: Text('Edit tags')),
-              PopupMenuItem(
-                value: 'archive',
-                child: Text(
-                  (note?.isArchived ?? false) ? 'Unarchive' : 'Archive',
-                ),
-              ),
-              const PopupMenuItem(value: 'delete', child: Text('Delete')),
-            ],
-          ),
-        ],
-      ),
+      backgroundColor: c.surface,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: TextField(
-                    controller: _title,
-                    textInputAction: TextInputAction.next,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                    decoration: const InputDecoration(
-                      hintText: 'Title',
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-                if (note != null && note.tagNames.isNotEmpty)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Wrap(
-                        spacing: 4,
-                        children: [
-                          for (final tag in note.tagNames)
-                            Chip(
-                              label: Text(tag),
-                              visualDensity: VisualDensity.compact,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
+          : SafeArea(
+              child: Column(
+                children: [
+                  // Top bar: back pill (carrying the notebook name) + actions.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Row(
+                      children: [
+                        Material(
+                          color: c.bg,
+                          shape: StadiumBorder(
+                              side: BorderSide(color: c.hairline)),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => Navigator.pop(context),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.arrow_back_ios_new,
+                                      size: 12, color: c.ink),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _notebookName ?? 'Notes',
+                                    style: OblixType.ui(c,
+                                        size: 13, weight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
                             ),
+                          ),
+                        ),
+                        const Spacer(),
+                        CircleIconButton(
+                          pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          tooltip: pinned ? 'Unpin' : 'Pin',
+                          onTap: _togglePin,
+                        ),
+                        const SizedBox(width: 8),
+                        CircleIconButton(
+                          Icons.ios_share,
+                          tooltip: 'Share',
+                          onTap: _share,
+                        ),
+                        const SizedBox(width: 8),
+                        _OverflowButton(
+                          isArchived: note?.isArchived ?? false,
+                          onMove: _moveToNotebook,
+                          onTags: _editTags,
+                          onArchive: _toggleArchive,
+                          onDelete: _delete,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(24, 26, 24, 12),
+                      children: [
+                        TextField(
+                          controller: _title,
+                          textInputAction: TextInputAction.next,
+                          style: OblixType.editorTitle(c),
+                          decoration: InputDecoration(
+                            hintText: 'Title',
+                            hintStyle: OblixType.editorTitle(c)
+                                .copyWith(color: c.inkFaint),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(_metaLine, style: OblixType.meta(c)),
+                        if (note != null && note.tagNames.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final tag in note.tagNames)
+                                GestureDetector(
+                                  onTap: _editTags,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 9, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: c.accentSoft,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      '#$tag',
+                                      style: OblixType.ui(c,
+                                          size: 12,
+                                          weight: FontWeight.w600,
+                                          color: c.accentDeep),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ],
-                      ),
+                        if (_attachments.isNotEmpty) _attachmentsStrip(),
+                        const SizedBox(height: 18),
+                        TextField(
+                          controller: _content,
+                          maxLines: null,
+                          keyboardType: TextInputType.multiline,
+                          style: OblixType.noteBody(c),
+                          decoration: InputDecoration(
+                            hintText: 'Start writing…',
+                            hintStyle: OblixType.noteBody(c)
+                                .copyWith(color: c.inkFaint),
+                            border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                if (_attachments.isNotEmpty) _attachmentsStrip(),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextField(
-                      controller: _content,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      keyboardType: TextInputType.multiline,
-                      decoration: const InputDecoration(
-                        hintText: 'Start writing…',
-                        border: InputBorder.none,
-                      ),
+                  // Bottom toolbar.
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border(top: BorderSide(color: c.hairline)),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+                    child: Row(
+                      children: [
+                        _ToolbarButton(
+                          icon: Icons.attach_file,
+                          tooltip: 'Attach file',
+                          onTap: _addAttachment,
+                        ),
+                        const SizedBox(width: 22),
+                        _ToolbarButton(
+                          icon: Icons.check_circle_outline,
+                          tooltip: 'Make a task',
+                          onTap: _createTask,
+                        ),
+                        const SizedBox(width: 22),
+                        _ToolbarButton(
+                          icon: Icons.sell_outlined,
+                          tooltip: 'Edit tags',
+                          onTap: _editTags,
+                        ),
+                        const Spacer(),
+                        _ToolbarButton(
+                          icon: Icons.auto_awesome,
+                          tooltip: 'Ask Oblix',
+                          color: c.accent,
+                          onTap: _aiActions,
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+    );
+  }
+
+  Widget _attachmentsStrip() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: SizedBox(
+        height: 64,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _attachments.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            final a = _attachments[i];
+            return _AttachmentCard(
+              attachment: a,
+              onOpen: () => _openAttachment(a),
+              onRemove: () => _removeAttachment(a),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final Color? color;
+  final VoidCallback onTap;
+
+  const _ToolbarButton({
+    required this.icon,
+    required this.tooltip,
+    this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = OblixColors.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        onTap: onTap,
+        radius: 22,
+        child: Icon(icon, size: 19, color: color ?? c.inkSecondary),
+      ),
+    );
+  }
+}
+
+class _OverflowButton extends StatelessWidget {
+  final bool isArchived;
+  final VoidCallback onMove;
+  final VoidCallback onTags;
+  final VoidCallback onArchive;
+  final VoidCallback onDelete;
+
+  const _OverflowButton({
+    required this.isArchived,
+    required this.onMove,
+    required this.onTags,
+    required this.onArchive,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = OblixColors.of(context);
+    return Material(
+      color: c.bg,
+      shape: CircleBorder(side: BorderSide(color: c.hairline)),
+      clipBehavior: Clip.antiAlias,
+      child: PopupMenuButton<String>(
+        icon: Icon(Icons.more_horiz, size: 17, color: c.ink),
+        tooltip: 'More',
+        onSelected: (action) => switch (action) {
+          'move' => onMove(),
+          'tags' => onTags(),
+          'archive' => onArchive(),
+          'delete' => onDelete(),
+          _ => null,
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(value: 'move', child: Text('Move to notebook')),
+          const PopupMenuItem(value: 'tags', child: Text('Edit tags')),
+          PopupMenuItem(
+            value: 'archive',
+            child: Text(isArchived ? 'Unarchive' : 'Archive'),
+          ),
+          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+        ],
+      ),
     );
   }
 }
@@ -417,63 +640,50 @@ class _AttachmentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final a = attachment;
-    final theme = Theme.of(context);
+    final c = OblixColors.of(context);
     return SizedBox(
-      width: 190,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        margin: EdgeInsets.zero,
-        child: InkWell(
-          onTap: onOpen,
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                _thumb(context),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      width: 186,
+      child: PaperCard(
+        padding: const EdgeInsets.all(8),
+        onTap: onOpen,
+        child: Row(
+          children: [
+            _thumb(context),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    a.originalName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: OblixType.ui(c, size: 12),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
                     children: [
-                      Text(
-                        a.originalName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall,
+                      Icon(
+                        a.isUploaded
+                            ? Icons.cloud_done_outlined
+                            : Icons.cloud_upload_outlined,
+                        size: 12,
+                        color: c.inkFaint,
                       ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Icon(
-                            a.isUploaded
-                                ? Icons.cloud_done_outlined
-                                : Icons.cloud_upload_outlined,
-                            size: 12,
-                            color: theme.hintColor,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            _fmtSize(a.sizeBytes),
-                            style: theme.textTheme.labelSmall
-                                ?.copyWith(color: theme.hintColor),
-                          ),
-                        ],
-                      ),
+                      const SizedBox(width: 3),
+                      Text(_fmtSize(a.sizeBytes), style: OblixType.meta(c)),
                     ],
                   ),
-                ),
-                InkWell(
-                  onTap: onRemove,
-                  customBorder: const CircleBorder(),
-                  child: const Padding(
-                    padding: EdgeInsets.all(2),
-                    child: Icon(Icons.close, size: 16),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            InkResponse(
+              onTap: onRemove,
+              radius: 14,
+              child: Icon(Icons.close, size: 15, color: c.inkMuted),
+            ),
+          ],
         ),
       ),
     );
@@ -486,8 +696,8 @@ class _AttachmentCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         child: Image.file(
           File(a.localPath!),
-          width: 44,
-          height: 44,
+          width: 42,
+          height: 42,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) => _icon(context),
         ),
@@ -498,6 +708,7 @@ class _AttachmentCard extends StatelessWidget {
 
   Widget _icon(BuildContext context) {
     final a = attachment;
+    final c = OblixColors.of(context);
     final IconData icon;
     if (a.isImage) {
       icon = Icons.image_outlined;
@@ -513,13 +724,13 @@ class _AttachmentCard extends StatelessWidget {
       icon = Icons.insert_drive_file_outlined;
     }
     return Container(
-      width: 44,
-      height: 44,
+      width: 42,
+      height: 42,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: c.surfaceAlt,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Icon(icon, size: 22),
+      child: Icon(icon, size: 20, color: c.avatarInk),
     );
   }
 

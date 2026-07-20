@@ -3,7 +3,7 @@ class ApiConfig {
   // For Android emulator use 10.0.2.2, for iOS simulator use localhost
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
+    defaultValue: 'https://quahhar.com/oblix',
   );
 
   static const String apiPrefix = '/api';

@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import '../../core/network/api_exceptions.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../theme/oblix_theme.dart';
 
 /// Email/password sign-in with a register toggle. On success the repository
-/// flips [AuthState] and the AuthGate swaps to the notes screen — this widget
-/// never navigates itself.
+/// flips [AuthState] and the AuthGate swaps to the app — this widget never
+/// navigates itself.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, this.auth});
+  const LoginScreen({
+    super.key,
+    this.auth,
+    this.startInRegisterMode = false,
+  });
 
   /// Injectable for widget tests.
   final AuthRepository? auth;
+
+  /// Onboarding's "Get started" lands here on the register form.
+  final bool startInRegisterMode;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -23,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _password = TextEditingController();
   final _displayName = TextEditingController();
 
-  bool _registerMode = false;
+  late bool _registerMode = widget.startInRegisterMode;
   bool _busy = false;
   String? _error;
 
@@ -73,13 +81,44 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  InputDecoration _field(String label) {
+    final c = OblixColors.of(context);
+    return InputDecoration(
+      labelText: label,
+      labelStyle: OblixType.ui(c, size: 14, color: c.inkMuted),
+      filled: true,
+      fillColor: c.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.hairline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.accent, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.danger, width: 1.5),
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c.hairline),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final c = OblixColors.of(context);
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(28),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
             child: Form(
@@ -88,43 +127,50 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(Icons.edit_note,
-                      size: 64, color: theme.colorScheme.primary),
+                  Text.rich(
+                    TextSpan(
+                      text: 'Oblix',
+                      style: TextStyle(
+                        fontFamily: OblixType.serif,
+                        fontSize: 42,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.8,
+                        color: c.ink,
+                      ),
+                      children: [
+                        TextSpan(text: '.', style: TextStyle(color: c.accent)),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 8),
                   Text(
-                    'Oblix',
+                    _registerMode
+                        ? 'Create your account.'
+                        : 'Your notes, everywhere. Even offline.',
                     textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium,
-                  ),
-                  Text(
-                    'Your notes, everywhere. Even offline.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
+                    style: OblixType.ui(c, size: 14.5, color: c.inkSecondary),
                   ),
                   const SizedBox(height: 32),
                   if (_registerMode) ...[
                     TextFormField(
                       controller: _displayName,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        border: OutlineInputBorder(),
-                      ),
+                      style: OblixType.ui(c, size: 15),
+                      decoration: _field('Name'),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Enter your name'
                           : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                   ],
                   TextFormField(
                     controller: _email,
                     keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: OblixType.ui(c, size: 15),
+                    decoration: _field('Email'),
                     validator: (v) {
                       final value = v?.trim() ?? '';
                       if (value.isEmpty || !value.contains('@')) {
@@ -133,16 +179,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   TextFormField(
                     controller: _password,
                     obscureText: true,
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _submit(),
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: OblixType.ui(c, size: 15),
+                    decoration: _field('Password'),
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Enter a password';
                       if (_registerMode && v.length < 8) {
@@ -156,19 +200,36 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       _error!,
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: theme.colorScheme.error),
+                      style: OblixType.ui(c, size: 13.5, color: c.danger),
                     ),
                   ],
                   const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(_registerMode ? 'Create account' : 'Sign in'),
+                  Material(
+                    color: _busy ? c.accent.withValues(alpha: 0.5) : c.accent,
+                    shape: const StadiumBorder(),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: _busy ? null : _submit,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Center(
+                          child: _busy
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: c.onAccent),
+                                )
+                              : Text(
+                                  _registerMode ? 'Create account' : 'Sign in',
+                                  style: OblixType.ui(c,
+                                      size: 15.5,
+                                      weight: FontWeight.w600,
+                                      color: c.onAccent),
+                                ),
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextButton(
@@ -178,9 +239,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               _registerMode = !_registerMode;
                               _error = null;
                             }),
-                    child: Text(_registerMode
-                        ? 'Already have an account? Sign in'
-                        : 'New here? Create an account'),
+                    child: Text(
+                      _registerMode
+                          ? 'Already have an account? Sign in'
+                          : 'New here? Create an account',
+                      style: OblixType.ui(c,
+                          size: 14,
+                          weight: FontWeight.w500,
+                          color: c.inkSecondary),
+                    ),
                   ),
                 ],
               ),

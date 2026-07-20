@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/config/api_config.dart';
 import '../../core/db/app_database.dart';
+import '../../core/db/meta_dao.dart';
 import '../../data/datasources/local/outbox_dao.dart';
 import '../../data/repositories/attachment_repository.dart';
 import '../usecases/sync_notes.dart';
@@ -24,8 +25,14 @@ class SyncScheduler with WidgetsBindingObserver {
   final AttachmentRepository _attachments;
   final AppDatabase _appDb;
   final OutboxDao _outbox;
+  final MetaDao _meta;
   final Duration _interval;
   final Duration _editDebounceFor;
+
+  /// When the last cycle succeeded — drives the Settings sync row. Restored
+  /// from the meta table on [start] so it survives restarts.
+  final ValueNotifier<DateTime?> lastSyncedAt = ValueNotifier(null);
+  static const _kLastSyncedAt = 'last_synced_at';
 
   Timer? _timer;
   Timer? _editDebounce;
@@ -41,12 +48,14 @@ class SyncScheduler with WidgetsBindingObserver {
     AttachmentRepository? attachments,
     AppDatabase? appDb,
     OutboxDao? outbox,
+    MetaDao? meta,
     Duration? interval,
     Duration? editDebounce,
   })  : _engine = engine ?? SyncEngine(),
         _attachments = attachments ?? AttachmentRepository(),
         _appDb = appDb ?? AppDatabase.instance,
         _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
+        _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
         _interval = interval ?? ApiConfig.syncInterval,
         _editDebounceFor = editDebounce ?? ApiConfig.syncDebounceAfterEdit;
 
@@ -54,6 +63,7 @@ class SyncScheduler with WidgetsBindingObserver {
     if (_started) return;
     _started = true;
 
+    unawaited(_restoreLastSynced());
     _timer = Timer.periodic(_interval, (_) => _trigger());
 
     _connSub = Connectivity().onConnectivityChanged.listen((results) {
@@ -88,6 +98,15 @@ class SyncScheduler with WidgetsBindingObserver {
     _changeSub?.cancel();
     _changeSub = null;
     WidgetsBinding.instance.removeObserver(this);
+  }
+
+  Future<void> _restoreLastSynced() async {
+    final raw = await _meta.getSetting(_kLastSyncedAt);
+    final parsed = DateTime.tryParse(raw ?? '');
+    // A cycle that finished while we were loading wins over the stored value.
+    if (parsed != null && lastSyncedAt.value == null) {
+      lastSyncedAt.value = parsed.toLocal();
+    }
   }
 
   void _scheduleEditSync() {
@@ -130,6 +149,11 @@ class SyncScheduler with WidgetsBindingObserver {
     }
     if (result.success) {
       _resetBackoff();
+      lastSyncedAt.value = DateTime.now();
+      unawaited(_meta.setSetting(
+        _kLastSyncedAt,
+        lastSyncedAt.value!.toUtc().toIso8601String(),
+      ));
       // The note batch reached the server, so any attachment whose note just
       // synced is now uploadable. Best-effort and self-retrying; don't block.
       unawaited(_attachments.processSync());

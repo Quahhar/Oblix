@@ -142,6 +142,15 @@ class NoteRepository {
     return restored;
   }
 
+  /// Hard-delete every synced tombstone right now (the Trash screen's
+  /// "Empty"). Entries still in the outbox are kept so their deletion reaches
+  /// the server first; the regular purge drops them later.
+  Future<void> emptyTrash() async {
+    final db = await _appDb.database;
+    await _local.purgeDeletedBefore(db, DateTime.now().toUtc());
+    _appDb.notifyChanged();
+  }
+
   Future<Note> _require(String noteId) async {
     final existing = await _local.getById(noteId);
     if (existing == null) {
