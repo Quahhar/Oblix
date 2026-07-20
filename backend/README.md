@@ -15,8 +15,12 @@ a separate Flutter mobile app.
   cursor-paginated `GET /api/sync/pull`.
 - **File attachments** with MIME/extension allow-listing, size caps, and
   ownership-scoped downloads.
-- **Import/export**: full-account `.oblix` zip round-trip and Evernote `.enex`
-  import.
+- **Collaboration**: share a note or a notebook with another user as `viewer`
+  or `editor`; editors change content, the owner keeps organization.
+- **Tasks**: todos with due dates, optionally attached to a note, synced like
+  every other entity.
+- **AI**: `POST /api/ai/summarize` — a metered pass-through to the Anthropic
+  Messages API. Disabled until `ANTHROPIC_API_KEY` is set.
 - **Auth**: JWT access tokens bound to a server-side session, rotating refresh
   tokens with reuse detection (plus a small grace window for flaky-network
   retries), Google Sign-In (verified emails only), change-password that revokes
@@ -64,7 +68,13 @@ Backups: `scripts/backup.sh` / `scripts/restore.sh` (database + uploads).
 | Tags | `GET/POST /api/tags` · `DELETE /api/tags/{id}` |
 | Sync | `POST /api/sync/push` · `GET /api/sync/pull` |
 | Files | `POST /api/files/upload` · `GET /api/files/{id}/download` · `DELETE /api/files/{id}` |
-| Transfer | `GET /api/export/oblix` · `POST /api/import/oblix` · `POST /api/import/enex` |
+| Shares | `GET/POST /api/shares` · `PUT/DELETE /api/shares/{id}` · `GET /api/shares/with-me` · `GET /api/shares/notebook/{id}/notes` |
+| Tasks | `GET/POST /api/tasks` · `GET/PUT/DELETE /api/tasks/{id}` · `POST /api/tasks/{id}/restore` |
+| AI | `GET /api/ai/status` · `POST /api/ai/summarize` |
+
+Import/export (`.enex`, `.oblix`) is **not** a backend concern — the Flutter
+client parses and writes those files locally and lets the results flow out
+through normal sync.
 
 Conventions: bearer access token on every request; UUID ids and ISO-8601
 timestamps on the wire; snake_case JSON; note edits via `PUT` (omitted field =
@@ -76,9 +86,9 @@ unchanged, explicit `null` on `notebook_id`/`parent_id` = detach).
 app/
   main.py          # FastAPI app, CORS, lifespan
   config.py        # pydantic-settings; refuses insecure prod config
-  models/          # SQLAlchemy models (users, sessions, notes, notebooks, tags, files, sync log)
+  models/          # SQLAlchemy models (users, sessions, notes, notebooks, tags, files, shares, tasks, sync log)
   routers/         # HTTP layer
-  services/        # business logic (auth, notes, sync, files, transfer)
+  services/        # business logic (auth, notes, sync, files, shares, tasks, ai)
   utils/           # security, rate limiting, storage, upload policy
 alembic/           # migrations (own the schema in production)
 scripts/           # backup.sh / restore.sh

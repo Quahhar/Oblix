@@ -1,9 +1,8 @@
 """What this note-taking app is willing to store.
 
 Oblix is a notes app, not a general file host: attachments are limited to the
-kinds of things you paste into a note (images, PDFs, plain-text/markdown). The
-upload endpoint and the .enex/.oblix importers all funnel through here so the
-accepted set stays in one place.
+kinds of things you paste into a note (images, PDFs, plain-text/markdown).
+Every write funnels through here so the accepted set stays in one place.
 """
 from pathlib import Path
 from typing import Optional

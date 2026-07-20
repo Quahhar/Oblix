@@ -45,10 +45,6 @@ class Settings(BaseSettings):
     # File Storage
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
-    # An .enex/.oblix import bundles many notes+attachments, so it gets a larger
-    # ceiling than a single attachment. Also caps the total *uncompressed* size
-    # of an .oblix archive, to defuse zip bombs.
-    MAX_IMPORT_SIZE_MB: int = 200
 
     # CORS
     CORS_ORIGINS: list[str] = ["*"]
