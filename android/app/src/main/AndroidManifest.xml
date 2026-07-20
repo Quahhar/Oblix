@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for the app to reach the backend in release builds. The debug
+         and profile manifests declare this too, which is why network only
+         worked in dev before. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="oblix"
         android:name="${applicationName}"
