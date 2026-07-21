@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
@@ -76,41 +77,33 @@ class AuthRepository {
   /// (logout or _onAuthenticated) can always flip [AuthState] afterwards.
   Future<void> _clearLocalSession() async {
     try {
-      await SecureStorage.clearTokens();
-    } catch (_) {}
+      await SecureStorage.clearTokens().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      if (kDebugMode) debugPrint('clearTokens failed: $e');
+    }
     try {
-      await _meta.clearUserScopedData();
-    } catch (_) {}
+      await _meta.clearUserScopedData().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      if (kDebugMode) debugPrint('clearUserScopedData failed: $e');
+    }
   }
 
   Future<void> _onAuthenticated(Map<String, dynamic> tokens) async {
     final accessToken = tokens['access_token'] as String;
-    // 1) Always blow away any stale tokens from a previous session first, and
-    //    clear user-scoped data if the incoming user differs from the cached
-    //    one (or if there's no cached id — a previous broken logout may have
-    //    left partial state).  This is intentionally done *before* saving the
-    //    new tokens so the interceptor never picks up a stale token while the
-    //    database still contains the old user's data.
-    final userId = _subFromJwt(accessToken);
-
-    // 2) Defensive: if a prior logout crashed, stale user data may remain.
-    //    Always clean up the old session's local data before writing the new
-    //    user's id so they don't see leftover notes/notebooks.
-    final cachedId = await _meta.getUserId();
-    if (cachedId != null && cachedId != userId && userId != null) {
-      await _clearLocalSession();
-    } else if (cachedId == null) {
-      // Never had a user id (fresh install) or a previous logout left token
-      // cleanup but not data cleanup.  Wipe again just to be safe.
-      await _clearLocalSession();
-    }
-
-    // 3) Save tokens and user id.
     await SecureStorage.saveTokens(
       accessToken: accessToken,
       refreshToken: tokens['refresh_token'] as String,
     );
+    // Cache the user id so notes can be created offline with a real owner id.
+    final userId = _subFromJwt(accessToken);
     if (userId != null) {
+      // A different account signed in on this install (e.g. after a session
+      // expiry kept the previous user's local data): never let one user see
+      // another's notes.
+      final cached = await _meta.getUserId();
+      if (cached != null && cached != userId) {
+        await _meta.clearUserScopedData();
+      }
       await _meta.setUserId(userId);
     }
     AuthState.instance.markSignedIn();
