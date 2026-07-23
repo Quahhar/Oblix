@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../core/app_bootstrap.dart';
 import '../../core/auth/profile_cache.dart';
 import '../../domain/services/import_export_service.dart';
@@ -62,35 +64,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (choice != null) await ThemeController.instance.set(choice);
   }
 
+  // --- Import ---
+
   Future<void> _import() async {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['enex', 'oblix'],
+      allowedExtensions: ['enex', 'oblix', 'md', 'txt', 'epub'],
+      allowMultiple: true,
       withData: true,
     );
     if (picked == null || picked.files.isEmpty) return;
-    final file = picked.files.first;
-    final bytes = file.bytes;
-    if (bytes == null) {
-      _snack('Could not read that file.');
-      return;
-    }
+
     setState(() => _busy = true);
     try {
-      final ext = (file.extension ?? '').toLowerCase();
-      final ImportResult result;
-      if (ext == 'enex') {
-        final base = file.name.replaceAll(
-          RegExp(r'\.enex$', caseSensitive: false),
-          '',
-        );
-        result = await _io.importEnex(
-          utf8.decode(bytes),
-          notebookName: base.isEmpty ? 'Imported' : base,
-        );
-      } else {
-        result = await _io.importOblix(bytes);
+      ImportResult result = ImportResult.empty;
+
+      // Group multi-file md/txt picks into one import.
+      final mdFiles = <(String, List<int>)>[];
+      for (final file in picked.files) {
+        final bytes = file.bytes;
+        if (bytes == null) {
+          _snack('Could not read ${file.name}.');
+          continue;
+        }
+        final ext = (file.extension ?? '').toLowerCase();
+
+        switch (ext) {
+          case 'enex':
+            final base = file.name.replaceAll(
+              RegExp(r'\.enex$', caseSensitive: false),
+              '',
+            );
+            result = await _io.importEnex(
+              utf8.decode(bytes),
+              notebookName: base.isEmpty ? 'Imported' : base,
+            );
+            break;
+          case 'oblix':
+            result = await _io.importOblix(bytes);
+            break;
+          case 'md':
+          case 'txt':
+            mdFiles.add((file.name, bytes));
+            break;
+          case 'epub':
+            result = await _io.importEpub(bytes);
+            break;
+        }
       }
+
+      // Process accumulated md/txt files together.
+      if (mdFiles.isNotEmpty) {
+        result = await _io.importMarkdownFiles(mdFiles);
+      }
+
       _snack(
         'Imported ${result.notesImported} '
         '${result.notesImported == 1 ? 'note' : 'notes'}'
@@ -105,28 +132,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  // --- Export ---
+
   Future<void> _export() async {
+    final c = OblixColors.of(context);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SheetGrabHandle(),
+            _exportOption(
+              'oblix',
+              'Oblix backup (.oblix)',
+              Icons.archive_outlined,
+              c,
+            ),
+            _exportOption(
+              'epub',
+              'EPUB ebook (.epub)',
+              Icons.menu_book_outlined,
+              c,
+            ),
+            _exportOption('md', 'Markdown (.zip)', Icons.code, c),
+            _exportOption(
+              'txt',
+              'Plain text (.zip)',
+              Icons.description_outlined,
+              c,
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+
     setState(() => _busy = true);
     try {
-      final bytes = await _io.exportOblix();
-      final dir = await getTemporaryDirectory();
+      final List<int> bytes;
+      final String filename;
+      final String mimeType;
+
       final stamp = DateTime.now()
           .toIso8601String()
           .replaceAll(RegExp(r'[:.]'), '-')
           .split('T')
           .first;
-      final path = '${dir.path}/oblix-export-$stamp.oblix';
+
+      switch (choice) {
+        case 'oblix':
+          bytes = await _io.exportOblix();
+          filename = 'oblix-export-$stamp.oblix';
+          mimeType = 'application/zip';
+        case 'epub':
+          bytes = await _io.exportAllEpub();
+          filename = 'oblix-export-$stamp.epub';
+          mimeType = 'application/epub+zip';
+        case 'md':
+          bytes = await _io.exportAllMarkdownZip();
+          filename = 'oblix-notes-$stamp.zip';
+          mimeType = 'application/zip';
+        case 'txt':
+          bytes = await _io.exportAllTextZip();
+          filename = 'oblix-notes-$stamp.zip';
+          mimeType = 'application/zip';
+        default:
+          return;
+      }
+
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/$filename';
       await File(path).writeAsBytes(bytes, flush: true);
       if (!mounted) return;
       await SharePlus.instance.share(
         ShareParams(
-          files: [
-            XFile(
-              path,
-              mimeType: 'application/zip',
-              name: 'oblix-export-$stamp.oblix',
-            ),
-          ],
+          files: [XFile(path, mimeType: mimeType, name: filename)],
           text: 'Oblix export',
         ),
       );
@@ -135,6 +217,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Widget _exportOption(String key, String label, IconData icon, OblixColors c) {
+    return ListTile(
+      leading: Icon(icon, color: c.inkSecondary, size: 20),
+      title: Text(label, style: OblixType.ui(c, size: 14.5)),
+      onTap: () => Navigator.pop(context, key),
+    );
   }
 
   Future<void> _signOut() async {
@@ -292,14 +382,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _SettingsRow(
                         icon: Icons.file_download_outlined,
                         label: 'Import notes',
-                        value: '.enex · .oblix',
+                        value: '.enex · .oblix · .md · .txt · .epub',
                         onTap: _busy ? null : _import,
                       ),
                       Divider(height: 1, color: c.hairline),
                       _SettingsRow(
                         icon: Icons.file_upload_outlined,
                         label: 'Export all notes',
-                        value: '.oblix',
+                        value: '.oblix · .epub · .md · .txt',
                         onTap: _busy ? null : _export,
                       ),
                       Divider(height: 1, color: c.hairline),

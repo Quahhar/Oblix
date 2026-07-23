@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../data/models/attachment.dart';
 import '../../data/models/note.dart';
 import '../../data/repositories/attachment_repository.dart';
@@ -11,6 +14,7 @@ import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
 import '../../data/repositories/tag_repository.dart';
 import '../../data/repositories/task_repository.dart';
+import '../../domain/services/import_export_service.dart';
 import '../sheets/ai_actions_sheet.dart';
 import '../theme/oblix_theme.dart';
 import '../util/formats.dart';
@@ -152,82 +156,152 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   Future<void> _togglePin() => _withSavedNote((note) async {
-        _note = await _repo.updateNote(note.id, isPinned: !note.isPinned);
-        if (mounted) setState(() {});
-      });
+    _note = await _repo.updateNote(note.id, isPinned: !note.isPinned);
+    if (mounted) setState(() {});
+  });
 
   Future<void> _toggleArchive() => _withSavedNote((note) async {
-        _note = await _repo.updateNote(note.id, isArchived: !note.isArchived);
-        if (mounted) setState(() {});
-      });
+    _note = await _repo.updateNote(note.id, isArchived: !note.isArchived);
+    if (mounted) setState(() {});
+  });
 
   Future<void> _delete() => _withSavedNote((note) async {
-        await _repo.deleteNote(note.id);
-        if (mounted) Navigator.pop(context);
-      });
+    await _repo.deleteNote(note.id);
+    if (mounted) Navigator.pop(context);
+  });
 
   Future<void> _share() => _withSavedNote((note) async {
-        final body = note.title.isEmpty || note.title == 'Untitled'
-            ? note.content
-            : '${note.title}\n\n${note.content}';
-        await SharePlus.instance.share(ShareParams(text: body));
-      });
+    final body = note.title.isEmpty || note.title == 'Untitled'
+        ? note.content
+        : '${note.title}\n\n${note.content}';
+    await SharePlus.instance.share(ShareParams(text: body));
+  });
+
+  Future<void> _exportNote() => _withSavedNote((note) async {
+    final c = OblixColors.of(context);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SheetGrabHandle(),
+            ListTile(
+              leading: Icon(Icons.code, color: c.inkSecondary, size: 20),
+              title: Text('Markdown (.md)', style: OblixType.ui(c, size: 14.5)),
+              onTap: () => Navigator.pop(context, 'md'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.description_outlined,
+                color: c.inkSecondary,
+                size: 20,
+              ),
+              title: Text(
+                'Plain text (.txt)',
+                style: OblixType.ui(c, size: 14.5),
+              ),
+              onTap: () => Navigator.pop(context, 'txt'),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    final String text;
+    final String filename;
+    final String mimeType;
+
+    final stem = note.title == 'Untitled' ? 'note' : note.title;
+    final safeStem = stem
+        .replaceAll(RegExp(r'[^a-zA-Z0-9\-\_\s]'), '')
+        .replaceAll(RegExp(r'\s+'), '_');
+
+    final io = ImportExportService();
+
+    switch (choice) {
+      case 'md':
+        text = io.exportNoteMarkdown(note);
+        filename = '$safeStem.md';
+        mimeType = 'text/markdown';
+      case 'txt':
+        text = io.exportNoteText(note);
+        filename = '$safeStem.txt';
+        mimeType = 'text/plain';
+      default:
+        return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/$filename';
+    await File(path).writeAsString(text, flush: true);
+    if (!mounted) return;
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(path, mimeType: mimeType, name: filename)],
+        text: 'Exported note',
+      ),
+    );
+  });
 
   Future<void> _aiActions() => _withSavedNote((note) async {
-        final summary = await showAiActionsSheet(context, note);
-        if (summary == null || summary.isEmpty) return;
-        // Insert the recap at the top of the body, leaving the original text.
-        _content.text = '$summary\n\n${_content.text}';
-        _onEdited();
-      });
+    final summary = await showAiActionsSheet(context, note);
+    if (summary == null || summary.isEmpty) return;
+    // Insert the recap at the top of the body, leaving the original text.
+    _content.text = '$summary\n\n${_content.text}';
+    _onEdited();
+  });
 
   /// Turn the current note into a task (the note's title seeds it).
   Future<void> _createTask() => _withSavedNote((note) async {
-        await _tasks.createTask(
-          title: note.title == 'Untitled' ? 'Follow up' : note.title,
-          noteId: note.id,
-        );
-        if (mounted) _toast('Task added');
-      });
+    await _tasks.createTask(
+      title: note.title == 'Untitled' ? 'Follow up' : note.title,
+      noteId: note.id,
+    );
+    if (mounted) _toast('Task added');
+  });
 
   Future<void> _moveToNotebook() => _withSavedNote((note) async {
-        final notebooks = await _notebooks.listNotebooks();
-        if (!mounted) return;
-        final choice = await showModalBottomSheet<List<String?>>(
-          context: context,
-          builder: (context) {
-            final c = OblixColors.of(context);
-            return SafeArea(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  const SheetGrabHandle(),
-                  ListTile(
-                    leading:
-                        Icon(Icons.folder_off_outlined, color: c.inkSecondary),
-                    title: Text('No notebook', style: OblixType.ui(c, size: 15)),
-                    selected: note.notebookId == null,
-                    onTap: () => Navigator.pop(context, [null]),
-                  ),
-                  for (final nb in notebooks)
-                    ListTile(
-                      leading: Icon(Icons.menu_book_outlined,
-                          color: c.inkSecondary),
-                      title: Text(nb.name, style: OblixType.ui(c, size: 15)),
-                      selected: nb.id == note.notebookId,
-                      onTap: () => Navigator.pop(context, [nb.id]),
-                    ),
-                ],
+    final notebooks = await _notebooks.listNotebooks();
+    if (!mounted) return;
+    final choice = await showModalBottomSheet<List<String?>>(
+      context: context,
+      builder: (context) {
+        final c = OblixColors.of(context);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const SheetGrabHandle(),
+              ListTile(
+                leading: Icon(Icons.folder_off_outlined, color: c.inkSecondary),
+                title: Text('No notebook', style: OblixType.ui(c, size: 15)),
+                selected: note.notebookId == null,
+                onTap: () => Navigator.pop(context, [null]),
               ),
-            );
-          },
+              for (final nb in notebooks)
+                ListTile(
+                  leading: Icon(
+                    Icons.menu_book_outlined,
+                    color: c.inkSecondary,
+                  ),
+                  title: Text(nb.name, style: OblixType.ui(c, size: 15)),
+                  selected: nb.id == note.notebookId,
+                  onTap: () => Navigator.pop(context, [nb.id]),
+                ),
+            ],
+          ),
         );
-        if (choice != null) {
-          _note = await _repo.moveToNotebook(note.id, choice.single);
-          await _loadNotebookName();
-          if (mounted) setState(() {});
-        }
-      });
+      },
+    );
+    if (choice != null) {
+      _note = await _repo.moveToNotebook(note.id, choice.single);
+      await _loadNotebookName();
+      if (mounted) setState(() {});
+    }
+  });
 
   Future<void> _refreshAttachments() async {
     final note = _note;
@@ -239,21 +313,21 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   /// Attach a picked file. Routed through [_withSavedNote] so the note exists
   /// (attachments key off a real note id).
   Future<void> _addAttachment() => _withSavedNote((note) async {
-        final picked = await FilePicker.pickFiles(withData: true);
-        if (picked == null || picked.files.isEmpty) return;
-        final file = picked.files.first;
-        final bytes = file.bytes;
-        if (bytes == null) {
-          _toast("Couldn't read that file");
-          return;
-        }
-        await _attachmentRepo.attach(
-          noteId: note.id,
-          bytes: bytes,
-          originalName: file.name,
-        );
-        await _refreshAttachments();
-      });
+    final picked = await FilePicker.pickFiles(withData: true);
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      _toast("Couldn't read that file");
+      return;
+    }
+    await _attachmentRepo.attach(
+      noteId: note.id,
+      bytes: bytes,
+      originalName: file.name,
+    );
+    await _refreshAttachments();
+  });
 
   Future<void> _openAttachment(Attachment a) async {
     try {
@@ -298,48 +372,47 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   Future<void> _editTags() => _withSavedNote((note) async {
-        final controller =
-            TextEditingController(text: note.tagNames.join(', '));
-        final result = await showDialog<String>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Tags'),
-            content: TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'work, ideas, todo',
-                helperText: 'Separate tags with commas',
-              ),
-              onSubmitted: (v) => Navigator.pop(context, v),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, controller.text),
-                child: const Text('Save'),
-              ),
-            ],
+    final controller = TextEditingController(text: note.tagNames.join(', '));
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tags'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'work, ideas, todo',
+            helperText: 'Separate tags with commas',
           ),
-        );
-        if (result == null) return;
-        final names = <String>[];
-        for (final raw in result.split(',')) {
-          final name = raw.trim();
-          if (name.isNotEmpty && !names.contains(name)) names.add(name);
-        }
-        _note = await _repo.updateNote(note.id, tagNames: names);
-        // Make sure every name exists as a Tag entity so it shows up on the
-        // Books tab immediately (the server would create it on sync anyway).
-        final known = (await _tags.listTags()).map((t) => t.name).toSet();
-        for (final name in names) {
-          if (!known.contains(name)) await _tags.createTag(name);
-        }
-        if (mounted) setState(() {});
-      });
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    final names = <String>[];
+    for (final raw in result.split(',')) {
+      final name = raw.trim();
+      if (name.isNotEmpty && !names.contains(name)) names.add(name);
+    }
+    _note = await _repo.updateNote(note.id, tagNames: names);
+    // Make sure every name exists as a Tag entity so it shows up on the
+    // Books tab immediately (the server would create it on sync anyway).
+    final known = (await _tags.listTags()).map((t) => t.name).toSet();
+    for (final name in names) {
+      if (!known.contains(name)) await _tags.createTag(name);
+    }
+    if (mounted) setState(() {});
+  });
 
   String get _metaLine {
     final note = _note;
@@ -375,7 +448,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                         Material(
                           color: c.bg,
                           shape: StadiumBorder(
-                              side: BorderSide(color: c.hairline)),
+                            side: BorderSide(color: c.hairline),
+                          ),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
                             onTap: () => Navigator.pop(context),
@@ -384,13 +458,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.arrow_back_ios_new,
-                                      size: 12, color: c.ink),
+                                  Icon(
+                                    Icons.arrow_back_ios_new,
+                                    size: 12,
+                                    color: c.ink,
+                                  ),
                                   const SizedBox(width: 6),
                                   Text(
                                     _notebookName ?? 'Notes',
-                                    style: OblixType.ui(c,
-                                        size: 13, weight: FontWeight.w600),
+                                    style: OblixType.ui(
+                                      c,
+                                      size: 13,
+                                      weight: FontWeight.w600,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -416,6 +496,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           onTags: _editTags,
                           onArchive: _toggleArchive,
                           onDelete: _delete,
+                          onExport: _exportNote,
                         ),
                       ],
                     ),
@@ -430,8 +511,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           style: OblixType.editorTitle(c),
                           decoration: InputDecoration(
                             hintText: 'Title',
-                            hintStyle: OblixType.editorTitle(c)
-                                .copyWith(color: c.inkFaint),
+                            hintStyle: OblixType.editorTitle(
+                              c,
+                            ).copyWith(color: c.inkFaint),
                             border: InputBorder.none,
                             isDense: true,
                             contentPadding: EdgeInsets.zero,
@@ -450,17 +532,21 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                   onTap: _editTags,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 9, vertical: 3),
+                                      horizontal: 9,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: c.accentSoft,
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(
                                       '#$tag',
-                                      style: OblixType.ui(c,
-                                          size: 12,
-                                          weight: FontWeight.w600,
-                                          color: c.accentDeep),
+                                      style: OblixType.ui(
+                                        c,
+                                        size: 12,
+                                        weight: FontWeight.w600,
+                                        color: c.accentDeep,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -476,8 +562,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                           style: OblixType.noteBody(c),
                           decoration: InputDecoration(
                             hintText: 'Start writing…',
-                            hintStyle: OblixType.noteBody(c)
-                                .copyWith(color: c.inkFaint),
+                            hintStyle: OblixType.noteBody(
+                              c,
+                            ).copyWith(color: c.inkFaint),
                             border: InputBorder.none,
                             isDense: true,
                             contentPadding: EdgeInsets.zero,
@@ -583,6 +670,7 @@ class _OverflowButton extends StatelessWidget {
   final VoidCallback onTags;
   final VoidCallback onArchive;
   final VoidCallback onDelete;
+  final VoidCallback onExport;
 
   const _OverflowButton({
     required this.isArchived,
@@ -590,6 +678,7 @@ class _OverflowButton extends StatelessWidget {
     required this.onTags,
     required this.onArchive,
     required this.onDelete,
+    required this.onExport,
   });
 
   @override
@@ -605,6 +694,7 @@ class _OverflowButton extends StatelessWidget {
         onSelected: (action) => switch (action) {
           'move' => onMove(),
           'tags' => onTags(),
+          'export' => onExport(),
           'archive' => onArchive(),
           'delete' => onDelete(),
           _ => null,
@@ -612,6 +702,7 @@ class _OverflowButton extends StatelessWidget {
         itemBuilder: (context) => [
           const PopupMenuItem(value: 'move', child: Text('Move to notebook')),
           const PopupMenuItem(value: 'tags', child: Text('Edit tags')),
+          const PopupMenuItem(value: 'export', child: Text('Export as…')),
           PopupMenuItem(
             value: 'archive',
             child: Text(isArchived ? 'Unarchive' : 'Archive'),

@@ -16,6 +16,15 @@ class ImportedNote {
   /// The service resolves names to real notebook ids (creating/deduping).
   final String? notebookName;
 
+  /// The note's notebook as a path of names from the root (e.g.
+  /// `["Work", "Projects"]`) — how nested notebooks survive a `.oblix`
+  /// round-trip. Takes precedence over [notebookName] when present.
+  final List<String>? notebookPath;
+
+  /// Attachments the source carried, bytes included, to be stored alongside
+  /// the note on import (best-effort — see the service).
+  final List<ImportedAttachment> attachments;
+
   /// Number of embedded attachments the source carried that we could not import
   /// yet (no client attachment support) — surfaced to the user as a count.
   final int skippedAttachments;
@@ -30,7 +39,24 @@ class ImportedNote {
     required this.createdAt,
     required this.updatedAt,
     this.notebookName,
+    this.notebookPath,
+    this.attachments = const [],
     this.skippedAttachments = 0,
+  });
+}
+
+/// One attachment carried by an import source: display name, MIME type and
+/// the raw bytes. The service re-caches the bytes locally on import, so no
+/// source path/id survives here.
+class ImportedAttachment {
+  final String originalName;
+  final String? mimeType;
+  final List<int> bytes;
+
+  const ImportedAttachment({
+    required this.originalName,
+    this.mimeType,
+    required this.bytes,
   });
 }
 
@@ -43,7 +69,15 @@ class ImportBundle {
   /// can pre-create them and the UI can report how many).
   final List<String> notebookNames;
 
-  const ImportBundle(this.notes, {this.notebookNames = const []});
+  /// Nested notebooks the bundle references, each a path of names from the
+  /// root — pre-created like [notebookNames] so even empty folders survive.
+  final List<List<String>> notebookPaths;
+
+  const ImportBundle(
+    this.notes, {
+    this.notebookNames = const [],
+    this.notebookPaths = const [],
+  });
 
   int get noteCount => notes.length;
   int get skippedAttachments =>
