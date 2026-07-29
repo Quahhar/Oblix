@@ -3,7 +3,7 @@ class ApiConfig {
   // For Android emulator use 10.0.2.2, for iOS simulator use localhost
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://quahhar.com/oblix',
+    defaultValue: 'https://tensoractivity.com/oblix',
   );
 
   static const String apiPrefix = '/api';
