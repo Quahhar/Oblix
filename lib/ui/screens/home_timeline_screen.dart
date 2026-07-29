@@ -60,8 +60,9 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
     if (!mounted || result.skipped || result.success) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(
-          content: Text('Sync failed — changes are kept locally')));
+      ..showSnackBar(
+        const SnackBar(content: Text('Sync failed, changes are kept locally')),
+      );
   }
 
   void _openEditor({String? noteId}) {
@@ -92,15 +93,21 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(Formats.dateEyebrow(DateTime.now()),
-                            style: OblixType.eyebrow(c)),
+                        Text(
+                          Formats.dateEyebrow(DateTime.now()),
+                          style: OblixType.eyebrow(c),
+                        ),
                         IconButton(
-                          icon: Icon(Icons.settings_outlined,
-                              size: 22, color: c.inkMuted),
+                          icon: Icon(
+                            Icons.settings_outlined,
+                            size: 22,
+                            color: c.inkMuted,
+                          ),
                           onPressed: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const SettingsScreen()),
+                              builder: (_) => const SettingsScreen(),
+                            ),
                           ),
                         ),
                       ],
@@ -123,7 +130,9 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 11),
+                            horizontal: 16,
+                            vertical: 11,
+                          ),
                           child: Row(
                             children: [
                               Icon(Icons.search, size: 17, color: c.inkMuted),
@@ -131,8 +140,11 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                               Expanded(
                                 child: Text(
                                   'Search or ask your notes…',
-                                  style: OblixType.ui(c,
-                                      size: 14, color: c.inkMuted),
+                                  style: OblixType.ui(
+                                    c,
+                                    size: 14,
+                                    color: c.inkMuted,
+                                  ),
                                 ),
                               ),
                               Icon(Icons.mic_none, size: 17, color: c.inkMuted),
@@ -143,8 +155,10 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                     ),
                   ),
                   if (pinned.isNotEmpty) ...[
-                    const SectionEyebrow('Pinned',
-                        padding: EdgeInsets.fromLTRB(20, 20, 20, 8)),
+                    const SectionEyebrow(
+                      'Pinned',
+                      padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+                    ),
                     _PinnedGrid(
                       notes: pinned,
                       notebookNames: _notebookNames,
@@ -152,8 +166,10 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                     ),
                   ],
                   for (final group in _groupByDay(rest)) ...[
-                    SectionEyebrow(group.label,
-                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 8)),
+                    SectionEyebrow(
+                      group.label,
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                    ),
                     PaperCard(
                       margin: const EdgeInsets.symmetric(horizontal: 20),
                       child: Column(
@@ -164,8 +180,8 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
                               note: group.notes[i],
                               onTap: () =>
                                   _openEditor(noteId: group.notes[i].id),
-                              onLongPress: () => showNoteActionsSheet(
-                                  context, group.notes[i]),
+                              onLongPress: () =>
+                                  showNoteActionsSheet(context, group.notes[i]),
                             ),
                           ],
                         ],
@@ -210,18 +226,20 @@ class _PinnedGrid extends StatelessWidget {
     final c = OblixColors.of(context);
     final rows = <Widget>[];
     for (var i = 0; i < notes.length; i += 2) {
-      rows.add(Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: _card(context, c, notes[i])),
-          const SizedBox(width: 10),
-          Expanded(
-            child: i + 1 < notes.length
-                ? _card(context, c, notes[i + 1])
-                : const SizedBox(),
-          ),
-        ],
-      ));
+      rows.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _card(context, c, notes[i])),
+            const SizedBox(width: 10),
+            Expanded(
+              child: i + 1 < notes.length
+                  ? _card(context, c, notes[i + 1])
+                  : const SizedBox(),
+            ),
+          ],
+        ),
+      );
       if (i + 2 < notes.length) rows.add(const SizedBox(height: 10));
     }
     return Padding(
@@ -318,14 +336,17 @@ class _TimelineRow extends StatelessWidget {
                   for (final tag in note.tagNames.take(3))
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 1),
+                        horizontal: 8,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: c.accentSoft,
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Text('#$tag',
-                          style: OblixType.ui(c,
-                              size: 11.5, color: c.accentDeep)),
+                      child: Text(
+                        '#$tag',
+                        style: OblixType.ui(c, size: 11.5, color: c.accentDeep),
+                      ),
                     ),
                 ],
               ),
@@ -352,8 +373,10 @@ class _EmptyState extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(Formats.dateEyebrow(DateTime.now()),
-                  style: OblixType.eyebrow(c)),
+              Text(
+                Formats.dateEyebrow(DateTime.now()),
+                style: OblixType.eyebrow(c),
+              ),
               const SizedBox(height: 5),
               Text('Notes', style: OblixType.pageTitle(c)),
             ],
@@ -390,8 +413,11 @@ class _EmptyState extends StatelessWidget {
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(color: c.hairline),
                           ),
-                          child: Icon(Icons.description_outlined,
-                              size: 38, color: c.avatarBg),
+                          child: Icon(
+                            Icons.description_outlined,
+                            size: 38,
+                            color: c.avatarBg,
+                          ),
                         ),
                       ),
                       Positioned(
@@ -431,7 +457,7 @@ class _EmptyState extends StatelessWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 250),
                   child: Text(
-                    'Tap the button below to jot a thought — audio and scans '
+                    'Tap the button below to jot a thought. Audio and scans '
                     'are on the way.',
                     textAlign: TextAlign.center,
                     style: OblixType.ui(c, size: 14, color: c.inkMuted),
@@ -446,17 +472,23 @@ class _EmptyState extends StatelessWidget {
                     onTap: onWrite,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 9),
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.notes, size: 13, color: c.avatarInk),
                           const SizedBox(width: 6),
-                          Text('Write',
-                              style: OblixType.ui(c,
-                                  size: 13,
-                                  weight: FontWeight.w600,
-                                  color: c.avatarInk)),
+                          Text(
+                            'Write',
+                            style: OblixType.ui(
+                              c,
+                              size: 13,
+                              weight: FontWeight.w600,
+                              color: c.avatarInk,
+                            ),
+                          ),
                         ],
                       ),
                     ),

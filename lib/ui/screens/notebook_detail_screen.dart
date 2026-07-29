@@ -168,7 +168,7 @@ class _NotebookDetailScreenState extends State<NotebookDetailScreen> {
               child: _items.isEmpty
                   ? Center(
                       child: Text(
-                        'Nothing here yet — tap + to add a note.',
+                        'Nothing here yet, tap + to add a note.',
                         style: OblixType.ui(c, size: 14, color: c.inkMuted),
                       ),
                     )
@@ -220,8 +220,9 @@ class _TagNotesScreenState extends State<TagNotesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete tag?'),
-        content:
-            Text('"#${widget.tag.name}" will be removed from your tag list.'),
+        content: Text(
+          '"#${widget.tag.name}" will be removed from your tag list.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

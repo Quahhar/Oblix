@@ -72,10 +72,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           onTap: () => _finish(),
                           child: Text(
                             'Skip',
-                            style: OblixType.ui(c,
-                                size: 13.5,
-                                weight: FontWeight.w500,
-                                color: c.inkMuted),
+                            style: OblixType.ui(
+                              c,
+                              size: 13.5,
+                              weight: FontWeight.w500,
+                              color: c.inkMuted,
+                            ),
                           ),
                         ),
                       ),
@@ -85,11 +87,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: PageView(
                 controller: _controller,
                 onPageChanged: (i) => setState(() => _page = i),
-                children: const [
-                  _WelcomePage(),
-                  _CapturePage(),
-                  _AskPage(),
-                ],
+                children: const [_WelcomePage(), _CapturePage(), _AskPage()],
               ),
             ),
             Padding(
@@ -126,10 +124,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           child: Center(
                             child: Text(
                               _page == 2 ? 'Get started' : 'Continue',
-                              style: OblixType.ui(c,
-                                  size: 16,
-                                  weight: FontWeight.w600,
-                                  color: c.onAccent),
+                              style: OblixType.ui(
+                                c,
+                                size: 16,
+                                weight: FontWeight.w600,
+                                color: c.onAccent,
+                              ),
                             ),
                           ),
                         ),
@@ -141,10 +141,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     onPressed: () => _finish(),
                     child: Text(
                       'I already have an account',
-                      style: OblixType.ui(c,
-                          size: 14,
-                          weight: FontWeight.w500,
-                          color: c.inkSecondary),
+                      style: OblixType.ui(
+                        c,
+                        size: 14,
+                        weight: FontWeight.w500,
+                        color: c.inkSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -208,7 +210,12 @@ class _WelcomePage extends StatelessWidget {
                 letterSpacing: -0.9,
                 color: c.ink,
               ),
-              children: [TextSpan(text: '.', style: TextStyle(color: c.accent))],
+              children: [
+                TextSpan(
+                  text: '.',
+                  style: TextStyle(color: c.accent),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -217,8 +224,11 @@ class _WelcomePage extends StatelessWidget {
             child: Text(
               'One calm place for everything you note.',
               textAlign: TextAlign.center,
-              style: OblixType.ui(c, size: 15.5, color: c.inkSecondary)
-                  .copyWith(height: 1.55),
+              style: OblixType.ui(
+                c,
+                size: 15.5,
+                color: c.inkSecondary,
+              ).copyWith(height: 1.55),
             ),
           ),
         ],
@@ -306,8 +316,12 @@ class _FanCard extends StatelessWidget {
               ),
               child: Text(
                 tag!,
-                style: OblixType.ui(c,
-                    size: 10.5, weight: FontWeight.w600, color: c.accent),
+                style: OblixType.ui(
+                  c,
+                  size: 10.5,
+                  weight: FontWeight.w600,
+                  color: c.accent,
+                ),
               ),
             ),
           ],
@@ -353,10 +367,13 @@ class _CapturePage extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 280),
             child: Text(
               'Notes and tasks today; voice, scans and clippings are on the '
-              'way — one button, zero ceremony.',
+              'way. One button, zero ceremony.',
               textAlign: TextAlign.center,
-              style: OblixType.ui(c, size: 14.5, color: c.inkSecondary)
-                  .copyWith(height: 1.55),
+              style: OblixType.ui(
+                c,
+                size: 14.5,
+                color: c.inkSecondary,
+              ).copyWith(height: 1.55),
             ),
           ),
           const SizedBox(height: 30),
@@ -384,16 +401,25 @@ class _CapturePage extends StatelessWidget {
                       const SizedBox(height: 9),
                       Row(
                         children: [
-                          Text(label,
-                              style: OblixType.ui(c,
-                                  size: 13.5, weight: FontWeight.w600)),
+                          Text(
+                            label,
+                            style: OblixType.ui(
+                              c,
+                              size: 13.5,
+                              weight: FontWeight.w600,
+                            ),
+                          ),
                           if (badge != null) ...[
                             const SizedBox(width: 5),
-                            Text(badge,
-                                style: OblixType.ui(c,
-                                    size: 13.5,
-                                    weight: FontWeight.w500,
-                                    color: c.inkMuted)),
+                            Text(
+                              badge,
+                              style: OblixType.ui(
+                                c,
+                                size: 13.5,
+                                weight: FontWeight.w500,
+                                color: c.inkMuted,
+                              ),
+                            ),
                           ],
                         ],
                       ),
@@ -415,15 +441,21 @@ class _CapturePage extends StatelessWidget {
                 Container(
                   width: 26,
                   height: 26,
-                  decoration:
-                      BoxDecoration(color: c.accent, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: c.accent,
+                    shape: BoxShape.circle,
+                  ),
                   child: Icon(Icons.add, size: 14, color: c.onAccent),
                 ),
                 const SizedBox(width: 9),
                 Text(
                   'All of it lives behind the one button',
-                  style: OblixType.ui(c,
-                      size: 12.5, weight: FontWeight.w500, color: c.accentDeep),
+                  style: OblixType.ui(
+                    c,
+                    size: 12.5,
+                    weight: FontWeight.w500,
+                    color: c.accentDeep,
+                  ),
                 ),
               ],
             ),
@@ -464,8 +496,11 @@ class _AskPage extends StatelessWidget {
               'Full-text search runs on your device, so it works on a plane, '
               'in a tunnel, anywhere.',
               textAlign: TextAlign.center,
-              style: OblixType.ui(c, size: 14.5, color: c.inkSecondary)
-                  .copyWith(height: 1.55),
+              style: OblixType.ui(
+                c,
+                size: 14.5,
+                color: c.inkSecondary,
+              ).copyWith(height: 1.55),
             ),
           ),
           const SizedBox(height: 30),
@@ -487,8 +522,7 @@ class _AskPage extends StatelessWidget {
               children: [
                 Icon(Icons.auto_awesome, size: 16, color: c.accent),
                 const SizedBox(width: 10),
-                Text('pricing decision',
-                    style: OblixType.ui(c, size: 14.5)),
+                Text('pricing decision', style: OblixType.ui(c, size: 14.5)),
                 Container(
                   width: 2,
                   height: 16,
@@ -514,13 +548,15 @@ class _AskPage extends StatelessWidget {
                   children: [
                     Icon(Icons.auto_awesome, size: 11, color: c.accent),
                     const SizedBox(width: 6),
-                    Text('FROM YOUR NOTES',
-                        style: OblixType.eyebrow(c, color: c.accent)),
+                    Text(
+                      'FROM YOUR NOTES',
+                      style: OblixType.eyebrow(c, color: c.accent),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Q3 planning draft — keep the single tier until churn '
+                  'Q3 planning draft, keep the single tier until churn '
                   'passes 4%.',
                   style: OblixType.noteBody(c),
                 ),

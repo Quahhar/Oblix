@@ -71,11 +71,10 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   List<Task> get _visible => switch (_tab) {
-        _TaskTab.open => _open,
-        _TaskTab.scheduled =>
-          _open.where((t) => t.dueDate != null).toList(),
-        _TaskTab.done => _done,
-      };
+    _TaskTab.open => _open,
+    _TaskTab.scheduled => _open.where((t) => t.dueDate != null).toList(),
+    _TaskTab.done => _done,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -124,14 +123,11 @@ class _TasksScreenState extends State<TasksScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 60, 22, 0),
               child: Center(
-                child: Text(
-                  switch (_tab) {
-                    _TaskTab.open => 'All clear — nothing to do.',
-                    _TaskTab.scheduled => 'No scheduled tasks.',
-                    _TaskTab.done => 'Nothing completed yet.',
-                  },
-                  style: OblixType.ui(c, size: 14, color: c.inkMuted),
-                ),
+                child: Text(switch (_tab) {
+                  _TaskTab.open => 'All clear, nothing to do.',
+                  _TaskTab.scheduled => 'No scheduled tasks.',
+                  _TaskTab.done => 'Nothing completed yet.',
+                }, style: OblixType.ui(c, size: 14, color: c.inkMuted)),
               ),
             )
           else
@@ -152,7 +148,9 @@ class _TasksScreenState extends State<TasksScreen> {
                         task: group.tasks[i],
                         overdue: group.overdue,
                         onToggle: () => _tasks.setCompleted(
-                            group.tasks[i].id, !group.tasks[i].isCompleted),
+                          group.tasks[i].id,
+                          !group.tasks[i].isCompleted,
+                        ),
                         onLongPress: () => _delete(group.tasks[i]),
                       ),
                     ],
@@ -221,7 +219,9 @@ class _TasksScreenState extends State<TasksScreen> {
       } else {
         final label = Formats.dueGroup(due);
         final color = label == 'TODAY' ? c.accent : c.inkMuted;
-        dated.putIfAbsent(label, () => _TaskGroup(label, color, [])).tasks
+        dated
+            .putIfAbsent(label, () => _TaskGroup(label, color, []))
+            .tasks
             .add(task);
       }
     }
@@ -275,8 +275,10 @@ class _TaskRow extends StatelessWidget {
                   ? Container(
                       width: 21,
                       height: 21,
-                      decoration:
-                          BoxDecoration(color: c.accent, shape: BoxShape.circle),
+                      decoration: BoxDecoration(
+                        color: c.accent,
+                        shape: BoxShape.circle,
+                      ),
                       child: Icon(Icons.check, size: 13, color: c.onAccent),
                     )
                   : Container(
@@ -298,17 +300,18 @@ class _TaskRow extends StatelessWidget {
                 children: [
                   Text(
                     task.title,
-                    style: OblixType.ui(
-                      c,
-                      size: 15,
-                      weight: FontWeight.w500,
-                      color: task.isCompleted ? c.inkFaint : c.ink,
-                    ).copyWith(
-                      decoration: task.isCompleted
-                          ? TextDecoration.lineThrough
-                          : null,
-                      decorationColor: c.inkFaint,
-                    ),
+                    style:
+                        OblixType.ui(
+                          c,
+                          size: 15,
+                          weight: FontWeight.w500,
+                          color: task.isCompleted ? c.inkFaint : c.ink,
+                        ).copyWith(
+                          decoration: task.isCompleted
+                              ? TextDecoration.lineThrough
+                              : null,
+                          decorationColor: c.inkFaint,
+                        ),
                   ),
                   if (!task.isCompleted &&
                       (due != null || task.description.isNotEmpty)) ...[
@@ -316,14 +319,14 @@ class _TaskRow extends StatelessWidget {
                     Row(
                       children: [
                         if (due != null) ...[
-                          Icon(Icons.schedule,
-                              size: 11,
-                              color: overdue ? c.danger : c.inkMuted),
+                          Icon(
+                            Icons.schedule,
+                            size: 11,
+                            color: overdue ? c.danger : c.inkMuted,
+                          ),
                           const SizedBox(width: 5),
                           Text(
-                            overdue
-                                ? Formats.relative(due)
-                                : Formats.time(due),
+                            overdue ? Formats.relative(due) : Formats.time(due),
                             style: OblixType.ui(
                               c,
                               size: 11.5,
@@ -342,8 +345,11 @@ class _TaskRow extends StatelessWidget {
                               task.description,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: OblixType.ui(c,
-                                  size: 11.5, color: c.inkMuted),
+                              style: OblixType.ui(
+                                c,
+                                size: 11.5,
+                                color: c.inkMuted,
+                              ),
                             ),
                           ),
                       ],

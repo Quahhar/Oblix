@@ -161,14 +161,16 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
               padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
               child: Center(
                 child: Text(
-                  'No notebooks yet — tap New to make one.',
+                  'No notebooks yet, tap New to make one.',
                   style: OblixType.ui(c, size: 14, color: c.inkMuted),
                 ),
               ),
             ),
           if (_tagList.isNotEmpty) ...[
-            const SectionEyebrow('Tags',
-                padding: EdgeInsets.fromLTRB(20, 22, 20, 8)),
+            const SectionEyebrow(
+              'Tags',
+              padding: EdgeInsets.fromLTRB(20, 22, 20, 8),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Wrap(
@@ -179,8 +181,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                     Material(
                       color: Colors.transparent,
                       shape: StadiumBorder(
-                        side: BorderSide(
-                            color: c.ink.withValues(alpha: 0.14)),
+                        side: BorderSide(color: c.ink.withValues(alpha: 0.14)),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
@@ -192,17 +193,25 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 13, vertical: 7),
+                            horizontal: 13,
+                            vertical: 7,
+                          ),
                           child: Text.rich(
                             TextSpan(
                               text: '#${tag.name} ',
-                              style: OblixType.ui(c,
-                                  size: 12.5, color: c.avatarInk),
+                              style: OblixType.ui(
+                                c,
+                                size: 12.5,
+                                color: c.avatarInk,
+                              ),
                               children: [
                                 TextSpan(
                                   text: '${_tagCounts[tag.name] ?? 0}',
-                                  style: OblixType.ui(c,
-                                      size: 12.5, color: c.inkFaint),
+                                  style: OblixType.ui(
+                                    c,
+                                    size: 12.5,
+                                    color: c.inkFaint,
+                                  ),
                                 ),
                               ],
                             ),
@@ -247,8 +256,11 @@ class _NotebookRow extends StatelessWidget {
                 color: c.surfaceAlt,
                 borderRadius: BorderRadius.circular(9),
               ),
-              child:
-                  Icon(Icons.menu_book_outlined, size: 16, color: c.avatarInk),
+              child: Icon(
+                Icons.menu_book_outlined,
+                size: 16,
+                color: c.avatarInk,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(

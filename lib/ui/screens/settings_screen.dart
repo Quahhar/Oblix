@@ -339,7 +339,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ValueListenableBuilder<String?>(
                               valueListenable: ProfileCache.instance.email,
                               builder: (context, email, _) => Text(
-                                email ?? '—',
+                                email ?? '',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: OblixType.ui(
@@ -434,9 +434,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (result.skipped) return;
                         _snack(
                           result.success
-                              ? 'Synced — ${result.pushed} pushed, '
+                              ? 'Synced, ${result.pushed} pushed, '
                                     '${result.pulled} pulled'
-                              : 'Sync failed — changes are kept locally',
+                              : 'Sync failed, changes are kept locally',
                         );
                       },
                     ),
