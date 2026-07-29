@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = DEFAULT_SECRET_KEY
     API_V1_PREFIX: str = "/api"
+    # External path prefix when a reverse proxy strips it before forwarding.
+    # FastAPI uses this to generate correct OpenAPI/docs URLs.
+    ROOT_PATH: str = ""
 
     @property
     def is_production(self) -> bool:

@@ -38,6 +38,14 @@ uvicorn app.main:app --reload
 
 Interactive API docs at `http://127.0.0.1:8000/docs`.
 
+Run the regression and correctness checks with:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check app tests alembic
+```
+
 ## Production
 
 See **[DEPLOY.md](DEPLOY.md)**. Two supported shapes:

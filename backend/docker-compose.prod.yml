@@ -37,6 +37,13 @@ services:
       db:
         condition: service_healthy
     restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   api:
     build: .
@@ -47,8 +54,14 @@ services:
       DEBUG: "false"
       SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-sonnet-5}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.anthropic.com}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-60}
+      AI_MAX_INPUT_CHARS: ${AI_MAX_INPUT_CHARS:-150000}
+      AI_RATE_LIMIT_PER_HOUR: ${AI_RATE_LIMIT_PER_HOUR:-30}
     volumes:
       - ./uploads:/app/uploads
     depends_on:
@@ -56,6 +69,23 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     # No host port published — Caddy proxies to it on the internal network.
 
   caddy:
@@ -72,7 +102,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

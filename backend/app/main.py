@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from app.config import settings
 from app.database import engine, Base
 from app.routers import auth, notes, notebooks, tags, files, sync, shares, tasks, ai
@@ -21,6 +23,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     version="1.0.0",
     lifespan=lifespan,
+    root_path=settings.ROOT_PATH,
 )
 
 # CORS
@@ -51,4 +54,12 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        ) from exc
+    return {"status": "healthy", "database": "connected"}

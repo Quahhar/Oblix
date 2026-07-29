@@ -91,7 +91,8 @@ location /oblix/ {
     proxy_pass http://127.0.0.1:8001/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # Overwrite, do not append an untrusted client-supplied value.
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
     client_max_body_size 50m;   # match MAX_UPLOAD_SIZE_MB
 }
@@ -114,10 +115,11 @@ location /oblix/ {
 
 ## Backups
 
-`scripts/backup.sh` dumps the database (plain SQL, gzipped) into
-`/var/backups/oblix`, keeping the last 14 days; `scripts/restore.sh` restores
-one. Both read `.env` for the DB credentials and talk to the running `db`
-container, so they need no separate config.
+`scripts/backup.sh` dumps the database (plain SQL, gzipped) and archives
+`uploads/` into `/var/backups/oblix`, keeping matching pairs for 14 days.
+`scripts/restore.sh` restores the database and, when passed the second archive,
+the attachments. Both read `.env` for DB credentials and talk to the running
+`db` container, so they need no separate config.
 
 Install the daily cron job (runs 03:30 UTC):
 
@@ -132,7 +134,9 @@ Run one on demand / list / restore:
 ```bash
 /var/oblix/scripts/backup.sh                 # take one now
 ls -lh /var/backups/oblix                    # list dumps
-/var/oblix/scripts/restore.sh /var/backups/oblix/oblix-<ts>.sql.gz   # DESTRUCTIVE
+/var/oblix/scripts/restore.sh \
+  /var/backups/oblix/oblix-<ts>.sql.gz \
+  /var/backups/oblix/oblix-uploads-<ts>.tar.gz   # DESTRUCTIVE
 ```
 
 Tunable via env: `OBLIX_BACKUP_DIR`, `OBLIX_BACKUP_RETENTION_DAYS`.

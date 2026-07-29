@@ -30,7 +30,7 @@ class SyncLog(Base):
     entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     action: Mapped[SyncAction] = mapped_column(Enum(SyncAction), nullable=False)
     device_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="sync_logs")

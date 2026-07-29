@@ -120,9 +120,16 @@ class FileService:
         file.is_deleted = True
         file.deleted_at = datetime.now(timezone.utc)
         storage_path = file.storage_path
-        await db.flush()
-        # Best-effort blob removal; the record is already the source of truth.
-        await storage.delete(storage_path)
+        # Make the tombstone durable before touching the blob. get_db's later
+        # commit is harmless and this ordering prevents a live row from
+        # referencing a missing file if the transaction commit fails.
+        await db.commit()
+        try:
+            await storage.delete(storage_path)
+        except OSError:
+            # Best effort: the deleted row remains authoritative and a later
+            # maintenance pass can remove an orphaned blob.
+            pass
 
 
 file_service = FileService()

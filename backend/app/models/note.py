@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Enum, func
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Enum, func, false, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -19,14 +19,14 @@ class Note(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     notebook_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("notebooks.id", ondelete="SET NULL"), nullable=True, index=True)
-    title: Mapped[str] = mapped_column(String(500), default="Untitled", nullable=False)
-    content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    title: Mapped[str] = mapped_column(String(500), default="Untitled", server_default=text("'Untitled'"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, default="", server_default=text("''"), nullable=False)
     content_type: Mapped[ContentType] = mapped_column(Enum(ContentType), default=ContentType.PLAIN, nullable=False)
-    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False, index=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     # The client's own last-edit time, used ONLY for sync last-write-wins
     # comparison. Kept separate from updated_at (which is the server-controlled
     # sync cursor) so conflict resolution compares edit-time-vs-edit-time and a
@@ -62,10 +62,10 @@ class NoteVersion(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     note_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    content: Mapped[str] = mapped_column(Text, default="", server_default=text("''"), nullable=False)
     content_type: Mapped[ContentType] = mapped_column(Enum(ContentType), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     note: Mapped["Note"] = relationship("Note", back_populates="versions")

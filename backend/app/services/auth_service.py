@@ -13,6 +13,7 @@ from app.schemas.auth import UserRegister, ProfileUpdate
 from app.utils.security import (
     hash_password,
     verify_password,
+    verify_and_update_password,
     create_access_token,
     create_refresh_token,
     refresh_token_expiry,
@@ -75,14 +76,23 @@ class AuthService:
         user = result.scalars().first()
 
         # Off the event loop: bcrypt verify is as expensive as hashing.
-        ok = bool(user and user.hashed_password) and await run_in_threadpool(
-            verify_password, password, user.hashed_password
-        )
+        ok = False
+        replacement_hash = None
+        if user and user.hashed_password:
+            ok, replacement_hash = await run_in_threadpool(
+                verify_and_update_password, password, user.hashed_password
+            )
         if not ok:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+
+        # Successful login transparently migrates old plain-bcrypt hashes to
+        # bcrypt_sha256, eliminating bcrypt's 72-byte truncation for that
+        # account without forcing a password reset.
+        if replacement_hash:
+            user.hashed_password = replacement_hash
 
         return await self._issue_tokens(db, user, device_id)
 
@@ -90,7 +100,16 @@ class AuthService:
         """Authenticate or register using Google ID token."""
         from google.oauth2 import id_token as g_id_token
         from google.auth.transport import requests
-        from app.config import settings
+        from google.auth.exceptions import GoogleAuthError
+
+        # The Google verifier skips audience validation when audience=None.
+        # Refuse the endpoint entirely unless this deployment has explicitly
+        # configured the mobile/web OAuth client id.
+        if not settings.GOOGLE_CLIENT_ID:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google sign-in is not configured",
+            )
 
         try:
             # verify_oauth2_token does blocking HTTP (fetching Google's certs on
@@ -108,8 +127,13 @@ class AuthService:
             # the key present-but-null (e.g. no profile scope), and display_name
             # is NOT NULL — a None here would 500 the first Google sign-in.
             display_name = idinfo.get("name") or (email.split("@")[0] if email else None) or "User"
-        except Exception:
+        except (ValueError, KeyError):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google ID token")
+        except GoogleAuthError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google sign-in is temporarily unavailable",
+            )
 
         if not email:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google account has no email")
@@ -146,7 +170,17 @@ class AuthService:
             )
             db.add(user)
 
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            # A simultaneous first Google sign-in may race on google_id/email.
+            # Roll back the failed transaction and return a safe retry response
+            # rather than leaking a database error.
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Account was updated concurrently; please retry",
+            )
         return await self._issue_tokens(db, user, device_id)
 
     async def refresh_token(self, db: AsyncSession, refresh_token: str) -> dict:
@@ -164,8 +198,14 @@ class AuthService:
         except (ValueError, TypeError):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-        session = (await db.execute(select(Session).where(Session.id == session_id))).scalar_one_or_none()
+        session = (
+            await db.execute(
+                select(Session).where(Session.id == session_id).with_for_update()
+            )
+        ).scalar_one_or_none()
         if session is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+        if str(session.user_id) != str(payload.get("sub")):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
         now = datetime.now(timezone.utc)
@@ -186,7 +226,12 @@ class AuthService:
             successor = None
             if session.replaced_by is not None and session.revoked_at > now - grace:
                 successor = (await db.execute(
-                    select(Session).where(Session.id == session.replaced_by)
+                    select(Session)
+                    .where(
+                        Session.id == session.replaced_by,
+                        Session.user_id == session.user_id,
+                    )
+                    .with_for_update()
                 )).scalar_one_or_none()
             if successor is not None and successor.revoked_at is None and successor.expires_at > now:
                 return {

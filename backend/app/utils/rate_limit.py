@@ -11,6 +11,7 @@ localhost, so those headers are trustworthy here), falling back to the socket
 peer address.
 """
 import time
+from ipaddress import ip_address
 from collections import deque
 
 from fastapi import HTTPException, Request, status
@@ -19,13 +20,31 @@ from app.config import settings
 
 
 def client_ip(request: Request) -> str:
+    """Return the address supplied by the trusted, local reverse proxy.
+
+    nginx overwrites X-Real-IP with its socket peer. Prefer that header and
+    validate it as an IP. For another trusted proxy deployment, use the last
+    valid X-Forwarded-For hop (the value appended by the proxy), never the
+    attacker-controlled first hop.
+    """
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and _valid_ip(real_ip.strip()):
+        return real_ip.strip()
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+        for candidate in reversed(xff.split(",")):
+            candidate = candidate.strip()
+            if _valid_ip(candidate):
+                return candidate
     return request.client.host if request.client else "unknown"
+
+
+def _valid_ip(value: str) -> bool:
+    try:
+        ip_address(value)
+        return True
+    except ValueError:
+        return False
 
 
 class SlidingWindowLimiter:

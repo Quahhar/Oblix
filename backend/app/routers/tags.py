@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.tag import Tag
 from app.schemas.tag import TagCreate, TagResponse
@@ -56,7 +57,14 @@ async def create_tag(
         name=data.name,
     )
     db.add(tag)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tag with this name already exists",
+        )
     await db.refresh(tag)
     return tag
 

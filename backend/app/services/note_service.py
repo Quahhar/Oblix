@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 from app.models.user import User
-from app.models.note import Note, NoteVersion, ContentType
+from app.models.note import Note, NoteVersion
 from app.models.notebook import Notebook
 from app.models.tag import Tag, NoteTag
 from app.schemas.note import NoteCreate, NoteUpdate

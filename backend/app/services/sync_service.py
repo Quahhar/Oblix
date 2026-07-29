@@ -1,13 +1,13 @@
 import uuid
 import json
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlalchemy import select, delete, and_, or_, inspect as sa_inspect
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
-from app.models.note import Note, NoteVersion, ContentType
+from app.models.note import Note, ContentType
 from app.models.notebook import Notebook
 from app.models.tag import Tag, NoteTag
 from app.models.file import File
@@ -45,6 +45,22 @@ def _parse_ts(value: Optional[str]) -> Optional[datetime]:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def _client_ts(value: Optional[str], now: Optional[datetime] = None) -> Optional[datetime]:
+    """Parse a client timestamp and cap unreasonable clock skew.
+
+    A client several years in the future must not permanently win last-write-
+    wins conflict resolution. Allow five minutes for normal device skew, then
+    use the server clock. Past timestamps remain meaningful for offline edits.
+    """
+    parsed = _parse_ts(value)
+    if parsed is None:
+        return None
+    server_now = now or datetime.now(timezone.utc)
+    if parsed > server_now + timedelta(minutes=5):
+        return server_now
+    return parsed
 
 
 def _encode_cursor(ts_iso: str, entity_id: str) -> str:
@@ -187,7 +203,7 @@ class SyncService:
     async def _apply_note_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         existing = await self._get_note_with_tags(db, user, entity_id)
         client_data = change.data
-        client_ts = _parse_ts(change.timestamp)
+        client_ts = _client_ts(change.timestamp)
 
         if change.action == "create":
             if existing and not existing.is_deleted:
@@ -212,7 +228,7 @@ class SyncService:
             # the client); otherwise func.now() stamps it with the sync time and
             # the note shows "created today" on every other device. Stamp
             # updated_at on the server clock so it lines up with the sync cursor.
-            created = _parse_ts(client_data.get("created_at"))
+            created = _client_ts(client_data.get("created_at"))
             if created is not None:
                 note.created_at = created
             note.updated_at = datetime.now(timezone.utc)
@@ -276,6 +292,35 @@ class SyncService:
             select(Notebook.id).where(Notebook.id == nb_id, Notebook.user_id == user.id)
         )).scalar_one_or_none()
         return owned
+
+    async def _safe_notebook_parent(
+        self,
+        db: AsyncSession,
+        user: User,
+        raw,
+        this_id: uuid.UUID,
+    ) -> Optional[uuid.UUID]:
+        """Resolve an owned parent and reject self/descendant cycles."""
+        parent_id = await self._owned_notebook_id(db, user, raw)
+        if parent_id is None or parent_id == this_id:
+            return None
+
+        rows = (
+            await db.execute(
+                select(Notebook.id, Notebook.parent_id).where(
+                    Notebook.user_id == user.id
+                )
+            )
+        ).all()
+        parents = {row[0]: row[1] for row in rows}
+        cursor = parent_id
+        seen: set[uuid.UUID] = set()
+        while cursor is not None:
+            if cursor == this_id or cursor in seen:
+                return None
+            seen.add(cursor)
+            cursor = parents.get(cursor)
+        return parent_id
 
     async def _apply_note_fields(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
         for key in ("title", "content", "is_pinned", "is_archived"):
@@ -345,7 +390,7 @@ class SyncService:
     async def _apply_notebook_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         existing = await self._get_one(db, Notebook, user, entity_id)
         client_data = change.data
-        client_ts = _parse_ts(change.timestamp)
+        client_ts = _client_ts(change.timestamp)
 
         if change.action == "create":
             if existing and not existing.is_deleted:
@@ -355,15 +400,14 @@ class SyncService:
                 existing.deleted_at = None
             target = existing or Notebook(id=uuid.UUID(entity_id), user_id=user.id)
             target.name = client_data.get("name", "New Notebook")
-            parent_id = await self._owned_notebook_id(db, user, client_data.get("parent_id"))
-            if parent_id == target.id:
-                parent_id = None  # a notebook can't be its own parent
-            target.parent_id = parent_id
+            target.parent_id = await self._safe_notebook_parent(
+                db, user, client_data.get("parent_id"), target.id
+            )
             if "sort_order" in client_data:
                 target.sort_order = client_data["sort_order"]
             target.updated_at = datetime.now(timezone.utc)
             if existing is None:
-                created = _parse_ts(client_data.get("created_at"))
+                created = _client_ts(client_data.get("created_at"))
                 if created is not None:
                     target.created_at = created
                 db.add(target)
@@ -378,10 +422,9 @@ class SyncService:
                 if key in client_data:
                     setattr(existing, key, client_data[key])
             if "parent_id" in client_data:
-                parent_id = await self._owned_notebook_id(db, user, client_data["parent_id"])
-                if parent_id == existing.id:
-                    parent_id = None  # a notebook can't be its own parent
-                existing.parent_id = parent_id
+                existing.parent_id = await self._safe_notebook_parent(
+                    db, user, client_data["parent_id"], existing.id
+                )
             existing.updated_at = datetime.now(timezone.utc)
             return {}
 
@@ -407,7 +450,7 @@ class SyncService:
                 existing.updated_at = datetime.now(timezone.utc)
                 return {}
             tag = Tag(id=uuid.UUID(entity_id), user_id=user.id, name=client_data.get("name", "New Tag"))
-            created = _parse_ts(client_data.get("created_at"))
+            created = _client_ts(client_data.get("created_at"))
             if created is not None:
                 tag.created_at = created
             tag.updated_at = datetime.now(timezone.utc)
@@ -434,7 +477,7 @@ class SyncService:
     async def _apply_task_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         existing = await self._get_one(db, Task, user, entity_id)
         client_data = change.data
-        client_ts = _parse_ts(change.timestamp)
+        client_ts = _client_ts(change.timestamp)
 
         if change.action == "create":
             if existing and not existing.is_deleted:
@@ -450,7 +493,7 @@ class SyncService:
                 return {}
             task = Task(id=uuid.UUID(entity_id), user_id=user.id, title="Untitled task")
             await self._apply_task_fields(db, user, task, client_data)
-            created = _parse_ts(client_data.get("created_at"))
+            created = _client_ts(client_data.get("created_at"))
             if created is not None:
                 task.created_at = created
             task.updated_at = datetime.now(timezone.utc)

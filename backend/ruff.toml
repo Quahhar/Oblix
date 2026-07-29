@@ -1,0 +1,11 @@
+target-version = "py312"
+
+[lint]
+# Correctness-focused baseline for the existing FastAPI codebase. Formatting
+# and annotation modernization are deliberately separate from error checking.
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E712"]
+
+[lint.per-file-ignores]
+# SQLAlchemy resolves these quoted relationship targets from its model registry.
+"app/models/*.py" = ["F821"]

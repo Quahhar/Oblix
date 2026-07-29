@@ -22,6 +22,7 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
 from app.models.note import Note
@@ -123,7 +124,14 @@ class ShareService:
             role=ShareRole(data.role),
         )
         db.add(share)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Already shared with that user",
+            )
         # created_at is a server default; load it before serializing. Share has
         # no lazy relationships, so refresh is safe here (cf. notes, where it isn't).
         await db.refresh(share)

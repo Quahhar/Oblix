@@ -15,11 +15,13 @@ class LocalStorage:
 
     def __init__(self, base_dir: str = settings.UPLOAD_DIR):
         self.base_dir = Path(base_dir)
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.base_dir.chmod(0o700)
 
     def _get_user_dir(self, user_id: str) -> Path:
         user_dir = self.base_dir / user_id
-        user_dir.mkdir(parents=True, exist_ok=True)
+        user_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        user_dir.chmod(0o700)
         return user_dir
 
     async def upload(self, user_id: str, file: UploadFile) -> tuple[str, str, int]:
@@ -43,6 +45,7 @@ class LocalStorage:
                             f"File exceeds the {settings.MAX_UPLOAD_SIZE_MB} MB limit"
                         )
                     await f.write(chunk)
+            file_path.chmod(0o600)
         except FileTooLargeError:
             # Don't leave a partial file behind.
             if file_path.exists():
