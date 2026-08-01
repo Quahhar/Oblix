@@ -11,6 +11,9 @@
 //   * synced tombstones are purged after the retention window,
 //   * FTS search (including the INSERT OR REPLACE update path) works.
 
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:oblix/core/db/app_database.dart';
 import 'package:oblix/core/db/meta_dao.dart';
 import 'package:oblix/core/network/api_exceptions.dart';
@@ -19,6 +22,7 @@ import 'package:oblix/data/datasources/local/notebook_local_datasource.dart';
 import 'package:oblix/data/datasources/local/outbox_dao.dart';
 import 'package:oblix/data/datasources/local/tag_local_datasource.dart';
 import 'package:oblix/data/datasources/remote/sync_remote_datasource.dart';
+import 'package:oblix/data/models/note.dart';
 import 'package:oblix/data/models/sync_payload.dart';
 import 'package:oblix/data/models/tag.dart';
 import 'package:oblix/data/repositories/note_repository.dart';
@@ -56,6 +60,24 @@ class _ThrowingRemote extends SyncRemoteDataSource {
     String? lastSyncAt,
   }) async {
     throw error ?? Exception('network down');
+  }
+}
+
+class _BlockingRemote extends SyncRemoteDataSource {
+  _BlockingRemote(this.response);
+
+  final SyncPushResponse response;
+  final entered = Completer<void>();
+  final resume = Completer<void>();
+
+  @override
+  Future<SyncPushResponse> pushChanges({
+    required List<SyncChangeItem> changes,
+    String? lastSyncAt,
+  }) async {
+    if (!entered.isCompleted) entered.complete();
+    await resume.future;
+    return response;
   }
 }
 
@@ -131,13 +153,12 @@ SyncPushResponse _resp({
   List<String> applied = const [],
   List<Map<String, dynamic>> serverChanges = const [],
   String serverTime = '',
-}) =>
-    SyncPushResponse(
-      applied: applied,
-      conflicts: const [],
-      serverChanges: serverChanges,
-      serverTime: serverTime,
-    );
+}) => SyncPushResponse(
+  applied: applied,
+  conflicts: const [],
+  serverChanges: serverChanges,
+  serverTime: serverTime,
+);
 
 void main() {
   setUpAll(sqfliteFfiInit);
@@ -178,27 +199,31 @@ void main() {
     SyncRemoteDataSource remote, {
     int batchSize = 100,
     int maxPushAttempts = 5,
-  }) =>
-      SyncEngine(
-        appDb: db,
-        remote: remote,
-        outbox: outbox,
-        notes: notes,
-        notebooks: notebooks,
-        tags: tags,
-        meta: meta,
-        batchSize: batchSize,
-        maxPushAttempts: maxPushAttempts,
-      );
+  }) => SyncEngine(
+    appDb: db,
+    remote: remote,
+    outbox: outbox,
+    notes: notes,
+    notebooks: notebooks,
+    tags: tags,
+    meta: meta,
+    batchSize: batchSize,
+    maxPushAttempts: maxPushAttempts,
+  );
 
   group('local writes', () {
     test('create writes note and enqueues one outbox entry', () async {
       final note = await noteRepo.createNote(title: 'A');
 
       expect(await outbox.pendingCount(), 1);
+      expect(await noteRepo.hasPendingCreate(note.id), isTrue);
       final stored = await notes.getById(note.id);
       expect(stored, isNotNull);
       expect(stored!.title, 'A');
+
+      final sql = await db.database;
+      await sql.delete('outbox');
+      expect(await noteRepo.hasPendingCreate(note.id), isFalse);
     });
 
     test('outbox change data carries tags', () async {
@@ -209,13 +234,382 @@ void main() {
     });
 
     test('moveToNotebook(null) clears the notebook', () async {
-      final note =
-          await noteRepo.createNote(title: 'A', notebookId: 'nb-1');
+      final note = await noteRepo.createNote(title: 'A', notebookId: 'nb-1');
       await noteRepo.moveToNotebook(note.id, null);
 
       final stored = await notes.getById(note.id);
       expect(stored!.notebookId, isNull);
     });
+
+    test('metadata updates do not resend stale title or body', () async {
+      final note = await noteRepo.createNote(
+        title: 'Canonical',
+        content: 'Body',
+      );
+      await noteRepo.updateNote(note.id, isPinned: true);
+
+      final batch = await outbox.fetchBatch();
+      final pinChange = batch.last.change;
+      expect(pinChange.data, {'is_pinned': true});
+      expect(pinChange.data, isNot(contains('title')));
+      expect(pinChange.data, isNot(contains('content')));
+    });
+
+    test('pending collaboration fields ignore metadata-only changes', () async {
+      final note = await noteRepo.createNote(
+        title: 'Canonical',
+        content: 'Body',
+      );
+      final sql = await db.database;
+      await sql.delete('outbox');
+
+      await noteRepo.updateNote(note.id, isPinned: true);
+      expect(await noteRepo.pendingCollaborativeContentFields(note.id), (
+        title: false,
+        content: false,
+      ));
+
+      await noteRepo.updateNote(note.id, title: 'Local title');
+      expect(await noteRepo.pendingCollaborativeContentFields(note.id), (
+        title: true,
+        content: false,
+      ));
+
+      await noteRepo.updateNote(note.id, content: 'Local body');
+      expect(await noteRepo.pendingCollaborativeContentFields(note.id), (
+        title: true,
+        content: true,
+      ));
+    });
+
+    test('new-note outbox preserves both collaboration fields', () async {
+      final note = await noteRepo.createNote(title: 'Draft', content: 'Body');
+
+      expect(await noteRepo.pendingCollaborativeContentFields(note.id), (
+        title: true,
+        content: true,
+      ));
+    });
+
+    test(
+      'collaboration cache write keeps LWW time and rejects stale revision',
+      () async {
+        final note = await noteRepo.createNote(title: 'Old', content: 'Old');
+        final sql = await db.database;
+        await sql.delete('outbox');
+
+        final applied = await noteRepo.applyCollaborativeSnapshot(
+          note.id,
+          title: 'Revision two',
+          content: 'Canonical',
+          epoch: 'epoch-a',
+          revision: 2,
+        );
+        expect(applied, isNotNull);
+        expect(applied!.updatedAt, note.updatedAt);
+
+        final stale = await noteRepo.applyCollaborativeSnapshot(
+          note.id,
+          title: 'Revision one',
+          content: 'Stale',
+          epoch: 'epoch-a',
+          revision: 1,
+        );
+        expect(stale, isNull);
+
+        final stored = await notes.getById(note.id);
+        expect(stored!.title, 'Revision two');
+        expect(stored.content, 'Canonical');
+        expect(stored.updatedAt, note.updatedAt);
+      },
+    );
+
+    test('collaboration revision ordering is shared across repositories', () async {
+      final note = await noteRepo.createNote(title: 'Old', content: 'Old');
+      final sql = await db.database;
+      await sql.delete('outbox');
+      final secondRepository = NoteRepository(
+        appDb: db,
+        local: NoteLocalDataSource(db),
+        outbox: OutboxDao(db),
+        meta: MetaDao(db),
+      );
+
+      await noteRepo.applyCollaborativeSnapshot(
+        note.id,
+        title: 'Revision two',
+        content: 'Newest',
+        epoch: 'shared-epoch',
+        revision: 2,
+      );
+      final stale = await secondRepository.applyCollaborativeSnapshot(
+        note.id,
+        title: 'Revision one',
+        content: 'Stale',
+        epoch: 'shared-epoch',
+        revision: 1,
+      );
+
+      expect(stale, isNull);
+      final stored = await notes.getById(note.id);
+      expect(stored!.title, 'Revision two');
+      expect(stored.content, 'Newest');
+    });
+
+    test(
+      'acknowledgement retires only captured update fields',
+      () async {
+        final note = await noteRepo.createNote(title: 'Old', content: 'Old');
+        final sql = await db.database;
+        await sql.delete('outbox');
+
+        await noteRepo.updateNote(
+          note.id,
+          title: 'Offline title',
+          isPinned: true,
+        );
+        await noteRepo.updateNote(note.id, content: 'Offline body');
+        final captured = await noteRepo.pendingCollaborativeContent(note.id);
+        final capturedTitleSeq = captured.titleUpdateSeqs.single;
+        final capturedContentSeq = captured.contentUpdateSeqs.single;
+
+        await noteRepo.updateNote(note.id, title: 'Later offline title');
+        final newerTitleSeq = (await outbox.fetchBatch()).last.seq;
+        final now = DateTime.now().toUtc().toIso8601String();
+        final createSeq = await sql.insert('outbox', {
+          'entity_type': 'note',
+          'entity_id': note.id,
+          'action': 'create',
+          'data': '{"title":"create fallback"}',
+          'timestamp': now,
+        });
+        final deleteSeq = await sql.insert('outbox', {
+          'entity_type': 'note',
+          'entity_id': note.id,
+          'action': 'delete',
+          'data': '{"title":"delete fallback"}',
+          'timestamp': now,
+        });
+        final malformedSeq = await sql.insert('outbox', {
+          'entity_type': 'note',
+          'entity_id': note.id,
+          'action': 'update',
+          'data': '{malformed',
+          'timestamp': now,
+        });
+
+        await noteRepo.applyCollaborativeSnapshot(
+          note.id,
+          title: 'Canonical title',
+          content: 'Canonical body',
+          epoch: 'retirement-epoch',
+          revision: 2,
+        );
+        final sameRevision = await NoteRepository(
+          appDb: db,
+          local: NoteLocalDataSource(db),
+          outbox: OutboxDao(db),
+          meta: MetaDao(db),
+        ).applyCollaborativeSnapshot(
+          note.id,
+          title: 'Must not overwrite',
+          content: 'Must not overwrite',
+          epoch: 'retirement-epoch',
+          revision: 2,
+          acknowledgedUpdateSeqsByField: {
+            'title': {
+              ...captured.titleUpdateSeqs,
+              createSeq,
+              deleteSeq,
+              malformedSeq,
+            },
+          },
+        );
+        expect(sameRevision, isNull);
+
+        var rows = await sql.query('outbox', orderBy: 'seq ASC');
+        Map<String, dynamic> dataFor(int seq) =>
+            jsonDecode(rows.singleWhere((row) => row['seq'] == seq)['data']! as String)
+                as Map<String, dynamic>;
+        expect(dataFor(capturedTitleSeq), {'is_pinned': true});
+        expect(dataFor(capturedContentSeq), {'content': 'Offline body'});
+        expect(dataFor(newerTitleSeq), {'title': 'Later offline title'});
+        expect(dataFor(createSeq), {'title': 'create fallback'});
+        expect(dataFor(deleteSeq), {'title': 'delete fallback'});
+        expect(
+          rows.singleWhere((row) => row['seq'] == malformedSeq)['data'],
+          '{malformed',
+        );
+
+        await noteRepo.applyCollaborativeSnapshot(
+          note.id,
+          title: 'Older ignored title',
+          content: 'Older ignored body',
+          epoch: 'retirement-epoch',
+          revision: 1,
+          acknowledgedUpdateSeqsByField: {
+            'content': captured.contentUpdateSeqs,
+          },
+        );
+        rows = await sql.query('outbox', orderBy: 'seq ASC');
+        expect(rows.any((row) => row['seq'] == capturedContentSeq), isFalse);
+        final stored = await notes.getById(note.id);
+        expect(stored!.title, 'Canonical title');
+        expect(stored.content, 'Canonical body');
+      },
+    );
+
+    test('missing-note snapshot rolls back fallback retirement', () async {
+      final sql = await db.database;
+      final seq = await sql.insert('outbox', {
+        'entity_type': 'note',
+        'entity_id': 'missing-note',
+        'action': 'update',
+        'data': '{"title":"keep me"}',
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+      });
+
+      await expectLater(
+        noteRepo.applyCollaborativeSnapshot(
+          'missing-note',
+          title: 'Canonical',
+          content: '',
+          epoch: 'missing-epoch',
+          revision: 1,
+          acknowledgedUpdateSeqsByField: {
+            'title': {seq},
+          },
+        ),
+        throwsStateError,
+      );
+      final rows = await sql.query(
+        'outbox',
+        where: 'seq = ?',
+        whereArgs: [seq],
+      );
+      expect(rows.single['data'], '{"title":"keep me"}');
+    });
+
+    test(
+      'collaboration content and metadata patches preserve each other',
+      () async {
+        final note = await noteRepo.createNote(
+          title: 'Old',
+          content: 'Old',
+          notebookId: 'notebook-a',
+          tagNames: ['before'],
+        );
+        final sql = await db.database;
+        await sql.delete('outbox');
+
+        await Future.wait([
+          noteRepo.updateNote(
+            note.id,
+            isPinned: true,
+            isArchived: true,
+            tagNames: const ['after'],
+          ),
+          noteRepo.applyCollaborativeSnapshot(
+            note.id,
+            title: 'Canonical title',
+            content: 'Canonical body',
+            epoch: 'epoch-a',
+            revision: 1,
+          ),
+        ]);
+
+        final stored = await notes.getById(note.id);
+        expect(stored!.title, 'Canonical title');
+        expect(stored.content, 'Canonical body');
+        expect(stored.isPinned, isTrue);
+        expect(stored.isArchived, isTrue);
+        expect(stored.tagNames, ['after']);
+        expect(stored.notebookId, 'notebook-a');
+      },
+    );
+
+    test('move patch cannot roll back collaborative content', () async {
+      final note = await noteRepo.createNote(
+        title: 'Old',
+        content: 'Old',
+        notebookId: 'notebook-a',
+      );
+      final sql = await db.database;
+      await sql.delete('outbox');
+
+      await Future.wait([
+        noteRepo.moveToNotebook(note.id, 'notebook-b'),
+        noteRepo.applyCollaborativeSnapshot(
+          note.id,
+          title: 'Canonical title',
+          content: 'Canonical body',
+          epoch: 'epoch-a',
+          revision: 1,
+        ),
+      ]);
+
+      final stored = await notes.getById(note.id);
+      expect(stored!.title, 'Canonical title');
+      expect(stored.content, 'Canonical body');
+      expect(stored.notebookId, 'notebook-b');
+    });
+
+    test('owner cache snapshot preserves newer local metadata', () async {
+      final fetched = await noteRepo.createNote(
+        title: 'Fetched title',
+        content: 'Fetched body',
+        notebookId: 'notebook-a',
+        tagNames: const ['before'],
+      );
+      final sql = await db.database;
+      await sql.delete('outbox');
+
+      await noteRepo.updateNote(
+        fetched.id,
+        isPinned: true,
+        isArchived: true,
+        tagNames: const ['after'],
+      );
+      await noteRepo.cacheSharedNote(
+        fetched.copyWith(
+          title: 'Canonical title',
+          content: 'Canonical body',
+        ),
+      );
+
+      final stored = await notes.getById(fetched.id);
+      expect(stored!.title, 'Canonical title');
+      expect(stored.content, 'Canonical body');
+      expect(stored.isPinned, isTrue);
+      expect(stored.isArchived, isTrue);
+      expect(stored.tagNames, ['after']);
+      expect(stored.notebookId, 'notebook-a');
+    });
+
+    test(
+      'foreign shared-note cache rows stay out of owned-note reads',
+      () async {
+        final now = DateTime.now().toUtc();
+        final foreign = Note(
+          id: 'foreign-note',
+          userId: 'another-user',
+          title: 'Shared',
+          content: 'Visible only through Shared with me',
+          createdAt: now,
+          updatedAt: now,
+        );
+        final sql = await db.database;
+        await sql.transaction((txn) => notes.upsert(txn, foreign));
+
+        expect(await noteRepo.getNote(foreign.id), isNull);
+        expect(
+          (await noteRepo.listNotes(
+            archived: null,
+          )).where((note) => note.id == foreign.id),
+          isEmpty,
+        );
+      },
+    );
 
     test('edits are monotonically timestamped', () async {
       final note = await noteRepo.createNote(title: 'A');
@@ -225,46 +619,143 @@ void main() {
   });
 
   group('sync cycle', () {
-    test('pushes outbox, merges server entities, advances cursor, drains',
-        () async {
-      final local = await noteRepo.createNote(title: 'local');
-
+    test('protected note cannot starve or enter a sync batch', () async {
+      final protected = await noteRepo.createNote(title: 'Protected');
+      final other = await noteRepo.createNote(title: 'Other');
+      final release = await noteRepo.protectForCollaboration(protected.id);
       final remote = _FakeRemote([
         _resp(
-          serverChanges: [
-            _noteChange('srv-note',
-                title: 'from server', updatedAt: DateTime.now()),
-            _notebookChange('srv-nb', 'Inbox', DateTime.now()),
-            _tagChange('srv-tag', 'work', DateTime.now()),
-          ],
+          applied: [other.id],
           serverTime: '2026-07-09T12:00:00.000Z',
         ),
       ]);
 
-      final result = await engineWith(remote).syncOnce();
+      await engineWith(remote, batchSize: 1).syncOnce();
 
-      expect(result.success, isTrue);
-      expect(result.pushed, 1);
-      expect(result.pulled, 3); // note + notebook + tag
-
-      // The local note was the thing pushed.
-      expect(remote.pushes.single.single.entityId, local.id);
-      expect(remote.cursors.single, isNull); // first sync has no prior cursor
-
-      // Outbox drained, cursor advanced, clock skew recorded.
-      expect(await outbox.pendingCount(), 0);
-      expect(await meta.getCursor(), '2026-07-09T12:00:00.000Z');
-      expect(await meta.getClockSkew(), isNot(Duration.zero));
-
-      // Server entities merged into their local mirrors.
-      expect(await notes.getById('srv-note'), isNotNull);
-      expect((await notebooks.getById('srv-nb'))!.name, 'Inbox');
-      expect((await tags.getById('srv-tag'))!.name, 'work');
+      final nonEmptyPushes = remote.pushes.where((batch) => batch.isNotEmpty);
+      expect(nonEmptyPushes.single.single.entityId, other.id);
+      final remaining = await outbox.fetchBatch();
+      expect(remaining.single.change.entityId, protected.id);
+      release();
     });
 
+    test('collaboration waits for a sync round that started first', () async {
+      final note = await noteRepo.createNote(title: 'Pending');
+      final remote = _BlockingRemote(
+        _resp(
+          applied: [note.id],
+          serverTime: '2026-07-09T12:00:00.000Z',
+        ),
+      );
+      final syncing = engineWith(remote).syncOnce();
+      await remote.entered.future;
+
+      var protectionReady = false;
+      final protecting = noteRepo.protectForCollaboration(note.id).then((release) {
+        protectionReady = true;
+        return release;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(protectionReady, isFalse);
+
+      remote.resume.complete();
+      await syncing;
+      final release = await protecting;
+      expect(protectionReady, isTrue);
+      expect(await outbox.pendingCount(), 0);
+      release();
+    });
+
+    test('delayed sync response preserves protected live document', () async {
+      final note = await noteRepo.createNote(title: 'Old', content: 'Old body');
+      final sql = await db.database;
+      await sql.delete('outbox');
+      await noteRepo.applyCollaborativeSnapshot(
+        note.id,
+        title: 'Live title',
+        content: 'Live body',
+        epoch: 'live-epoch',
+        revision: 1,
+      );
+      final release = await noteRepo.protectForCollaboration(note.id);
+      final serverChange = _noteChange(
+        note.id,
+        title: 'Delayed stale title',
+        updatedAt: note.updatedAt.add(const Duration(minutes: 1)),
+      );
+      final data = serverChange['data']! as Map<String, dynamic>;
+      data['content'] = 'Delayed stale body';
+      data['is_pinned'] = true;
+      final remote = _FakeRemote([
+        _resp(
+          serverChanges: [serverChange],
+          serverTime: '2026-07-09T12:00:00.000Z',
+        ),
+      ]);
+
+      await engineWith(remote).syncOnce();
+
+      final stored = await notes.getById(note.id);
+      expect(stored!.title, 'Live title');
+      expect(stored.content, 'Live body');
+      expect(stored.isPinned, isTrue);
+      expect(await meta.getCursor(), isNull);
+      release();
+
+      await engineWith(remote).syncOnce();
+      final afterRelease = await notes.getById(note.id);
+      expect(afterRelease!.title, 'Delayed stale title');
+      expect(afterRelease.content, 'Delayed stale body');
+      expect(await meta.getCursor(), '2026-07-09T12:00:00.000Z');
+    });
+
+    test(
+      'pushes outbox, merges server entities, advances cursor, drains',
+      () async {
+        final local = await noteRepo.createNote(title: 'local');
+
+        final remote = _FakeRemote([
+          _resp(
+            serverChanges: [
+              _noteChange(
+                'srv-note',
+                title: 'from server',
+                updatedAt: DateTime.now(),
+              ),
+              _notebookChange('srv-nb', 'Inbox', DateTime.now()),
+              _tagChange('srv-tag', 'work', DateTime.now()),
+            ],
+            serverTime: '2026-07-09T12:00:00.000Z',
+          ),
+        ]);
+
+        final result = await engineWith(remote).syncOnce();
+
+        expect(result.success, isTrue);
+        expect(result.pushed, 1);
+        expect(result.pulled, 3); // note + notebook + tag
+
+        // The local note was the thing pushed.
+        expect(remote.pushes.single.single.entityId, local.id);
+        expect(remote.cursors.single, isNull); // first sync has no prior cursor
+
+        // Outbox drained, cursor advanced, clock skew recorded.
+        expect(await outbox.pendingCount(), 0);
+        expect(await meta.getCursor(), '2026-07-09T12:00:00.000Z');
+        expect(await meta.getClockSkew(), isNot(Duration.zero));
+
+        // Server entities merged into their local mirrors.
+        expect(await notes.getById('srv-note'), isNotNull);
+        expect((await notebooks.getById('srv-nb'))!.name, 'Inbox');
+        expect((await tags.getById('srv-tag'))!.name, 'work');
+      },
+    );
+
     test('server echo with equal timestamp keeps tags (regression)', () async {
-      final local =
-          await noteRepo.createNote(title: 'tagged', tagNames: ['work']);
+      final local = await noteRepo.createNote(
+        title: 'tagged',
+        tagNames: ['work'],
+      );
 
       // The server echoes our own note back with the SAME timestamp, tags in
       // the server's [{"name": ...}] shape.
@@ -297,8 +788,7 @@ void main() {
       await noteRepo.createNote(title: 'three');
 
       final remote = _FakeRemote([_resp()]);
-      final result =
-          await engineWith(remote, batchSize: 2).syncOnce();
+      final result = await engineWith(remote, batchSize: 2).syncOnce();
 
       expect(result.pushed, 3);
       expect(remote.pushes, hasLength(2)); // 2 + 1
@@ -330,29 +820,31 @@ void main() {
       expect(await notes.getById(ignored.id), isNotNull);
     });
 
-    test('last-write-wins keeps a newer local note over an older server version',
-        () async {
-      final local = await noteRepo.createNote(title: 'newer local');
+    test(
+      'last-write-wins keeps a newer local note over an older server version',
+      () async {
+        final local = await noteRepo.createNote(title: 'newer local');
 
-      // Server reports the same note but a full day older.
-      final stale = _noteChange(
-        local.id,
-        title: 'older server',
-        updatedAt: local.updatedAt.subtract(const Duration(days: 1)),
-      );
-      final remote = _FakeRemote([
-        _resp(
-          applied: [local.id],
-          serverChanges: [stale],
-          serverTime: '2026-07-09T12:00:00.000Z',
-        ),
-      ]);
+        // Server reports the same note but a full day older.
+        final stale = _noteChange(
+          local.id,
+          title: 'older server',
+          updatedAt: local.updatedAt.subtract(const Duration(days: 1)),
+        );
+        final remote = _FakeRemote([
+          _resp(
+            applied: [local.id],
+            serverChanges: [stale],
+            serverTime: '2026-07-09T12:00:00.000Z',
+          ),
+        ]);
 
-      await engineWith(remote).syncOnce();
+        await engineWith(remote).syncOnce();
 
-      final merged = await notes.getById(local.id);
-      expect(merged!.title, 'newer local'); // local edit preserved
-    });
+        final merged = await notes.getById(local.id);
+        expect(merged!.title, 'newer local'); // local edit preserved
+      },
+    );
 
     test('transport failure leaves outbox and cursor untouched', () async {
       await noteRepo.createNote(title: 'A');
@@ -401,10 +893,10 @@ void main() {
 
       // Backdate the tombstone past the retention window, then sync again.
       final sqlDb = await db.database;
-      await sqlDb.rawUpdate(
-        'UPDATE notes SET updated_at = ? WHERE id = ?',
-        ['2020-01-01T00:00:00.000Z', note.id],
-      );
+      await sqlDb.rawUpdate('UPDATE notes SET updated_at = ? WHERE id = ?', [
+        '2020-01-01T00:00:00.000Z',
+        note.id,
+      ]);
       await engine.syncOnce();
 
       expect(await notes.getById(note.id), isNull);
@@ -416,9 +908,13 @@ void main() {
       expect(db.ftsAvailable, isTrue);
 
       final milk = await noteRepo.createNote(
-          title: 'Groceries', content: 'buy milk and bread');
+        title: 'Groceries',
+        content: 'buy milk and bread',
+      );
       await noteRepo.createNote(
-          title: 'Meeting', content: 'quarterly planning session');
+        title: 'Meeting',
+        content: 'quarterly planning session',
+      );
 
       expect(await notes.list(search: 'milk'), hasLength(1));
       expect(await notes.list(search: 'quarterly plan'), hasLength(1));
@@ -460,30 +956,32 @@ void main() {
   });
 
   group('tag tombstones', () {
-    test('LWW ignores an older server tag update over a newer local one',
-        () async {
-      final now = DateTime.now().toUtc();
-      final created = Tag(
-        id: 't1',
-        userId: 'u1',
-        name: 'temp',
-        createdAt: now,
-        updatedAt: now,
-      );
-      final sqlDb = await db.database;
-      await sqlDb.transaction((txn) async {
-        await tags.upsert(txn, created);
-      });
+    test(
+      'LWW ignores an older server tag update over a newer local one',
+      () async {
+        final now = DateTime.now().toUtc();
+        final created = Tag(
+          id: 't1',
+          userId: 'u1',
+          name: 'temp',
+          createdAt: now,
+          updatedAt: now,
+        );
+        final sqlDb = await db.database;
+        await sqlDb.transaction((txn) async {
+          await tags.upsert(txn, created);
+        });
 
-      final stale = created.copyWith(
-        name: 'renamed elsewhere',
-        updatedAt: created.updatedAt.subtract(const Duration(hours: 1)),
-      );
-      await sqlDb.transaction((txn) async {
-        await tags.applyServerTags(txn, [stale]);
-      });
+        final stale = created.copyWith(
+          name: 'renamed elsewhere',
+          updatedAt: created.updatedAt.subtract(const Duration(hours: 1)),
+        );
+        await sqlDb.transaction((txn) async {
+          await tags.applyServerTags(txn, [stale]);
+        });
 
-      expect((await tags.getById('t1'))!.name, 'temp');
-    });
+        expect((await tags.getById('t1'))!.name, 'temp');
+      },
+    );
   });
 }

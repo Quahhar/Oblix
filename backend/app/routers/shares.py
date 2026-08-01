@@ -20,7 +20,17 @@ async def create_share(
     current_user: User = Depends(get_current_user),
 ):
     """Share one of my notes or notebooks with another user, by their email."""
-    return await share_service.create_share(db, current_user, data)
+    result = await share_service.create_share(db, current_user, data)
+    await db.commit()
+    from app.routers.collaboration import notify_access_changed
+
+    try:
+        await notify_access_changed(data.entity_type, data.entity_id)
+    except Exception:
+        # The grant is already durable; a fan-out failure must not turn a
+        # successful request into a misleading 500/duplicate retry.
+        pass
+    return result
 
 
 @router.get("", response_model=list[ShareResponse])
@@ -63,7 +73,19 @@ async def update_share(
     current_user: User = Depends(get_current_user),
 ):
     """Change a grantee's role on something I shared."""
-    return await share_service.update_share_role(db, current_user, share_id, data.role)
+    result = await share_service.update_share_role(
+        db, current_user, share_id, data.role
+    )
+    await db.commit()
+    from app.routers.collaboration import notify_access_changed
+
+    try:
+        await notify_access_changed(
+            result["entity_type"], str(result["entity_id"])
+        )
+    except Exception:
+        pass
+    return result
 
 
 @router.delete("/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -73,4 +95,13 @@ async def delete_share(
     current_user: User = Depends(get_current_user),
 ):
     """Revoke a share I granted, or leave something shared with me."""
-    await share_service.delete_share(db, current_user, share_id)
+    entity_type, entity_id = await share_service.delete_share(
+        db, current_user, share_id
+    )
+    await db.commit()
+    from app.routers.collaboration import notify_access_changed
+
+    try:
+        await notify_access_changed(entity_type, entity_id)
+    except Exception:
+        pass

@@ -108,5 +108,6 @@ class MetaDao {
       await txn.delete('meta', where: 'key IN (?, ?, ?, ?)',
           whereArgs: [_kCursor, _kUserId, kProfileName, kProfileEmail]);
     });
+    _appDb.clearCollaborativeWriteState();
   }
 }

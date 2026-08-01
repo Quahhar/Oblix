@@ -15,8 +15,21 @@ a separate Flutter mobile app.
   cursor-paginated `GET /api/sync/pull`.
 - **File attachments** with MIME/extension allow-listing, size caps, and
   ownership-scoped downloads.
-- **Collaboration**: share a note or a notebook with another user as `viewer`
-  or `editor`; editors change content, the owner keeps organization.
+- **Real-time collaboration**: share a note or notebook as `viewer` or
+  `editor`; authenticated WebSockets provide live presence/cursors, while a
+  persisted, UTF-16-aware operational-transform journal merges concurrent
+  title/body edits. Baseline epochs safely reconcile whole-document offline
+  sync. Full OT deltas have a 24-hour retention target (expired rows are
+  drained in bounded batches every five minutes) and a strict 10,000-operation
+  per-note ceiling, with baseline rotation when either limit is reached.
+  Compact operation-ID receipts survive epoch rotation and whole-document
+  baselines for seven days, so realistic uncertain retries remain idempotent
+  without retaining old document contents. Clients more than 256 revisions
+  behind resync instead of replaying unbounded history. Per-room dispatch
+  queues preserve frame order and do not send on sockets until the database
+  transaction has released its note lock. A room admits at most 64 sockets
+  (eight per account), and live note bodies are capped at 2,000,000 UTF-16
+  units.
 - **Tasks**: todos with due dates, optionally attached to a note, synced like
   every other entity.
 - **AI**: `POST /api/ai/summarize` — a metered pass-through to the Anthropic
@@ -60,6 +73,11 @@ Both run Alembic migrations in a gate container before the API starts, never
 `create_all`. Copy `.env.example` to `.env` and fill in real values —
 **`.env` is never committed**.
 
+The bundled API intentionally runs one Uvicorn worker because live room
+presence/fan-out is in process. Add shared Redis/Postgres pub-sub before
+scaling the API horizontally; PostgreSQL already serializes and persists the
+operations themselves.
+
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.behind-nginx.yml up -d --build
 ```
@@ -77,6 +95,7 @@ Backups: `scripts/backup.sh` / `scripts/restore.sh` (database + uploads).
 | Sync | `POST /api/sync/push` · `GET /api/sync/pull` |
 | Files | `POST /api/files/upload` · `GET /api/files/{id}/download` · `DELETE /api/files/{id}` |
 | Shares | `GET/POST /api/shares` · `PUT/DELETE /api/shares/{id}` · `GET /api/shares/with-me` · `GET /api/shares/notebook/{id}/notes` |
+| Live collaboration | `WS /api/collaboration/notes/{id}/ws` (Bearer token in the upgrade request) |
 | Tasks | `GET/POST /api/tasks` · `GET/PUT/DELETE /api/tasks/{id}` · `POST /api/tasks/{id}/restore` |
 | AI | `GET /api/ai/status` · `POST /api/ai/summarize` |
 

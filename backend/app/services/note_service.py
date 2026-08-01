@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.note import Note, NoteVersion
 from app.models.notebook import Notebook
 from app.models.tag import Tag, NoteTag
+from app.models.collaboration import CollaborationOperation
 from app.schemas.note import NoteCreate, NoteUpdate
 
 
@@ -101,14 +102,29 @@ class NoteService:
         note, _role = await self.get_note_with_role(db, user, note_id)
         return note
 
-    async def get_note_with_role(self, db: AsyncSession, user: User, note_id: str) -> tuple[Note, str]:
+    async def get_note_with_role(
+        self,
+        db: AsyncSession,
+        user: User,
+        note_id: str,
+        *,
+        for_update: bool = False,
+    ) -> tuple[Note, str]:
         from app.services.share_service import share_service
 
         note_uuid = _uuid_or_error(note_id, "Note not found", status.HTTP_404_NOT_FOUND)
-        result = await db.execute(
+        query = (
             select(Note)
             .where(Note.id == note_uuid)
-            .options(selectinload(Note.tags).selectinload(NoteTag.tag), selectinload(Note.versions))
+            .options(
+                selectinload(Note.tags).selectinload(NoteTag.tag),
+                selectinload(Note.versions),
+            )
+        )
+        if for_update:
+            query = query.with_for_update()
+        result = await db.execute(
+            query
         )
         note = result.scalar_one_or_none()
         role = await share_service.note_role(db, user, note) if note else None
@@ -170,7 +186,9 @@ class NoteService:
         edit content fields (title/content/content_type); `viewer`s and any
         attempt by a non-owner to touch organizational fields get 403.
         """
-        note, role = await self.get_note_with_role(db, user, note_id)
+        note, role = await self.get_note_with_role(
+            db, user, note_id, for_update=True
+        )
         if role == "viewer":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="You have view-only access to this note")
@@ -220,35 +238,17 @@ class NoteService:
         # window, and cap history depth, so a long editing session can't spawn
         # hundreds of versions and bloat the table.
         if content_changed:
-            now = datetime.now(timezone.utc)
-            latest = (await db.execute(
-                select(NoteVersion)
-                .where(NoteVersion.note_id == note.id)
-                .order_by(NoteVersion.version_number.desc())
-                .limit(1)
-            )).scalar_one_or_none()
-
-            if (
-                latest is not None
-                and latest.created_at is not None
-                and (now - latest.created_at) <= self._VERSION_COALESCE_WINDOW
-            ):
-                # Fold this autosave into the most recent snapshot.
-                latest.title = note.title
-                latest.content = note.content
-                latest.content_type = note.content_type
-                latest.created_at = now
-            else:
-                db.add(NoteVersion(
-                    id=uuid.uuid4(),
-                    note_id=note.id,
-                    title=note.title,
-                    content=note.content,
-                    content_type=note.content_type,
-                    version_number=(latest.version_number if latest else 0) + 1,
-                ))
-                await db.flush()
-                await self._prune_versions(db, note.id)
+            # Whole-document REST edits start a new OT baseline. Active live
+            # sessions receive a resync; stale operations must never transform
+            # against text they were not based on.
+            await db.execute(
+                delete(CollaborationOperation).where(
+                    CollaborationOperation.note_id == note.id
+                )
+            )
+            note.collab_revision = 0
+            note.collab_epoch = uuid.uuid4()
+            await self.record_version_snapshot(db, note)
 
         await db.flush()
         # Expire only the versions collection so the following get_note re-selects
@@ -259,6 +259,57 @@ class NoteService:
         db.expire(note, ["versions"])
 
         return await self.get_note(db, user, note_id)
+
+    async def record_version_snapshot(
+        self,
+        db: AsyncSession,
+        note: Note,
+        *,
+        now: Optional[datetime] = None,
+        minimum_interval: Optional[timedelta] = None,
+    ) -> bool:
+        """Coalesce one canonical note snapshot into bounded version history."""
+        captured_at = now or datetime.now(timezone.utc)
+        latest = (
+            await db.execute(
+                select(NoteVersion)
+                .where(NoteVersion.note_id == note.id)
+                .order_by(NoteVersion.version_number.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if (
+            minimum_interval is not None
+            and latest is not None
+            and latest.created_at is not None
+            and (captured_at - latest.created_at) < minimum_interval
+        ):
+            return False
+
+        if (
+            latest is not None
+            and latest.created_at is not None
+            and (captured_at - latest.created_at)
+            <= self._VERSION_COALESCE_WINDOW
+        ):
+            latest.title = note.title
+            latest.content = note.content
+            latest.content_type = note.content_type
+            latest.created_at = captured_at
+        else:
+            db.add(
+                NoteVersion(
+                    id=uuid.uuid4(),
+                    note_id=note.id,
+                    title=note.title,
+                    content=note.content,
+                    content_type=note.content_type,
+                    version_number=(latest.version_number if latest else 0) + 1,
+                )
+            )
+            await db.flush()
+            await self._prune_versions(db, note.id)
+        return True
 
     async def _prune_versions(self, db: AsyncSession, note_id: uuid.UUID) -> None:
         """Keep only the most recent `_MAX_VERSIONS` snapshots for a note."""
@@ -277,7 +328,9 @@ class NoteService:
 
     async def delete_note(self, db: AsyncSession, user: User, note_id: str) -> None:
         """Soft-delete a note. Owner only — the trash is the owner's space."""
-        note, role = await self.get_note_with_role(db, user, note_id)
+        note, role = await self.get_note_with_role(
+            db, user, note_id, for_update=True
+        )
         if role != "owner":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="Only the note's owner can delete it")

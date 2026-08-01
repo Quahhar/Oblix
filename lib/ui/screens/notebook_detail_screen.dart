@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../../data/models/note.dart';
 import '../../data/models/notebook.dart';
 import '../../data/models/tag.dart';
+import '../../data/datasources/remote/collaboration_remote_datasource.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
 import '../../data/repositories/tag_repository.dart';
 import '../sheets/note_actions_sheet.dart';
+import '../sheets/manage_access_sheet.dart';
 import '../theme/oblix_theme.dart';
 import '../util/formats.dart';
 import '../widgets/paper.dart';
@@ -26,6 +28,7 @@ class NotebookDetailScreen extends StatefulWidget {
 class _NotebookDetailScreenState extends State<NotebookDetailScreen> {
   final _notes = NoteRepository();
   final _notebooks = NotebookRepository();
+  final _collaborationRemote = CollaborationRemoteDataSource();
 
   late Notebook _book = widget.notebook;
   List<Note> _items = const [];
@@ -106,6 +109,14 @@ class _NotebookDetailScreenState extends State<NotebookDetailScreen> {
     }
   }
 
+  Future<void> _manageAccess() => showManageAccessSheet(
+    context,
+    remote: _collaborationRemote,
+    entityType: 'notebook',
+    entityId: _book.id,
+    name: _book.name,
+  );
+
   @override
   Widget build(BuildContext context) {
     final c = OblixColors.of(context);
@@ -135,6 +146,13 @@ class _NotebookDetailScreenState extends State<NotebookDetailScreen> {
                             NoteEditorScreen(initialNotebookId: _book.id),
                       ),
                     ),
+                  ),
+                  const SizedBox(width: 10),
+                  CircleIconButton(
+                    Icons.group_outlined,
+                    size: 32,
+                    tooltip: 'Manage access',
+                    onTap: _manageAccess,
                   ),
                   const SizedBox(width: 10),
                   PopupMenuButton<String>(

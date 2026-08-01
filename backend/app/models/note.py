@@ -32,6 +32,17 @@ class Note(Base):
     # sync cursor) so conflict resolution compares edit-time-vs-edit-time and a
     # note synced later can't wrongly lose to one that was edited earlier.
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collab_revision: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
+    )
+    # Rotated whenever a whole-document REST/offline-sync write replaces the
+    # OT baseline. Revisions may restart at zero only inside a new epoch.
+    collab_epoch: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships

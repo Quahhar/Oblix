@@ -6,17 +6,22 @@ and trash, full-text search, background sync, and import/export. Flutter client
 
 ## Architecture
 
-The device's SQLite database is the source of truth. The UI never talks to the
-network:
+The device's SQLite database is the source of truth for owned/offline data.
+Normal reads and writes stay local; shared-note editing additionally uses an
+authenticated WebSocket session for server-ordered live text updates:
 
 ```
 UI  ⇄  repositories  ⇄  local SQLite (sqflite)
                              ⇅ outbox / merge
                         SyncEngine  ⇄  FastAPI /api/sync
+
+shared note editor  ⇄  CollaborationSession  ⇄  FastAPI WebSocket
 ```
 
-- **Writes**: every mutation writes the local row AND an outbox entry in one
-  transaction, then returns. The outbox is a durable FIFO queue (`seq`).
+- **Writes**: private/offline mutations write the local row AND an outbox entry
+  in one transaction, then return. The outbox is a durable FIFO queue (`seq`).
+  Live title/body edits use operational transform; a scoped SQLite fallback is
+  retained until the server confirms the exact field value.
 - **Sync** (`SyncEngine.syncOnce`): pushes outbox batches to `/sync/push`; the
   response carries acks (`applied` + `conflicts`), everything changed on the
   server since our cursor (`server_changes`), and the next cursor
@@ -26,11 +31,11 @@ UI  ⇄  repositories  ⇄  local SQLite (sqflite)
 - **Acks**: entries the server never mentions are retried up to
   `ApiConfig.maxPushAttempts` times, then dropped (poison protection). An empty
   `applied`+`conflicts` acks the whole batch (legacy servers).
-- **Conflicts**: last-write-wins on `updated_at`, both server-side (client
-  pushes with an older timestamp → server keeps its copy and returns it) and
-  client-side (older server change never overwrites a newer local row). Client
-  timestamps are corrected by the clock skew observed at each sync
-  (`SyncClock`), and each edit is stamped strictly after the version it edits.
+- **Conflicts**: server-side last-write-wins compares the incoming edit time
+  with `edited_at` (falling back to `updated_at` for older rows); client-side,
+  an older server change never overwrites a newer local row. Client timestamps
+  are corrected by the clock skew observed at each sync (`SyncClock`), and each
+  edit is stamped strictly after the version it edits.
 - **Tombstones**: notes, notebooks and tags are soft-deleted so deletions
   propagate across devices; synced tombstones are purged locally after
   `ApiConfig.tombstoneRetention` (30 days).
@@ -61,12 +66,19 @@ the previous user's local data first.
   to text, embedded media is counted and skipped for now) or a native `.oblix`
   file. Imported notes are created fresh on the current account and sync like
   any other edit.
-- **Export** the whole account to `.oblix` — a ZIP holding `manifest.json` +
-  `data.json` (notes reference notebooks by name, so an export is portable
-  across accounts). Room for an `attachments/` folder in a later version.
+- **Export** user-selected notes to `.oblix`, EPUB, Markdown, or plain text.
+  The portable `.oblix` ZIP preserves the selected notes' text, supported
+  metadata, notebook ancestry, tags, and attachment bytes. Export fails instead
+  of silently omitting an attachment that is known locally but unavailable.
+
+`.oblix` is a portable note archive, not a complete account backup: import
+mints fresh entity ids, and the current format does not carry version history,
+tasks, sharing permissions, or deleted items. Notebooks are linked by name
+path, so identical sibling notebooks with the same name are merged on import.
+Use the backend database/upload backup scripts for a complete server backup.
 
 Parsing/serialization live in `lib/data/io/` and are covered by round-trip
-tests; the file-pick/share glue is in the notes screen.
+tests; the file-pick/share glue is in Settings and the note editor.
 
 ## Running
 
@@ -85,8 +97,6 @@ procedure. Point a release build at your server with
 
 ## Known gaps / roadmap
 
-- **Attachments**: the server has file endpoints and sync relink/delete; the
-  client doesn't support files yet.
 - **Note versions**: the server keeps versions; the client model parses them
   but no history UI exists.
 - **Tag rename fan-out**: notes store tag *names* denormalized; renaming a tag

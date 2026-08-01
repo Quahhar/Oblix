@@ -12,6 +12,16 @@ class OutboxEntry {
   const OutboxEntry(this.seq, this.change, {this.attempts = 0});
 }
 
+class PendingOutboxData {
+  final Set<String> fields;
+  final Map<String, Set<int>> updateSeqsByField;
+
+  const PendingOutboxData(this.fields, this.updateSeqsByField);
+
+  Set<int> updateSeqsFor(String field) =>
+      Set<int>.of(updateSeqsByField[field] ?? const <int>{});
+}
+
 /// Durable queue of local changes waiting to be pushed. FIFO by `seq`.
 class OutboxDao {
   final AppDatabase _appDb;
@@ -32,9 +42,22 @@ class OutboxDao {
   }
 
   /// Oldest [limit] pending changes, in FIFO order.
-  Future<List<OutboxEntry>> fetchBatch({int limit = 100}) async {
+  Future<List<OutboxEntry>> fetchBatch({
+    int limit = 100,
+    Set<String> excludedNoteIds = const <String>{},
+  }) async {
     final db = await _appDb.database;
-    final rows = await db.query('outbox', orderBy: 'seq ASC', limit: limit);
+    final excluded = excludedNoteIds.toList(growable: false);
+    final marks = List.filled(excluded.length, '?').join(',');
+    final rows = await db.query(
+      'outbox',
+      where: excluded.isEmpty
+          ? null
+          : '(entity_type != ? OR entity_id NOT IN ($marks))',
+      whereArgs: excluded.isEmpty ? null : ['note', ...excluded],
+      orderBy: 'seq ASC',
+      limit: limit,
+    );
     return rows.map((r) {
       return OutboxEntry(
         r['seq'] as int,
@@ -42,7 +65,8 @@ class OutboxDao {
           entityType: r['entity_type'] as String,
           entityId: r['entity_id'] as String,
           action: r['action'] as String,
-          data: (jsonDecode(r['data'] as String) as Map).cast<String, dynamic>(),
+          data: (jsonDecode(r['data'] as String) as Map)
+              .cast<String, dynamic>(),
           deviceId: r['device_id'] as String?,
           timestamp: r['timestamp'] as String,
         ),
@@ -88,8 +112,130 @@ class OutboxDao {
 
   Future<int> pendingCount() async {
     final db = await _appDb.database;
-    final result =
-        await db.rawQuery('SELECT COUNT(*) AS c FROM outbox');
+    final result = await db.rawQuery('SELECT COUNT(*) AS c FROM outbox');
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Whether an entity still has to be created on the server.
+  ///
+  /// A note cannot open its collaboration socket while this row exists: live
+  /// protection would exclude the create from sync, and the server would
+  /// correctly reject the socket because the note does not exist there yet.
+  Future<bool> hasPendingCreate(String entityType, String entityId) async {
+    final db = await _appDb.database;
+    final rows = await db.query(
+      'outbox',
+      columns: const ['seq'],
+      where: 'entity_type = ? AND entity_id = ? AND action = ?',
+      whereArgs: [entityType, entityId, 'create'],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// The union of payload fields waiting to sync for one entity.
+  ///
+  /// Collaboration uses this to preserve only locally changed document fields
+  /// when its first server snapshot arrives. A pin/tag/move entry must not make
+  /// a stale cached title or body win over newer server content.
+  ///
+  /// A malformed row is treated conservatively as containing every field. It
+  /// should not normally be possible (all writes use [enqueue]), but preserving
+  /// local text is safer than silently discarding it if the database is corrupt.
+  Future<Set<String>> pendingDataFieldsForEntity(
+    String entityType,
+    String entityId,
+  ) async {
+    return (await pendingDataForEntity(entityType, entityId)).fields;
+  }
+
+  /// Pending fields plus the exact update rows that supplied each field.
+  ///
+  /// Sequence scoping matters for collaboration: an acknowledgement may retire
+  /// the document values that existed when the live session started, but must
+  /// not remove a newer offline fallback queued after that session began.
+  Future<PendingOutboxData> pendingDataForEntity(
+    String entityType,
+    String entityId,
+  ) async {
+    final db = await _appDb.database;
+    final rows = await db.query(
+      'outbox',
+      columns: const ['seq', 'action', 'data'],
+      where: 'entity_type = ? AND entity_id = ?',
+      whereArgs: [entityType, entityId],
+      orderBy: 'seq ASC',
+    );
+    final fields = <String>{};
+    final updateSeqsByField = <String, Set<int>>{};
+    for (final row in rows) {
+      try {
+        final data = jsonDecode(row['data'] as String) as Map;
+        final rowFields = data.keys.map((key) => key.toString());
+        fields.addAll(rowFields);
+        if (row['action'] == 'update') {
+          final seq = row['seq'] as int;
+          for (final field in rowFields) {
+            updateSeqsByField.putIfAbsent(field, () => <int>{}).add(seq);
+          }
+        }
+      } catch (_) {
+        fields.add('*');
+      }
+    }
+    return PendingOutboxData(fields, updateSeqsByField);
+  }
+
+  /// Remove one server-acknowledged document field from pre-session update
+  /// rows, retaining every other payload key and every create/delete row.
+  /// Runs in the same transaction as the canonical collaboration cache write.
+  Future<void> retireAcknowledgedUpdateField(
+    DatabaseExecutor db, {
+    required String entityType,
+    required String entityId,
+    required String field,
+    required Set<int> scopedSeqs,
+  }) async {
+    if (scopedSeqs.isEmpty) return;
+    // SQLite builds commonly cap a statement at 999 bound variables. Keep
+    // enough headroom for the entity predicates even after a long offline run.
+    final seqs = scopedSeqs.toList(growable: false);
+    const chunkSize = 400;
+    for (var offset = 0; offset < seqs.length; offset += chunkSize) {
+      final end = (offset + chunkSize).clamp(0, seqs.length);
+      final chunk = seqs.sublist(offset, end);
+      final marks = List.filled(chunk.length, '?').join(',');
+      final rows = await db.query(
+        'outbox',
+        columns: const ['seq', 'action', 'data'],
+        where:
+            'entity_type = ? AND entity_id = ? AND seq IN ($marks)',
+        whereArgs: [entityType, entityId, ...chunk],
+      );
+      for (final row in rows) {
+        if (row['action'] != 'update') continue;
+        Map<String, dynamic> data;
+        try {
+          data = (jsonDecode(row['data'] as String) as Map)
+              .cast<String, dynamic>();
+        } catch (_) {
+          // Never mutate a malformed durable fallback automatically.
+          continue;
+        }
+        if (!data.containsKey(field)) continue;
+        data.remove(field);
+        final seq = row['seq'] as int;
+        if (data.isEmpty) {
+          await db.delete('outbox', where: 'seq = ?', whereArgs: [seq]);
+        } else {
+          await db.update(
+            'outbox',
+            {'data': jsonEncode(data)},
+            where: 'seq = ?',
+            whereArgs: [seq],
+          );
+        }
+      }
+    }
   }
 }

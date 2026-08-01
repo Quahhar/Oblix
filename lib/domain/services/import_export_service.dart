@@ -11,6 +11,7 @@ import '../../data/io/oblix_archive.dart';
 import '../../data/io/text_exporter.dart';
 import '../../data/models/note.dart';
 import '../../data/models/notebook.dart';
+import '../../data/models/tag.dart';
 import '../../data/repositories/attachment_repository.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
@@ -33,6 +34,36 @@ class ImportResult {
     notebooksCreated: 0,
     skippedAttachments: 0,
   );
+
+  ImportResult operator +(ImportResult other) => ImportResult(
+    notesImported: notesImported + other.notesImported,
+    notebooksCreated: notebooksCreated + other.notebooksCreated,
+    skippedAttachments: skippedAttachments + other.skippedAttachments,
+  );
+}
+
+/// Raised when a native export cannot include every attachment belonging to
+/// the selected notes.
+///
+/// A partial `.oblix` archive would look successful while silently losing
+/// files. Native export therefore fails as a unit and lets the UI tell the
+/// user which attachment bytes must be made available first.
+class OblixExportException implements Exception {
+  final List<String> unavailableAttachments;
+
+  OblixExportException(Iterable<String> unavailableAttachments)
+    : unavailableAttachments = List.unmodifiable(unavailableAttachments);
+
+  @override
+  String toString() {
+    final count = unavailableAttachments.length;
+    final noun = count == 1 ? 'attachment is' : 'attachments are';
+    final preview = unavailableAttachments.take(3).join(', ');
+    final remainder = count > 3 ? ' and ${count - 3} more' : '';
+    return 'Cannot create a complete .oblix export: $count $noun '
+        'unavailable ($preview$remainder). Make the files available and try '
+        'again.';
+  }
 }
 
 /// Imports `.enex`/`.oblix`/`.md`/`.txt`/`.epub` files into the local store
@@ -90,41 +121,41 @@ class ImportExportService {
     if (bundle.isEmpty) return ImportResult.empty;
     final userId = await _meta.getUserId() ?? '';
 
-    // Resolve notebook names → ids: reuse existing by name, create the rest.
+    // Resolve notebooks by their complete root-to-leaf path. A leaf-name map
+    // corrupts valid structures such as Work/Projects + Personal/Projects by
+    // linking both notes to whichever "Projects" happened to be seen first.
     final existing = await _notebooks.listNotebooks();
-    final idByName = {for (final nb in existing) nb.name: nb.id};
+    final idByPath = _indexNotebookPaths(existing);
 
     var notebooksCreated = 0;
 
-    // Resolve flat notebook names.
-    final wantedNames = <String>{
-      ...bundle.notebookNames,
+    // v1/foreign imports with a flat notebook name have no parent metadata, so
+    // they resolve explicitly at the root rather than matching a nested leaf.
+    final wantedPaths = <List<String>>[
+      for (final name in bundle.notebookNames)
+        if (name.isNotEmpty) [name],
+      ...bundle.notebookPaths,
       for (final n in bundle.notes)
-        if (n.notebookName != null && n.notebookName!.isNotEmpty)
-          n.notebookName!,
-    };
-    for (final name in wantedNames) {
-      if (!idByName.containsKey(name)) {
-        final nb = await _notebooks.createNotebook(name: name);
-        idByName[name] = nb.id;
-        notebooksCreated++;
-      }
+        if (n.notebookPath != null && n.notebookPath!.isNotEmpty)
+          n.notebookPath!
+        else if (n.notebookName != null && n.notebookName!.isNotEmpty)
+          [n.notebookName!],
+    ];
+    for (final path in wantedPaths) {
+      await _ensureNotebookPath(path, idByPath, (_) => notebooksCreated++);
     }
 
-    // Resolve nested notebook paths (e.g. ["Work", "Projects"]).
-    for (final path in bundle.notebookPaths) {
-      await _ensureNotebookPath(path, idByName, (nb) {
-        idByName[nb.name] = nb.id;
-        notebooksCreated++;
-      });
-    }
-    // Also resolve per-note notebookPath fields.
-    for (final n in bundle.notes) {
-      if (n.notebookPath != null && n.notebookPath!.isNotEmpty) {
-        await _ensureNotebookPath(n.notebookPath!, idByName, (nb) {
-          idByName[nb.name] = nb.id;
-          notebooksCreated++;
-        });
+    // Notes carry tag names, but the app's tag browser reads the separate tag
+    // catalog. Materialize missing catalog rows so an imported tag is not
+    // present on a note yet mysteriously absent everywhere else in the UI.
+    final existingTagNames = {
+      for (final tag in await _tags.listTags()) tag.name,
+    };
+    for (final note in bundle.notes) {
+      for (final tagName in note.tagNames) {
+        if (tagName.isNotEmpty && existingTagNames.add(tagName)) {
+          await _tags.createTag(tagName);
+        }
       }
     }
 
@@ -133,7 +164,7 @@ class ImportExportService {
     final noteIdForIndex = <int, String>{};
     final notes = <Note>[
       for (var i = 0; i < bundle.notes.length; i++)
-        _buildNote(bundle.notes[i], i, userId, idByName, now, noteIdForIndex),
+        _buildNote(bundle.notes[i], i, userId, idByPath, now, noteIdForIndex),
     ];
     await _notes.importNotes(notes);
 
@@ -168,7 +199,7 @@ class ImportExportService {
     ImportedNote n,
     int index,
     String userId,
-    Map<String, String> idByName,
+    Map<String, String> idByPath,
     DateTime now,
     Map<int, String> noteIdForIndex,
   ) {
@@ -178,9 +209,9 @@ class ImportExportService {
     String? notebookId;
     // notebookPath takes precedence over notebookName.
     if (n.notebookPath != null && n.notebookPath!.isNotEmpty) {
-      notebookId = idByName[n.notebookPath!.last];
+      notebookId = idByPath[_pathKey(n.notebookPath!)];
     } else if (n.notebookName != null && n.notebookName!.isNotEmpty) {
-      notebookId = idByName[n.notebookName];
+      notebookId = idByPath[_pathKey([n.notebookName!])];
     }
 
     return Note(
@@ -201,62 +232,162 @@ class ImportExportService {
 
   /// Walk a path of notebook names (e.g. ["Work", "Projects"]), creating
   /// any missing notebooks along the way. [onCreated] is called for each
-  /// new notebook so callers can track counts and populate [idByName].
+  /// new notebook so callers can track counts.
   Future<void> _ensureNotebookPath(
     List<String> path,
-    Map<String, String> idByName,
+    Map<String, String> idByPath,
     void Function(Notebook nb) onCreated,
   ) async {
     if (path.isEmpty) return;
     String? parentId;
+    final walked = <String>[];
     for (final name in path) {
-      if (idByName.containsKey(name)) {
-        parentId = idByName[name];
+      if (name.isEmpty) continue;
+      walked.add(name);
+      final key = _pathKey(walked);
+      final existingId = idByPath[key];
+      if (existingId != null) {
+        parentId = existingId;
         continue;
       }
-      // Need to check all existing notebooks to find a child with this name
-      // under the current parent.
-      final all = await _notebooks.listNotebooks();
-      Notebook? match;
-      for (final nb in all) {
-        if (nb.name == name && nb.parentId == parentId) {
-          match = nb;
-          break;
-        }
-      }
-      if (match != null) {
-        idByName[name] = match.id;
-        parentId = match.id;
-        continue;
-      }
-      // Create it.
       final nb = await _notebooks.createNotebook(
         name: name,
         parentId: parentId,
       );
-      idByName[name] = nb.id;
+      idByPath[key] = nb.id;
       parentId = nb.id;
       onCreated(nb);
     }
   }
 
+  /// Index existing notebooks without assuming leaf names are globally unique.
+  /// Broken parent links and cycles are treated as roots; imports must remain
+  /// usable even if an older local database contains malformed hierarchy data.
+  Map<String, String> _indexNotebookPaths(List<Notebook> notebooks) {
+    final byId = {for (final notebook in notebooks) notebook.id: notebook};
+    final memo = <String, List<String>>{};
+
+    List<String> resolve(Notebook notebook, Set<String> visiting) {
+      final cached = memo[notebook.id];
+      if (cached != null) return cached;
+      if (!visiting.add(notebook.id)) return [notebook.name];
+
+      final parent = notebook.parentId == null
+          ? null
+          : byId[notebook.parentId];
+      final path = parent == null
+          ? [notebook.name]
+          : [...resolve(parent, visiting), notebook.name];
+      visiting.remove(notebook.id);
+      memo[notebook.id] = path;
+      return path;
+    }
+
+    final result = <String, String>{};
+    for (final notebook in notebooks) {
+      result.putIfAbsent(
+        _pathKey(resolve(notebook, <String>{})),
+        () => notebook.id,
+      );
+    }
+    return result;
+  }
+
+  /// Length-prefix each component so names containing separators cannot make
+  /// two different paths share a lookup key.
+  String _pathKey(List<String> path) =>
+      path.map((part) => '${part.length}:$part').join();
+
   // --- Export ---
 
-  /// Serialize the whole account (all live notes, notebooks, tags) to `.oblix`
-  /// bytes. Trash (soft-deleted) is excluded; archived notes are included.
+  /// Notes the user can choose from in the export UI.
+  Future<List<Note>> listExportableNotes() =>
+      _notes.listNotes(archived: null, deleted: false);
+
+  /// Serialize every live local note plus all live notebook/tag catalog
+  /// metadata to `.oblix` bytes. Trash is excluded; archived notes are
+  /// included. This legacy whole-account API keeps empty notebooks and unused
+  /// tags in the archive, unlike the selective export used by the UI.
   Future<List<int>> exportOblix() async {
     final notes = await _notes.listNotes(archived: null, deleted: false);
-    final notebooks = await _notebooks.listNotebooks();
-    final tags = await _tags.listTags();
+    return _encodeOblix(
+      notes: notes,
+      notebooks: await _notebooks.listNotebooks(),
+      tags: await _tags.listTags(),
+    );
+  }
 
-    // Gather attachments per note.
+  /// Serialize only [notes] and the notebook/tag metadata they reference.
+  /// Attachment bytes belonging to unselected notes are never read.
+  Future<List<int>> exportNotesOblix(List<Note> notes) async {
+    if (notes.isEmpty) {
+      throw ArgumentError.value(notes, 'notes', 'Choose at least one note');
+    }
+
+    // Keep caller order while preventing a duplicated selection from producing
+    // duplicate note records or attachment blobs in the archive.
+    final selectedNotes = <Note>[];
+    final selectedIds = <String>{};
+    for (final note in notes) {
+      if (selectedIds.add(note.id)) selectedNotes.add(note);
+    }
+
+    final allNotebooks = await _notebooks.listNotebooks();
+    final notebookById = {
+      for (final notebook in allNotebooks) notebook.id: notebook,
+    };
+    final notebookIds = <String>{};
+    for (final note in selectedNotes) {
+      var notebookId = note.notebookId;
+      while (notebookId != null && notebookIds.add(notebookId)) {
+        notebookId = notebookById[notebookId]?.parentId;
+      }
+    }
+    final notebooks = [
+      for (final notebook in allNotebooks)
+        if (notebookIds.contains(notebook.id)) notebook,
+    ];
+
+    final wantedTagNames = {
+      for (final note in selectedNotes) ...note.tagNames,
+    };
+    final tags = [
+      for (final tag in await _tags.listTags())
+        if (wantedTagNames.contains(tag.name)) tag,
+    ];
+
+    return _encodeOblix(
+      notes: selectedNotes,
+      notebooks: notebooks,
+      tags: tags,
+    );
+  }
+
+  Future<List<int>> _encodeOblix({
+    required List<Note> notes,
+    required List<Notebook> notebooks,
+    required List<Tag> tags,
+  }) async {
+    // Gather attachments per note. A native export succeeds only if every
+    // attachment currently known for these notes can be read in full.
     final attachmentsByNoteId = <String, List<OblixAttachment>>{};
+    final unavailableAttachments = <String>[];
     for (final note in notes) {
       final atts = await _attachments.listForNote(note.id);
       final oblixAtts = <OblixAttachment>[];
       for (final a in atts) {
-        final bytes = await _attachments.bytesFor(a);
-        if (bytes == null) continue;
+        List<int>? bytes;
+        try {
+          bytes = await _attachments.bytesFor(a);
+        } catch (_) {
+          // The common case is a remote-only file while offline. Do not expose
+          // transport details, but do report that this archive is incomplete.
+        }
+        if (bytes == null ||
+            (a.sizeBytes > 0 && bytes.length != a.sizeBytes)) {
+          unavailableAttachments.add('${note.title} / ${a.originalName}');
+          continue;
+        }
         oblixAtts.add(
           OblixAttachment(
             id: a.id,
@@ -267,6 +398,9 @@ class ImportExportService {
         );
       }
       if (oblixAtts.isNotEmpty) attachmentsByNoteId[note.id] = oblixAtts;
+    }
+    if (unavailableAttachments.isNotEmpty) {
+      throw OblixExportException(unavailableAttachments);
     }
 
     return OblixArchive.encode(
@@ -280,20 +414,29 @@ class ImportExportService {
   /// Export all notes as a single EPUB book.
   Future<List<int>> exportAllEpub() async {
     final notes = await _notes.listNotes(archived: null, deleted: false);
-    return EpubExporter.notesToEpub(notes);
+    return exportNotesEpub(notes);
   }
+
+  List<int> exportNotesEpub(List<Note> notes) =>
+      EpubExporter.notesToEpub(notes);
 
   /// Export all notes as a ZIP of Markdown files.
   Future<List<int>> exportAllMarkdownZip() async {
     final notes = await _notes.listNotes(archived: null, deleted: false);
-    return MarkdownExporter.notesToMarkdownZip(notes);
+    return exportNotesMarkdownZip(notes);
   }
+
+  List<int> exportNotesMarkdownZip(List<Note> notes) =>
+      MarkdownExporter.notesToMarkdownZip(notes);
 
   /// Export all notes as a ZIP of plain-text files.
   Future<List<int>> exportAllTextZip() async {
     final notes = await _notes.listNotes(archived: null, deleted: false);
-    return TextExporter.notesToTextZip(notes);
+    return exportNotesTextZip(notes);
   }
+
+  List<int> exportNotesTextZip(List<Note> notes) =>
+      TextExporter.notesToTextZip(notes);
 
   /// Export a single note as a Markdown string.
   String exportNoteMarkdown(Note note) => MarkdownExporter.noteToMarkdown(note);
@@ -302,30 +445,5 @@ class ImportExportService {
   String exportNoteText(Note note) => TextExporter.noteToText(note);
 
   /// Export a single note as `.oblix` bytes (one-note archive).
-  Future<List<int>> exportNoteOblix(Note note) async {
-    final notebooks = await _notebooks.listNotebooks();
-    final tags = await _tags.listTags();
-    final attachmentsByNoteId = <String, List<OblixAttachment>>{};
-    final atts = await _attachments.listForNote(note.id);
-    final oblixAtts = <OblixAttachment>[];
-    for (final a in atts) {
-      final bytes = await _attachments.bytesFor(a);
-      if (bytes == null) continue;
-      oblixAtts.add(
-        OblixAttachment(
-          id: a.id,
-          originalName: a.originalName,
-          mimeType: a.mimeType,
-          bytes: bytes,
-        ),
-      );
-    }
-    if (oblixAtts.isNotEmpty) attachmentsByNoteId[note.id] = oblixAtts;
-    return OblixArchive.encode(
-      notes: [note],
-      notebooks: notebooks,
-      tags: tags,
-      attachmentsByNoteId: attachmentsByNoteId,
-    );
-  }
+  Future<List<int>> exportNoteOblix(Note note) => exportNotesOblix([note]);
 }

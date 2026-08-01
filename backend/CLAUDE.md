@@ -42,6 +42,20 @@ client is a separate **Flutter** mobile app that talks to this API.
 - Batch multiple offline changes in one `POST /api/sync/push` (savepoint per
   change; last-write-wins with server-newer conflicts reported; deletes are
   tombstoned so other devices learn about them via `/api/sync/pull`).
+- An open note also connects to `WS /api/collaboration/notes/{id}/ws`.
+  Plain-text Quill Delta operations are transformed against every newer
+  persisted operation, then materialized into `notes`; REST/sync whole-document
+  edits rotate that note's `collab_epoch` and reset its journal to a fresh
+  baseline, so a stale numeric revision can never target different text.
+  Full OT deltas have a 24-hour retention target, drained in bounded batches
+  every five minutes, plus a strict 10,000-operation per-note ceiling.
+  Separate operation-ID receipts survive epoch rotation and whole-document
+  baselines for seven days, preserving realistic retry idempotency without
+  retaining old document contents. Clients over 256 revisions behind receive a
+  canonical resync. Ordered per-room dispatch queues enqueue document frames
+  while serialized, then send them only after the database transaction has
+  released its note lock. Rooms are capped at 64 sockets/eight per account,
+  and bodies over 2,000,000 UTF-16 units are refused for live editing.
 
 ## Invariants learned the hard way (keep these true)
 - Note→tag goes through the `NoteTag` association object; `NoteResponse.tags`

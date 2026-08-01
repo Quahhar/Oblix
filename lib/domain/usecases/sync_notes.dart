@@ -100,8 +100,22 @@ class SyncEngine {
     var anythingChanged = false;
 
     for (var round = 0; round < _maxRoundsPerCycle; round++) {
+      final syncRound = _appDb.beginSyncRound();
+      try {
       final cursor = await _meta.getCursor();
-      final batch = await _outbox.fetchBatch(limit: _batchSize);
+      final fetchedBatch = await _outbox.fetchBatch(
+        limit: _batchSize,
+        excludedNoteIds: syncRound.protectedNoteIds,
+      );
+      // Keep a defensive in-memory filter in case a custom/test DAO does not
+      // implement the query exclusion. Settlement must use this sent batch too.
+      final batch = fetchedBatch
+          .where(
+            (entry) =>
+                entry.change.entityType != 'note' ||
+                !syncRound.protectedNoteIds.contains(entry.change.entityId),
+          )
+          .toList(growable: false);
       final changes = batch.map((e) => e.change).toList();
 
       final requestedAt = DateTime.now().toUtc();
@@ -123,6 +137,9 @@ class SyncEngine {
       final skew = serverTime?.toUtc().difference(requestedAt);
 
       final serverNotes = SyncRepository.parseNoteChanges(resp.serverChanges);
+      final protectedServerNoteSeen = serverNotes.any(
+        (note) => syncRound.protectedNoteIds.contains(note.id),
+      );
       final serverNotebooks =
           SyncRepository.parseNotebookChanges(resp.serverChanges);
       final serverTags = SyncRepository.parseTagChanges(resp.serverChanges);
@@ -152,7 +169,11 @@ class SyncEngine {
       var droppedThisRound = 0;
       final db = await _appDb.database;
       await db.transaction((txn) async {
-        await _notes.applyServerNotes(txn, serverNotes);
+        await _notes.applyServerNotes(
+          txn,
+          serverNotes,
+          preserveDocumentForNoteIds: syncRound.protectedNoteIds,
+        );
         await _notebooks.applyServerNotebooks(txn, serverNotebooks);
         await _tags.applyServerTags(txn, serverTags);
         await _tasks.applyServerTasks(txn, serverTasks);
@@ -167,7 +188,7 @@ class SyncEngine {
           retrySeqs: retrySeqs,
           maxAttempts: _maxPushAttempts,
         );
-        if (resp.serverTime.isNotEmpty) {
+        if (resp.serverTime.isNotEmpty && !protectedServerNoteSeen) {
           await _meta.setCursor(txn, resp.serverTime);
         }
         if (skew != null) {
@@ -191,8 +212,14 @@ class SyncEngine {
 
       // Another round only if this one was full AND fully acked — otherwise
       // the unacked head would just be re-pushed in a tight loop.
-      final drainedMore = batch.length >= _batchSize && retrySeqs.isEmpty;
+      final drainedMore =
+          !protectedServerNoteSeen &&
+          batch.length >= _batchSize &&
+          retrySeqs.isEmpty;
       if (!drainedMore) break;
+      } finally {
+        syncRound.release();
+      }
     }
 
     await _purgeTombstones();

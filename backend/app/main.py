@@ -1,11 +1,24 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+
 from app.config import settings
-from app.database import engine, Base
-from app.routers import auth, notes, notebooks, tags, files, sync, shares, tasks, ai
+from app.database import Base, engine
+from app.routers import (
+    ai,
+    auth,
+    collaboration,
+    files,
+    notebooks,
+    notes,
+    shares,
+    sync,
+    tags,
+    tasks,
+)
 
 
 @asynccontextmanager
@@ -15,8 +28,12 @@ async def lifespan(app: FastAPI):
     if not settings.is_production:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-    yield
-    await engine.dispose()
+    await collaboration.start_collaboration_maintenance()
+    try:
+        yield
+    finally:
+        await collaboration.stop_collaboration_maintenance()
+        await engine.dispose()
 
 
 app = FastAPI(
@@ -45,6 +62,7 @@ app.include_router(sync.router, prefix=settings.API_V1_PREFIX)
 app.include_router(shares.router, prefix=settings.API_V1_PREFIX)
 app.include_router(tasks.router, prefix=settings.API_V1_PREFIX)
 app.include_router(ai.router, prefix=settings.API_V1_PREFIX)
+app.include_router(collaboration.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

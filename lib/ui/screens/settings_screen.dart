@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/app_bootstrap.dart';
 import '../../core/auth/profile_cache.dart';
+import '../../data/models/note.dart';
 import '../../domain/services/import_export_service.dart';
 import '../theme/oblix_theme.dart';
 import '../theme/theme_controller.dart';
@@ -15,6 +16,7 @@ import '../util/formats.dart';
 import '../widgets/paper.dart';
 import 'archive_screen.dart';
 import 'trash_screen.dart';
+import 'shared_with_me_screen.dart';
 
 /// Profile card, preferences (appearance), data (import/export/trash), sync
 /// status, and sign out.
@@ -78,58 +80,117 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _busy = true);
     try {
       ImportResult result = ImportResult.empty;
-
-      // Group multi-file md/txt picks into one import.
-      final mdFiles = <(String, List<int>)>[];
+      var filesSucceeded = 0;
+      final failures = <({String name, String reason})>[];
       for (final file in picked.files) {
         final bytes = file.bytes;
         if (bytes == null) {
-          _snack('Could not read ${file.name}.');
+          failures.add((name: file.name, reason: 'Could not read file'));
           continue;
         }
         final ext = (file.extension ?? '').toLowerCase();
 
-        switch (ext) {
-          case 'enex':
-            final base = file.name.replaceAll(
-              RegExp(r'\.enex$', caseSensitive: false),
-              '',
-            );
-            result = await _io.importEnex(
-              utf8.decode(bytes),
-              notebookName: base.isEmpty ? 'Imported' : base,
-            );
-            break;
-          case 'oblix':
-            result = await _io.importOblix(bytes);
-            break;
-          case 'md':
-          case 'txt':
-            mdFiles.add((file.name, bytes));
-            break;
-          case 'epub':
-            result = await _io.importEpub(bytes);
-            break;
+        try {
+          final ImportResult fileResult;
+          switch (ext) {
+            case 'enex':
+              final base = file.name.replaceAll(
+                RegExp(r'\.enex$', caseSensitive: false),
+                '',
+              );
+              fileResult = await _io.importEnex(
+                utf8.decode(bytes),
+                notebookName: base.isEmpty ? 'Imported' : base,
+              );
+            case 'oblix':
+              fileResult = await _io.importOblix(bytes);
+            case 'md':
+            case 'txt':
+              // Apply each text file independently so one unread/malformed
+              // selection cannot hide or roll back the files that succeeded.
+              fileResult = await _io.importMarkdownFiles([
+                (file.name, bytes),
+              ]);
+            case 'epub':
+              fileResult = await _io.importEpub(bytes);
+            default:
+              throw const FormatException('Unsupported import format');
+          }
+          result += fileResult;
+          filesSucceeded++;
+        } on FormatException catch (error) {
+          failures.add((name: file.name, reason: error.message));
+        } catch (_) {
+          failures.add((name: file.name, reason: 'Import failed'));
         }
       }
 
-      // Process accumulated md/txt files together.
-      if (mdFiles.isNotEmpty) {
-        result = await _io.importMarkdownFiles(mdFiles);
-      }
-
-      _snack(
-        'Imported ${result.notesImported} '
-        '${result.notesImported == 1 ? 'note' : 'notes'}'
-        '${result.notebooksCreated > 0 ? ', ${result.notebooksCreated} notebooks' : ''}',
+      await _showImportOutcome(
+        result,
+        filesSucceeded: filesSucceeded,
+        failures: failures,
       );
-    } on FormatException catch (e) {
-      _snack(e.message);
     } catch (e) {
       _snack('Import failed: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _showImportOutcome(
+    ImportResult result, {
+    required int filesSucceeded,
+    required List<({String name, String reason})> failures,
+  }) async {
+    final skipped = result.skippedAttachments;
+    final summary =
+        '$filesSucceeded ${filesSucceeded == 1 ? 'file' : 'files'} succeeded · '
+        '${result.notesImported} '
+        '${result.notesImported == 1 ? 'note' : 'notes'} imported'
+        '${result.notebooksCreated > 0 ? ' · ${result.notebooksCreated} notebooks created' : ''}'
+        '${skipped > 0 ? ' · $skipped ${skipped == 1 ? 'attachment' : 'attachments'} skipped' : ''}';
+
+    if (failures.isEmpty && skipped == 0) {
+      _snack(summary);
+      return;
+    }
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          failures.isEmpty
+              ? 'Import completed with skipped attachments'
+              : 'Import completed with issues',
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(summary),
+              if (failures.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text(
+                  '${failures.length} '
+                  '${failures.length == 1 ? 'file' : 'files'} failed:',
+                ),
+                const SizedBox(height: 6),
+                for (final failure in failures)
+                  Text('• ${failure.name}: ${failure.reason}'),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- Export ---
@@ -145,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SheetGrabHandle(),
             _exportOption(
               'oblix',
-              'Oblix backup (.oblix)',
+              'Portable Oblix notes (.oblix)',
               Icons.archive_outlined,
               c,
             ),
@@ -169,8 +230,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (choice == null) return;
 
+    final available = await _io.listExportableNotes();
+    if (!mounted) return;
+    if (available.isEmpty) {
+      _snack('There are no notes to export.');
+      return;
+    }
+    final selected = await _pickNotesForExport(available);
+    if (selected == null || selected.isEmpty || !mounted) return;
+
     setState(() => _busy = true);
     try {
+      // The picker can stay open while background sync updates or deletes a
+      // note. Resolve the chosen ids again at the serialization boundary so
+      // the exported snapshot is current and never includes a deleted row.
+      final currentById = {
+        for (final note in await _io.listExportableNotes()) note.id: note,
+      };
+      final refreshed = <Note>[];
+      for (final selectedNote in selected) {
+        final current = currentById[selectedNote.id];
+        if (current == null) {
+          _snack(
+            'A selected note is no longer available. Review your selection '
+            'and try again.',
+          );
+          return;
+        }
+        refreshed.add(current);
+      }
+
       final List<int> bytes;
       final String filename;
       final String mimeType;
@@ -183,19 +272,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       switch (choice) {
         case 'oblix':
-          bytes = await _io.exportOblix();
+          bytes = await _io.exportNotesOblix(refreshed);
           filename = 'oblix-export-$stamp.oblix';
           mimeType = 'application/zip';
         case 'epub':
-          bytes = await _io.exportAllEpub();
+          bytes = _io.exportNotesEpub(refreshed);
           filename = 'oblix-export-$stamp.epub';
           mimeType = 'application/epub+zip';
         case 'md':
-          bytes = await _io.exportAllMarkdownZip();
+          bytes = _io.exportNotesMarkdownZip(refreshed);
           filename = 'oblix-notes-$stamp.zip';
           mimeType = 'application/zip';
         case 'txt':
-          bytes = await _io.exportAllTextZip();
+          bytes = _io.exportNotesTextZip(refreshed);
           filename = 'oblix-notes-$stamp.zip';
           mimeType = 'application/zip';
         default:
@@ -217,6 +306,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<List<Note>?> _pickNotesForExport(List<Note> notes) {
+    final selectedIds = <String>{};
+    return showDialog<List<Note>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Choose notes to export'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 420,
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => setDialogState(
+                        () => selectedIds.addAll(notes.map((note) => note.id)),
+                      ),
+                      child: const Text('Select all'),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          setDialogState(() => selectedIds.clear()),
+                      child: const Text('Clear'),
+                    ),
+                    const Spacer(),
+                    Text('${selectedIds.length} selected'),
+                  ],
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: notes.length,
+                    itemBuilder: (context, index) {
+                      final note = notes[index];
+                      return CheckboxListTile(
+                        value: selectedIds.contains(note.id),
+                        title: Text(
+                          note.title.trim().isEmpty ? 'Untitled' : note.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: note.content.trim().isEmpty
+                            ? null
+                            : Text(
+                                note.content.trim(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                        onChanged: (checked) => setDialogState(() {
+                          if (checked ?? false) {
+                            selectedIds.add(note.id);
+                          } else {
+                            selectedIds.remove(note.id);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: selectedIds.isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, [
+                      for (final note in notes)
+                        if (selectedIds.contains(note.id)) note,
+                    ]),
+              child: const Text('Export'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _exportOption(String key, String label, IconData icon, OblixColors c) {
@@ -380,6 +552,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     children: [
                       _SettingsRow(
+                        icon: Icons.group_outlined,
+                        label: 'Shared with me',
+                        value: 'Live collaboration',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SharedWithMeScreen(),
+                          ),
+                        ),
+                      ),
+                      Divider(height: 1, color: c.hairline),
+                      _SettingsRow(
                         icon: Icons.file_download_outlined,
                         label: 'Import notes',
                         value: '.enex · .oblix · .md · .txt · .epub',
@@ -388,7 +572,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Divider(height: 1, color: c.hairline),
                       _SettingsRow(
                         icon: Icons.file_upload_outlined,
-                        label: 'Export all notes',
+                        label: 'Export notes',
                         value: '.oblix · .epub · .md · .txt',
                         onTap: _busy ? null : _export,
                       ),

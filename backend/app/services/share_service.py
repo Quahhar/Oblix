@@ -20,7 +20,7 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -47,6 +47,36 @@ def _strongest(roles) -> Optional[str]:
     return None
 
 
+def note_share_conditions(note: Note):
+    """Return grants that are currently capable of authorizing ``note``.
+
+    A notebook share is inactive while its notebook is tombstoned.  Keeping
+    this predicate shared with the WebSocket hub prevents REST and live access
+    checks from drifting apart.
+    """
+    conditions = [
+        and_(
+            Share.entity_type == ShareEntityType.NOTE,
+            Share.entity_id == note.id,
+        )
+    ]
+    if note.notebook_id is not None:
+        notebook_is_live = exists(
+            select(Notebook.id).where(
+                Notebook.id == note.notebook_id,
+                Notebook.is_deleted.is_(False),
+            )
+        )
+        conditions.append(
+            and_(
+                Share.entity_type == ShareEntityType.NOTEBOOK,
+                Share.entity_id == note.notebook_id,
+                notebook_is_live,
+            )
+        )
+    return conditions
+
+
 class ShareService:
 
     # ------------------------------------------------------------ access checks
@@ -55,12 +85,11 @@ class ShareService:
         """The caller's effective role on a note: owner/editor/viewer/None."""
         if note.user_id == user.id:
             return "owner"
-        conds = [and_(Share.entity_type == ShareEntityType.NOTE, Share.entity_id == note.id)]
-        if note.notebook_id is not None:
-            conds.append(and_(Share.entity_type == ShareEntityType.NOTEBOOK,
-                              Share.entity_id == note.notebook_id))
         roles = (await db.execute(
-            select(Share.role).where(Share.grantee_id == user.id, or_(*conds))
+            select(Share.role).where(
+                Share.grantee_id == user.id,
+                or_(*note_share_conditions(note)),
+            )
         )).scalars().all()
         return _strongest(roles)
 
@@ -159,7 +188,9 @@ class ShareService:
         await db.flush()
         return self._share_dict(share, grantee)
 
-    async def delete_share(self, db: AsyncSession, user: User, share_id: str) -> None:
+    async def delete_share(
+        self, db: AsyncSession, user: User, share_id: str
+    ) -> tuple[str, str]:
         """Owner revokes, or the grantee leaves. Missing share → 404."""
         sid = _uuid_or_404(share_id, "Share not found")
         share = (await db.execute(select(Share).where(
@@ -168,8 +199,10 @@ class ShareService:
         ))).scalar_one_or_none()
         if share is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+        target = (share.entity_type.value, str(share.entity_id))
         await db.delete(share)
         await db.flush()
+        return target
 
     # ------------------------------------------------------------ grantee views
 

@@ -3,6 +3,39 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+class SyncRoundLease {
+  SyncRoundLease._(
+    this.protectedNoteIds,
+    this._completion,
+    this._release,
+  );
+
+  final Set<String> protectedNoteIds;
+  final Completer<void> _completion;
+  final void Function(Completer<void>) _release;
+  bool _released = false;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _release(_completion);
+  }
+}
+
+class CollaborativeNoteLease {
+  CollaborativeNoteLease._(this.noteId, this._release);
+
+  final String noteId;
+  final void Function(String) _release;
+  bool _released = false;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _release(noteId);
+  }
+}
+
 /// Owns the on-device SQLite database — the source of truth in this
 /// offline-first app. The UI reads/writes here; sync reconciles with the server
 /// in the background.
@@ -28,6 +61,64 @@ class AppDatabase {
 
   final DatabaseFactory? _dbFactory;
   final String? _pathOverride;
+
+  /// Shared collaboration cache ordering for every repository backed by this
+  /// database. Keeping it on the database instance prevents two editor screens
+  /// from using independent revision guards, while ephemeral test/account
+  /// databases remain isolated from one another.
+  final Map<String, Future<void>> collaborativeWriteTurns = {};
+  final Map<String, ({String epoch, int revision})> collaborativeRevisions = {};
+  final Map<String, int> _collaborativeNoteRefs = <String, int>{};
+  final Set<Completer<void>> _syncRounds = <Completer<void>>{};
+
+  void clearCollaborativeWriteState() {
+    collaborativeWriteTurns.clear();
+    collaborativeRevisions.clear();
+    _collaborativeNoteRefs.clear();
+  }
+
+  /// Protect a note's durable fallback before opening its live socket. The
+  /// marker is installed synchronously, then any sync round which started
+  /// first is allowed to finish before the caller receives the lease.
+  Future<CollaborativeNoteLease> protectNoteForCollaboration(
+    String noteId,
+  ) async {
+    _collaborativeNoteRefs.update(
+      noteId,
+      (count) => count + 1,
+      ifAbsent: () => 1,
+    );
+    final earlierRounds = _syncRounds.map((round) => round.future).toList();
+    if (earlierRounds.isNotEmpty) await Future.wait(earlierRounds);
+    return CollaborativeNoteLease._(noteId, _releaseCollaborativeNote);
+  }
+
+  /// Freeze the currently protected notes before a sync round performs its
+  /// first await. Collaboration that starts later waits for this round; a
+  /// round that starts later excludes these notes for its entire response.
+  SyncRoundLease beginSyncRound() {
+    final completion = Completer<void>();
+    _syncRounds.add(completion);
+    return SyncRoundLease._(
+      Set<String>.unmodifiable(_collaborativeNoteRefs.keys),
+      completion,
+      _releaseSyncRound,
+    );
+  }
+
+  void _releaseCollaborativeNote(String noteId) {
+    final count = _collaborativeNoteRefs[noteId];
+    if (count == null || count <= 1) {
+      _collaborativeNoteRefs.remove(noteId);
+    } else {
+      _collaborativeNoteRefs[noteId] = count - 1;
+    }
+  }
+
+  void _releaseSyncRound(Completer<void> completion) {
+    if (!_syncRounds.remove(completion)) return;
+    if (!completion.isCompleted) completion.complete();
+  }
 
   /// The open is cached as a Future so concurrent first callers share one
   /// open instead of racing (`_db ??= await _open()` would let both through).

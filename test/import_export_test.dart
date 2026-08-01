@@ -3,11 +3,13 @@
 // end-to-end into a real (in-memory) SQLite store.
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oblix/core/db/app_database.dart';
 import 'package:oblix/core/db/meta_dao.dart';
+import 'package:oblix/data/datasources/local/attachment_local_datasource.dart';
 import 'package:oblix/data/datasources/local/note_local_datasource.dart';
 import 'package:oblix/data/datasources/local/outbox_dao.dart';
 import 'package:oblix/data/io/enex_parser.dart';
@@ -17,9 +19,13 @@ import 'package:oblix/data/io/markdown_exporter.dart';
 import 'package:oblix/data/io/markdown_importer.dart';
 import 'package:oblix/data/io/oblix_archive.dart';
 import 'package:oblix/data/io/text_exporter.dart';
+import 'package:oblix/data/models/attachment.dart';
 import 'package:oblix/data/models/note.dart';
 import 'package:oblix/data/models/notebook.dart';
 import 'package:oblix/data/models/tag.dart';
+import 'package:oblix/data/repositories/attachment_repository.dart';
+import 'package:oblix/data/repositories/notebook_repository.dart';
+import 'package:oblix/data/repositories/tag_repository.dart';
 import 'package:oblix/domain/services/import_export_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -43,7 +49,35 @@ const _sampleEnex = '''<?xml version="1.0" encoding="UTF-8"?>
   </note>
 </en-export>''';
 
+Map<String, dynamic> _oblixData(List<int> bytes) {
+  final archive = ZipDecoder().decodeBytes(bytes);
+  final file = archive.findFile(OblixArchive.dataName);
+  if (file == null) throw StateError('Missing ${OblixArchive.dataName}');
+  return Map<String, dynamic>.from(
+    jsonDecode(utf8.decode(file.content as List<int>)) as Map,
+  );
+}
+
 void main() {
+  test('ImportResult addition aggregates a multi-file outcome', () {
+    const first = ImportResult(
+      notesImported: 2,
+      notebooksCreated: 1,
+      skippedAttachments: 3,
+    );
+    const second = ImportResult(
+      notesImported: 4,
+      notebooksCreated: 2,
+      skippedAttachments: 1,
+    );
+
+    final total = first + second;
+
+    expect(total.notesImported, 6);
+    expect(total.notebooksCreated, 3);
+    expect(total.skippedAttachments, 4);
+  });
+
   group('EnexParser', () {
     test('parses notes, tags, timestamps and flattens ENML', () {
       final bundle = EnexParser.parse(_sampleEnex, notebookName: 'Imported');
@@ -410,7 +444,8 @@ void main() {
       final shopping = stored.firstWhere((n) => n.title == 'Shopping list');
       expect(shopping.tagNames, ['groceries', 'home']);
 
-      expect(await outbox.pendingCount(), 3); // 2 notes + 1 notebook
+      // 2 notes + 1 notebook + 3 materialized tag catalog rows.
+      expect(await outbox.pendingCount(), 6);
     });
 
     test('export then import round-trips through the store', () async {
@@ -438,6 +473,213 @@ void main() {
       expect(shopping.tagNames, ['groceries', 'home']);
       expect(shopping.content, 'Milk\nEggs\nBread');
       await db2.close();
+    });
+
+    test(
+      'selective Oblix export contains only chosen note dependencies',
+      () async {
+        await service.importEnex(_sampleEnex, notebookName: 'Imported');
+        final stored = await notes.list(archived: null, deleted: false);
+        final shopping = stored.firstWhere(
+          (note) => note.title == 'Shopping list',
+        );
+        final meeting = stored.firstWhere(
+          (note) => note.title == 'Meeting notes',
+        );
+        await NotebookRepository(
+          appDb: db,
+        ).createNotebook(name: 'Empty notebook');
+        await TagRepository(appDb: db).createTag('unused-tag');
+
+        final attachmentDir = await Directory.systemTemp.createTemp(
+          'oblix-selective-export-',
+        );
+        try {
+          final attachmentRepository = AttachmentRepository(
+            appDb: db,
+            attachmentsDir: () async => attachmentDir,
+          );
+          await attachmentRepository.attach(
+            noteId: shopping.id,
+            bytes: utf8.encode('selected bytes'),
+            originalName: 'selected.txt',
+            mimeType: 'text/plain',
+          );
+          await attachmentRepository.attach(
+            noteId: meeting.id,
+            bytes: utf8.encode('unselected bytes'),
+            originalName: 'unselected.txt',
+            mimeType: 'text/plain',
+          );
+
+          final exported = await service.exportNotesOblix([shopping]);
+          final bundle = OblixArchive.decode(exported);
+          final data = _oblixData(exported);
+
+          expect(bundle.notes, hasLength(1));
+          expect(bundle.notes.single.title, 'Shopping list');
+          expect(bundle.notes.single.content, 'Milk\nEggs\nBread');
+          expect(bundle.notes.single.attachments, hasLength(1));
+          expect(
+            bundle.notes.single.attachments.single.originalName,
+            'selected.txt',
+          );
+          expect(bundle.notebookPaths, [
+            ['Imported'],
+          ]);
+
+          final exportedTagNames = [
+            for (final raw in data['tags'] as List)
+              (raw as Map<String, dynamic>)['name'],
+          ];
+          expect(exportedTagNames, containsAll(['groceries', 'home']));
+          expect(exportedTagNames, isNot(contains('work')));
+          expect(exportedTagNames, isNot(contains('unused-tag')));
+          expect(jsonEncode(data), isNot(contains('unselected.txt')));
+          expect(jsonEncode(data), isNot(contains('Empty notebook')));
+
+          // The legacy whole-account API retains complete catalog metadata.
+          final fullData = _oblixData(await service.exportOblix());
+          expect(jsonEncode(fullData), contains('Empty notebook'));
+          expect(jsonEncode(fullData), contains('unused-tag'));
+        } finally {
+          await attachmentDir.delete(recursive: true);
+        }
+      },
+    );
+
+    test('selective Oblix export fails if an attachment is missing', () async {
+      await service.importEnex(_sampleEnex, notebookName: 'Imported');
+      final shopping = (await notes.list(
+        archived: null,
+        deleted: false,
+      )).firstWhere((note) => note.title == 'Shopping list');
+      final now = DateTime.now().toUtc();
+      await AttachmentLocalDataSource(db).insert(
+        Attachment(
+          id: 'missing-local-attachment',
+          noteId: shopping.id,
+          userId: 'u1',
+          originalName: 'missing.bin',
+          sizeBytes: 12,
+          localPath:
+              '${Directory.systemTemp.path}${Platform.pathSeparator}'
+              'oblix-file-that-does-not-exist',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      await expectLater(
+        service.exportNotesOblix([shopping]),
+        throwsA(
+          isA<OblixExportException>().having(
+            (error) => error.unavailableAttachments,
+            'unavailable attachments',
+            contains(contains('missing.bin')),
+          ),
+        ),
+      );
+    });
+
+    test('duplicate leaf names under different parents stay distinct', () async {
+      final now = DateTime.utc(2026, 7, 30);
+      final sourceNotebooks = [
+        Notebook(
+          id: 'work',
+          userId: 'source',
+          name: 'Work',
+          createdAt: now,
+          updatedAt: now,
+        ),
+        Notebook(
+          id: 'work-projects',
+          userId: 'source',
+          name: 'Projects',
+          parentId: 'work',
+          createdAt: now,
+          updatedAt: now,
+        ),
+        Notebook(
+          id: 'personal',
+          userId: 'source',
+          name: 'Personal',
+          createdAt: now,
+          updatedAt: now,
+        ),
+        Notebook(
+          id: 'personal-projects',
+          userId: 'source',
+          name: 'Projects',
+          parentId: 'personal',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ];
+      final sourceNotes = [
+        Note(
+          id: 'work-note',
+          userId: 'source',
+          notebookId: 'work-projects',
+          title: 'Work note',
+          content: 'work',
+          createdAt: now,
+          updatedAt: now,
+        ),
+        Note(
+          id: 'personal-note',
+          userId: 'source',
+          notebookId: 'personal-projects',
+          title: 'Personal note',
+          content: 'personal',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ];
+
+      await service.importOblix(
+        OblixArchive.encode(
+          notes: sourceNotes,
+          notebooks: sourceNotebooks,
+          tags: const [],
+        ),
+      );
+
+      final importedNotes = await notes.list(
+        archived: null,
+        deleted: false,
+      );
+      final importedNotebooks = await NotebookRepository(
+        appDb: db,
+      ).listNotebooks();
+      final byId = {
+        for (final notebook in importedNotebooks) notebook.id: notebook,
+      };
+
+      List<String> pathFor(Note note) {
+        final path = <String>[];
+        var notebookId = note.notebookId;
+        while (notebookId != null) {
+          final notebook = byId[notebookId];
+          if (notebook == null) break;
+          path.insert(0, notebook.name);
+          notebookId = notebook.parentId;
+        }
+        return path;
+      }
+
+      expect(
+        pathFor(
+          importedNotes.firstWhere((note) => note.title == 'Work note'),
+        ),
+        ['Work', 'Projects'],
+      );
+      expect(
+        pathFor(
+          importedNotes.firstWhere((note) => note.title == 'Personal note'),
+        ),
+        ['Personal', 'Projects'],
+      );
     });
 
     test('Markdown import creates notes in store', () async {

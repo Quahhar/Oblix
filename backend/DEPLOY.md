@@ -94,6 +94,9 @@ location /oblix/ {
     # Overwrite, do not append an untrusted client-supplied value.
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 3600s;
     client_max_body_size 50m;   # match MAX_UPLOAD_SIZE_MB
 }
 ```

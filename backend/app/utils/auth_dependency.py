@@ -22,7 +22,12 @@ async def get_current_user(
     logout-all and refresh-rotation invalidate outstanding access tokens
     immediately, instead of leaving them usable until they expire.
     """
-    payload = decode_token(credentials.credentials)
+    return await authenticate_access_token(db, credentials.credentials)
+
+
+async def authenticate_access_token(db: AsyncSession, token: str) -> User:
+    """Shared HTTP/WebSocket access-token authentication."""
+    payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
@@ -38,7 +43,12 @@ async def get_current_user(
 
     session = (await db.execute(select(Session).where(Session.id == session_id))).scalar_one_or_none()
     now = datetime.now(timezone.utc)
-    if session is None or session.revoked_at is not None or session.expires_at <= now:
+    if (
+        session is None
+        or str(session.user_id) != str(user_id)
+        or session.revoked_at is not None
+        or session.expires_at <= now
+    ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
 
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()

@@ -105,11 +105,51 @@ class NoteLocalDataSource {
     );
   }
 
+  /// Patch only the supplied columns and return the resulting row.
+  ///
+  /// This prevents a stale whole-row copy from rolling back an unrelated
+  /// concurrent change, such as live content arriving while a note is pinned.
+  Future<Note?> updateFields(
+    DatabaseExecutor db,
+    String noteId,
+    Map<String, Object?> fields,
+  ) async {
+    if (fields.isNotEmpty) {
+      final values = <String, Object?>{
+        for (final entry in fields.entries)
+          entry.key: switch (entry.value) {
+            final bool value => value ? 1 : 0,
+            final DateTime value => value.toUtc().toIso8601String(),
+            final List<String> value => jsonEncode(value),
+            final value => value,
+          },
+      };
+      final changed = await db.update(
+        'notes',
+        values,
+        where: 'id = ?',
+        whereArgs: [noteId],
+      );
+      if (changed == 0) return null;
+    }
+    final rows = await db.query(
+      'notes',
+      where: 'id = ?',
+      whereArgs: [noteId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : _fromRow(rows.first);
+  }
+
   /// Apply notes pulled from the server using last-write-wins: a server note
   /// overwrites the local row only if it is at least as new. This protects a
   /// local edit made after the sync batch was assembled from being clobbered by
   /// an older server version.
-  Future<int> applyServerNotes(Transaction txn, List<Note> serverNotes) async {
+  Future<int> applyServerNotes(
+    Transaction txn,
+    List<Note> serverNotes, {
+    Set<String> preserveDocumentForNoteIds = const <String>{},
+  }) async {
     var applied = 0;
     for (final server in serverNotes) {
       final rows = await txn.query(
@@ -127,7 +167,24 @@ class NoteLocalDataSource {
           continue; // local is newer — keep it, it'll be pushed next cycle
         }
       }
-      await upsert(txn, server);
+      if (rows.isNotEmpty && preserveDocumentForNoteIds.contains(server.id)) {
+        // This response belongs to a sync round which overlapped a live editor.
+        // Keep the OT-managed document while still consuming server metadata;
+        // the cursor may advance past this response, so skipping it wholesale
+        // would permanently miss pin/archive/tag/notebook changes.
+        await updateFields(txn, server.id, {
+          'user_id': server.userId,
+          'notebook_id': server.notebookId,
+          'is_pinned': server.isPinned,
+          'is_archived': server.isArchived,
+          'is_deleted': server.isDeleted,
+          'created_at': server.createdAt,
+          'updated_at': server.updatedAt,
+          'tags': server.tagNames,
+        });
+      } else {
+        await upsert(txn, server);
+      }
       applied++;
     }
     return applied;

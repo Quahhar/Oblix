@@ -13,6 +13,7 @@ from app.models.tag import Tag, NoteTag
 from app.models.file import File
 from app.models.task import Task
 from app.models.sync import SyncLog, EntityType, SyncAction
+from app.models.collaboration import CollaborationOperation
 from app.schemas.sync import SyncChangeItem
 
 
@@ -323,6 +324,18 @@ class SyncService:
         return parent_id
 
     async def _apply_note_fields(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
+        replaces_ot_baseline = sa_inspect(note).persistent and (
+            ("title" in client_data and client_data["title"] != note.title)
+            or ("content" in client_data and client_data["content"] != note.content)
+        )
+        if replaces_ot_baseline:
+            await db.execute(
+                delete(CollaborationOperation).where(
+                    CollaborationOperation.note_id == note.id
+                )
+            )
+            note.collab_revision = 0
+            note.collab_epoch = uuid.uuid4()
         for key in ("title", "content", "is_pinned", "is_archived"):
             if key in client_data:
                 setattr(note, key, client_data[key])
@@ -760,6 +773,7 @@ class SyncService:
             select(Note)
             .where(Note.id == entity_id, Note.user_id == user.id)
             .options(selectinload(Note.tags).selectinload(NoteTag.tag))
+            .with_for_update()
         )
         return result.scalar_one_or_none()
 

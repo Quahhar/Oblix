@@ -50,6 +50,8 @@ dependencies:
   xml: ^6.6.1
   file_picker: ^11.0.2
   share_plus: ^12.0.2
+  # Mature Quill Delta implementation used for real-time text OT.
+  dart_quill_delta: ^10.8.3
   # PDF generation for note export
   pdf: ^3.11.3
 
