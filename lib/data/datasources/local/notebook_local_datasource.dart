@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
 import '../../models/notebook.dart';
+import '../../models/crdt_clock.dart';
 
 /// Local SQLite access for notebooks (offline-first mirror).
 class NotebookLocalDataSource {
@@ -9,8 +12,12 @@ class NotebookLocalDataSource {
 
   Future<Notebook?> getById(String id) async {
     final db = await _appDb.database;
-    final rows =
-        await db.query('notebooks', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'notebooks',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
@@ -42,20 +49,14 @@ class NotebookLocalDataSource {
     for (final server in serverNotebooks) {
       final rows = await txn.query(
         'notebooks',
-        columns: ['updated_at'],
         where: 'id = ?',
         whereArgs: [server.id],
         limit: 1,
       );
-      if (rows.isNotEmpty) {
-        final localUpdated =
-            DateTime.tryParse(rows.first['updated_at'] as String? ?? '');
-        if (localUpdated != null &&
-            server.updatedAt.toUtc().isBefore(localUpdated.toUtc())) {
-          continue;
-        }
-      }
-      await upsert(txn, server);
+      final merged = rows.isEmpty
+          ? server
+          : _fromRow(rows.first).mergeCrdt(server);
+      await upsert(txn, merged);
       applied++;
     }
     return applied;
@@ -65,7 +66,8 @@ class NotebookLocalDataSource {
   Future<int> purgeDeletedBefore(DatabaseExecutor db, DateTime cutoffUtc) {
     return db.delete(
       'notebooks',
-      where: 'is_deleted = 1 AND updated_at < ? '
+      where:
+          'is_deleted = 1 AND updated_at < ? '
           'AND id NOT IN (SELECT entity_id FROM outbox)',
       whereArgs: [cutoffUtc.toIso8601String()],
     );
@@ -80,6 +82,9 @@ class NotebookLocalDataSource {
     'is_deleted': n.isDeleted ? 1 : 0,
     'created_at': n.createdAt.toUtc().toIso8601String(),
     'updated_at': n.updatedAt.toUtc().toIso8601String(),
+    'field_clocks': jsonEncode(
+      n.fieldClocks.map((field, clock) => MapEntry(field, clock.toJson())),
+    ),
   };
 
   Notebook _fromRow(Map<String, Object?> r) => Notebook(
@@ -91,5 +96,8 @@ class NotebookLocalDataSource {
     isDeleted: (r['is_deleted'] as int? ?? 0) == 1,
     createdAt: DateTime.parse(r['created_at'] as String),
     updatedAt: DateTime.parse(r['updated_at'] as String),
+    fieldClocks: parseCrdtClocks(
+      jsonDecode(r['field_clocks'] as String? ?? '{}'),
+    ),
   );
 }

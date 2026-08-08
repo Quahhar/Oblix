@@ -208,8 +208,7 @@ class OutboxDao {
       final rows = await db.query(
         'outbox',
         columns: const ['seq', 'action', 'data'],
-        where:
-            'entity_type = ? AND entity_id = ? AND seq IN ($marks)',
+        where: 'entity_type = ? AND entity_id = ? AND seq IN ($marks)',
         whereArgs: [entityType, entityId, ...chunk],
       );
       for (final row in rows) {
@@ -224,6 +223,16 @@ class OutboxDao {
         }
         if (!data.containsKey(field)) continue;
         data.remove(field);
+        final rawClocks = data['field_clocks'];
+        if (rawClocks is Map) {
+          final clocks = rawClocks.cast<String, dynamic>();
+          clocks.remove(field);
+          if (clocks.isEmpty) {
+            data.remove('field_clocks');
+          } else {
+            data['field_clocks'] = clocks;
+          }
+        }
         final seq = row['seq'] as int;
         if (data.isEmpty) {
           await db.delete('outbox', where: 'seq = ?', whereArgs: [seq]);

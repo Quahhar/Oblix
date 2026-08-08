@@ -1,6 +1,17 @@
 import 'package:equatable/equatable.dart';
+import 'crdt_clock.dart';
 
 class Note extends Equatable {
+  static const Set<String> crdtFields = {
+    'title',
+    'content',
+    'content_type',
+    'notebook_id',
+    'is_pinned',
+    'is_archived',
+    'tags',
+    'is_deleted',
+  };
   final String id;
   final String userId;
   final String? notebookId;
@@ -14,6 +25,7 @@ class Note extends Equatable {
   final DateTime updatedAt;
   final List<String> tagNames;
   final List<NoteVersion> versions;
+  final Map<String, CrdtClock> fieldClocks;
 
   const Note({
     required this.id,
@@ -29,6 +41,7 @@ class Note extends Equatable {
     required this.updatedAt,
     this.tagNames = const [],
     this.versions = const [],
+    this.fieldClocks = const {},
   });
 
   factory Note.fromJson(Map<String, dynamic> json) {
@@ -47,7 +60,8 @@ class Note extends Equatable {
       // over updated_at (= when the server applied it). Locally, updatedAt
       // always means "last edit time", so merges compare edit-vs-edit and an
       // older edit that merely synced later can't clobber a newer local edit.
-      updatedAt: DateTime.tryParse(json['edited_at'] as String? ?? '') ??
+      updatedAt:
+          DateTime.tryParse(json['edited_at'] as String? ?? '') ??
           DateTime.parse(json['updated_at'] as String),
       tagNames:
           (json['tags'] as List<dynamic>?)
@@ -63,6 +77,7 @@ class Note extends Equatable {
               ?.map((v) => NoteVersion.fromJson(v as Map<String, dynamic>))
               .toList() ??
           [],
+      fieldClocks: parseCrdtClocks(json['field_clocks']),
     );
   }
 
@@ -79,7 +94,43 @@ class Note extends Equatable {
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
     'tags': tagNames,
+    'field_clocks': fieldClocks.map(
+      (field, clock) => MapEntry(field, clock.toJson()),
+    ),
   };
+
+  CrdtClock clockFor(String field) =>
+      fieldClocks[field] ?? CrdtClock(timestamp: updatedAt, deviceId: '');
+
+  Note mergeCrdt(Note remote, {Set<String> excludedFields = const {}}) {
+    bool take(String field) =>
+        !excludedFields.contains(field) &&
+        remote.clockFor(field).compareTo(clockFor(field)) > 0;
+    final clocks = <String, CrdtClock>{...fieldClocks};
+    for (final field in crdtFields) {
+      if (take(field)) clocks[field] = remote.clockFor(field);
+    }
+    return Note(
+      id: id,
+      userId: remote.userId,
+      notebookId: take('notebook_id') ? remote.notebookId : notebookId,
+      title: take('title') ? remote.title : title,
+      content: take('content') ? remote.content : content,
+      contentType: take('content_type') ? remote.contentType : contentType,
+      isPinned: take('is_pinned') ? remote.isPinned : isPinned,
+      isArchived: take('is_archived') ? remote.isArchived : isArchived,
+      isDeleted: take('is_deleted') ? remote.isDeleted : isDeleted,
+      createdAt: createdAt.isBefore(remote.createdAt)
+          ? createdAt
+          : remote.createdAt,
+      updatedAt: updatedAt.isAfter(remote.updatedAt)
+          ? updatedAt
+          : remote.updatedAt,
+      tagNames: take('tags') ? remote.tagNames : tagNames,
+      versions: remote.versions.isNotEmpty ? remote.versions : versions,
+      fieldClocks: Map.unmodifiable(clocks),
+    );
+  }
 
   /// Sentinel distinguishing "not passed" from an explicit null in [copyWith],
   /// so a note can be moved OUT of a notebook (notebookId: null).
@@ -96,6 +147,7 @@ class Note extends Equatable {
     DateTime? updatedAt,
     List<String>? tagNames,
     List<NoteVersion>? versions,
+    Map<String, CrdtClock>? fieldClocks,
   }) {
     return Note(
       id: id,
@@ -113,6 +165,7 @@ class Note extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       tagNames: tagNames ?? this.tagNames,
       versions: versions ?? this.versions,
+      fieldClocks: fieldClocks ?? this.fieldClocks,
     );
   }
 
@@ -130,6 +183,7 @@ class Note extends Equatable {
     createdAt,
     updatedAt,
     tagNames,
+    fieldClocks,
   ];
 }
 

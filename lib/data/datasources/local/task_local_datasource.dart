@@ -1,30 +1,24 @@
+import 'dart:convert';
+
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
 import '../../models/task.dart';
 
-/// Local SQLite access for tasks. Same shape as notes: the UI reads/writes
-/// here, the sync engine reconciles with the server in the background.
 class TaskLocalDataSource {
   final AppDatabase _appDb;
   TaskLocalDataSource(this._appDb);
 
-  // --- Reads ---
-
   Future<Task?> getById(String id) async {
     final db = await _appDb.database;
-    final rows =
-        await db.query('tasks', where: 'id = ?', whereArgs: [id], limit: 1);
-    if (rows.isEmpty) return null;
-    return _fromRow(rows.first);
+    final rows = await db.query(
+      'tasks',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
-  /// List tasks. [completed] is tri-state: false/true filter by state, null
-  /// returns both. [scheduledOnly] keeps only tasks with a due date (the
-  /// "Scheduled" tab). Deleted tasks are always excluded (tasks have no trash
-  /// view — a tombstone only exists to propagate the delete).
-  ///
-  /// Order: due date first (undated last), then manual sort order, then
-  /// newest-created — so the Tasks screen can group rows top-to-bottom.
   Future<List<Task>> list({
     bool? completed = false,
     bool scheduledOnly = false,
@@ -33,32 +27,31 @@ class TaskLocalDataSource {
     final db = await _appDb.database;
     final where = <String>['is_deleted = 0'];
     final args = <Object?>[];
-
     if (completed != null) where.add('is_completed = ${completed ? 1 : 0}');
     if (scheduledOnly) where.add('due_date IS NOT NULL');
     if (noteId != null) {
       where.add('note_id = ?');
       args.add(noteId);
     }
-
     final rows = await db.query(
       'tasks',
       where: where.join(' AND '),
       whereArgs: args.isEmpty ? null : args,
-      orderBy: 'due_date IS NULL, due_date ASC, sort_order ASC, created_at DESC',
+      orderBy:
+          'due_date IS NULL, due_date ASC, sort_order ASC, created_at DESC',
     );
     return rows.map(_fromRow).toList();
   }
 
   Future<int> countOpen() async {
     final db = await _appDb.database;
-    final n = Sqflite.firstIntValue(await db.rawQuery(
-      'SELECT COUNT(*) FROM tasks WHERE is_deleted = 0 AND is_completed = 0',
-    ));
-    return n ?? 0;
+    return Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM tasks WHERE is_deleted = 0 AND is_completed = 0',
+          ),
+        ) ??
+        0;
   }
-
-  // --- Writes (run within a caller-supplied transaction) ---
 
   Future<void> upsert(DatabaseExecutor db, Task task) async {
     await db.insert(
@@ -68,73 +61,83 @@ class TaskLocalDataSource {
     );
   }
 
-  /// Apply tasks pulled from the server, last-write-wins by edit time — same
-  /// rule as notes: a server task only overwrites a local row that is not
-  /// newer, so an unsynced local edit survives the merge.
+  /// Join the server and local LWW maps. Concurrent changes to separate fields
+  /// survive, while same-field changes converge by timestamp then device id.
   Future<int> applyServerTasks(Transaction txn, List<Task> serverTasks) async {
     var applied = 0;
     for (final server in serverTasks) {
       final rows = await txn.query(
         'tasks',
-        columns: ['updated_at'],
         where: 'id = ?',
         whereArgs: [server.id],
         limit: 1,
       );
-      if (rows.isNotEmpty) {
-        final localUpdated =
-            DateTime.tryParse(rows.first['updated_at'] as String? ?? '');
-        if (localUpdated != null &&
-            server.updatedAt.toUtc().isBefore(localUpdated.toUtc())) {
-          continue; // local is newer — keep it, it'll be pushed next cycle
-        }
-      }
-      await upsert(txn, server);
+      final merged = rows.isEmpty
+          ? server
+          : _fromRow(rows.first).mergeCrdt(server);
+      await upsert(txn, merged);
       applied++;
     }
     return applied;
   }
 
-  /// Hard-delete tombstones older than [cutoffUtc] with no pending outbox
-  /// entry (the server already knows about the deletion).
   Future<int> purgeDeletedBefore(DatabaseExecutor db, DateTime cutoffUtc) {
     return db.delete(
       'tasks',
-      where: 'is_deleted = 1 AND updated_at < ? '
+      where:
+          'is_deleted = 1 AND updated_at < ? '
           'AND id NOT IN (SELECT entity_id FROM outbox)',
       whereArgs: [cutoffUtc.toIso8601String()],
     );
   }
 
-  // --- Mapping ---
-
-  Map<String, Object?> _toRow(Task t) => {
-    'id': t.id,
-    'user_id': t.userId,
-    'note_id': t.noteId,
-    'title': t.title,
-    'description': t.description,
-    'is_completed': t.isCompleted ? 1 : 0,
-    'completed_at': t.completedAt?.toUtc().toIso8601String(),
-    'due_date': t.dueDate?.toUtc().toIso8601String(),
-    'sort_order': t.sortOrder,
-    'is_deleted': t.isDeleted ? 1 : 0,
-    'created_at': t.createdAt.toUtc().toIso8601String(),
-    'updated_at': t.updatedAt.toUtc().toIso8601String(),
+  Map<String, Object?> _toRow(Task task) => {
+    'id': task.id,
+    'user_id': task.userId,
+    'note_id': task.noteId,
+    'title': task.title,
+    'description': task.description,
+    'is_completed': task.isCompleted ? 1 : 0,
+    'completed_at': task.completedAt?.toUtc().toIso8601String(),
+    'due_date': task.dueDate?.toUtc().toIso8601String(),
+    'sort_order': task.sortOrder,
+    'is_deleted': task.isDeleted ? 1 : 0,
+    'created_at': task.createdAt.toUtc().toIso8601String(),
+    'updated_at': task.updatedAt.toUtc().toIso8601String(),
+    'field_clocks': jsonEncode(
+      task.fieldClocks.map((field, clock) => MapEntry(field, clock.toJson())),
+    ),
   };
 
-  Task _fromRow(Map<String, Object?> r) => Task(
-    id: r['id'] as String,
-    userId: r['user_id'] as String,
-    noteId: r['note_id'] as String?,
-    title: r['title'] as String? ?? 'Untitled task',
-    description: r['description'] as String? ?? '',
-    isCompleted: (r['is_completed'] as int? ?? 0) == 1,
-    completedAt: DateTime.tryParse(r['completed_at'] as String? ?? ''),
-    dueDate: DateTime.tryParse(r['due_date'] as String? ?? ''),
-    sortOrder: r['sort_order'] as int? ?? 0,
-    isDeleted: (r['is_deleted'] as int? ?? 0) == 1,
-    createdAt: DateTime.parse(r['created_at'] as String),
-    updatedAt: DateTime.parse(r['updated_at'] as String),
+  Task _fromRow(Map<String, Object?> row) => Task(
+    id: row['id'] as String,
+    userId: row['user_id'] as String,
+    noteId: row['note_id'] as String?,
+    title: row['title'] as String? ?? 'Untitled task',
+    description: row['description'] as String? ?? '',
+    isCompleted: (row['is_completed'] as int? ?? 0) == 1,
+    completedAt: DateTime.tryParse(row['completed_at'] as String? ?? ''),
+    dueDate: DateTime.tryParse(row['due_date'] as String? ?? ''),
+    sortOrder: row['sort_order'] as int? ?? 0,
+    isDeleted: (row['is_deleted'] as int? ?? 0) == 1,
+    createdAt: DateTime.parse(row['created_at'] as String),
+    updatedAt: DateTime.parse(row['updated_at'] as String),
+    fieldClocks: _decodeFieldClocks(row['field_clocks']),
   );
+
+  static Map<String, TaskCrdtClock> _decodeFieldClocks(Object? raw) {
+    if (raw is! String || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return decoded.map<String, TaskCrdtClock>(
+        (field, value) => MapEntry(
+          field.toString(),
+          TaskCrdtClock.fromJson(Map<String, dynamic>.from(value as Map)),
+        ),
+      );
+    } on Object {
+      return const {};
+    }
+  }
 }

@@ -36,6 +36,7 @@ class TaskResponse(BaseModel):
     is_deleted: bool
     created_at: datetime
     updated_at: datetime
+    field_clocks: dict = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 

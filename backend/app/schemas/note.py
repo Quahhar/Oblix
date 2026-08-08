@@ -53,6 +53,7 @@ class NoteResponse(BaseModel):
     is_deleted: bool
     created_at: datetime
     updated_at: datetime
+    field_clocks: dict = Field(default_factory=dict)
     tags: list[TagResponse] = Field(default_factory=list)
     versions: list[NoteVersionResponse] = Field(default_factory=list)
 

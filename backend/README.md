@@ -30,8 +30,9 @@ a separate Flutter mobile app.
   transaction has released its note lock. A room admits at most 64 sockets
   (eight per account), and live note bodies are capped at 2,000,000 UTF-16
   units.
-- **Tasks**: todos with due dates, optionally attached to a note, synced like
-  every other entity.
+- **Offline CRDT sync**: mutable fields on notes, notebooks, and tasks are
+  independent LWW registers. Unrelated offline/online edits merge instead of
+  replacing the whole entity; equal timestamps converge by stable device ID.
 - **AI**: `POST /api/ai/summarize` — a metered pass-through to the Anthropic
   Messages API. Disabled until `ANTHROPIC_API_KEY` is set.
 - **Auth**: JWT access tokens bound to a server-side session, rotating refresh

@@ -25,6 +25,7 @@ class NotebookResponse(BaseModel):
     is_deleted: bool
     created_at: datetime
     updated_at: datetime
+    field_clocks: dict = Field(default_factory=dict)
     children: list["NotebookResponse"] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

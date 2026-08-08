@@ -15,6 +15,14 @@ from app.models.task import Task
 from app.models.sync import SyncLog, EntityType, SyncAction
 from app.models.collaboration import CollaborationOperation
 from app.schemas.sync import SyncChangeItem
+from app.services.task_crdt import (
+    NOTEBOOK_CRDT_FIELDS,
+    NOTE_CRDT_FIELDS,
+    TASK_CRDT_FIELDS,
+    initial_field_clocks,
+    serialize_clock,
+    winning_fields,
+)
 
 
 def _coerce_content_type(value) -> ContentType:
@@ -205,26 +213,31 @@ class SyncService:
         existing = await self._get_note_with_tags(db, user, entity_id)
         client_data = change.data
         client_ts = _client_ts(change.timestamp)
+        now = datetime.now(timezone.utc)
+        device_id = str(change.device_id or "")[:255]
 
         if change.action == "create":
             if existing and not existing.is_deleted:
                 return {"conflict": True, "server_data": self._note_to_dict(existing),
                         "reason": "Note already exists on server"}
             if existing and existing.is_deleted:
-                # Resurrect the soft-deleted row instead of inserting a duplicate PK.
-                await self._apply_note_fields(db, user, existing, client_data)
-                await self._apply_note_tags(db, user, existing, client_data)
-                existing.is_deleted = False
-                existing.deleted_at = None
-                now = datetime.now(timezone.utc)
-                existing.edited_at = client_ts or now
-                existing.updated_at = now
+                changed = await self._merge_note_fields(
+                    db,
+                    user,
+                    existing,
+                    {**client_data, "is_deleted": False},
+                    change.timestamp,
+                    device_id,
+                    now,
+                )
+                if changed:
+                    existing.updated_at = now
                 return {}
             note = Note(
                 id=uuid.UUID(entity_id),
                 user_id=user.id,
             )
-            await self._apply_note_fields(db, user, note, client_data)
+            await self._apply_note_fields(db, user, note, client_data, set(client_data))
             # Preserve the note's real creation time (it was created offline on
             # the client); otherwise func.now() stamps it with the sync time and
             # the note shows "created today" on every other device. Stamp
@@ -232,42 +245,56 @@ class SyncService:
             created = _client_ts(client_data.get("created_at"))
             if created is not None:
                 note.created_at = created
-            note.updated_at = datetime.now(timezone.utc)
-            note.edited_at = client_ts or created or note.updated_at
+            note.updated_at = now
+            note.edited_at = client_ts or created or now
+            note.field_clocks = initial_field_clocks(
+                note.edited_at, device_id, NOTE_CRDT_FIELDS
+            )
             db.add(note)
             await self._apply_note_tags(db, user, note, client_data)
             return {}
 
         elif change.action == "update":
-            if not existing or existing.is_deleted:
+            if not existing:
                 return {"conflict": True, "reason": "Note not found on server"}
-            # Last-write-wins by EDIT time, not server apply time: compare the
-            # incoming edit against the last recorded edit (edited_at), falling
-            # back to updated_at for rows that predate edited_at. Otherwise a
-            # note that merely synced later could beat one edited more recently.
-            basis = existing.edited_at or existing.updated_at
-            if client_ts is not None and basis is not None and basis > client_ts:
-                return {"conflict": True, "server_data": self._note_to_dict(existing),
-                        "reason": "Server version is newer"}
-            await self._apply_note_fields(db, user, existing, client_data)
-            await self._apply_note_tags(db, user, existing, client_data)
-            now = datetime.now(timezone.utc)
-            existing.edited_at = client_ts or now
-            existing.updated_at = now
+            restore_only = (
+                existing.is_deleted
+                and client_data.get("is_deleted") is False
+                and not any(
+                    field in client_data
+                    for field in NOTE_CRDT_FIELDS
+                    if field != "is_deleted"
+                )
+            )
+            payload = {
+                key: value
+                for key, value in client_data.items()
+                if key != "is_deleted" or restore_only
+            }
+            changed = await self._merge_note_fields(
+                db, user, existing, payload, change.timestamp, device_id, now
+            )
+            if changed:
+                existing.updated_at = now
             return {}
 
         elif change.action == "delete":
-            if existing and not existing.is_deleted:
-                now = datetime.now(timezone.utc)
-                existing.is_deleted = True
-                existing.is_archived = False
-                existing.deleted_at = now
-                existing.updated_at = now
-                # A delete is an edit for LWW purposes: without this, the
-                # tombstone would carry the note's last content-edit time and
-                # lose merges against devices that edited just before the
-                # delete, resurrecting the note there.
-                existing.edited_at = client_ts or now
+            if existing:
+                changed = await self._merge_note_fields(
+                    db,
+                    user,
+                    existing,
+                    {
+                        "is_deleted": True,
+                        "is_archived": False,
+                        "field_clocks": client_data.get("field_clocks", {}),
+                    },
+                    change.timestamp,
+                    device_id,
+                    now,
+                )
+                if changed:
+                    existing.updated_at = now
             return {}
 
         return {"conflict": True, "reason": f"Unknown action: {change.action}"}
@@ -323,10 +350,13 @@ class SyncService:
             cursor = parents.get(cursor)
         return parent_id
 
-    async def _apply_note_fields(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
+    async def _apply_note_fields(
+        self, db: AsyncSession, user: User, note: Note,
+        client_data: dict, fields: set[str]
+    ) -> None:
         replaces_ot_baseline = sa_inspect(note).persistent and (
-            ("title" in client_data and client_data["title"] != note.title)
-            or ("content" in client_data and client_data["content"] != note.content)
+            ("title" in fields and client_data["title"] != note.title)
+            or ("content" in fields and client_data["content"] != note.content)
         )
         if replaces_ot_baseline:
             await db.execute(
@@ -337,12 +367,41 @@ class SyncService:
             note.collab_revision = 0
             note.collab_epoch = uuid.uuid4()
         for key in ("title", "content", "is_pinned", "is_archived"):
-            if key in client_data:
+            if key in fields:
                 setattr(note, key, client_data[key])
-        if "content_type" in client_data:
+        if "content_type" in fields:
             note.content_type = _coerce_content_type(client_data["content_type"])
-        if "notebook_id" in client_data:
+        if "notebook_id" in fields:
             note.notebook_id = await self._owned_notebook_id(db, user, client_data["notebook_id"])
+        if "is_deleted" in fields:
+            note.is_deleted = bool(client_data["is_deleted"])
+            note.deleted_at = datetime.now(timezone.utc) if note.is_deleted else None
+
+    async def _merge_note_fields(
+        self, db: AsyncSession, user: User, note: Note, client_data: dict,
+        envelope_timestamp: str, device_id: str, now: datetime,
+    ) -> set[str]:
+        winners = winning_fields(
+            note.field_clocks,
+            client_data,
+            current_fallback_timestamp=note.edited_at or note.updated_at,
+            incoming_fallback_timestamp=envelope_timestamp,
+            incoming_device_id=device_id,
+            now=now,
+            fields=NOTE_CRDT_FIELDS,
+        )
+        if not winners:
+            return set()
+        await self._apply_note_fields(db, user, note, client_data, set(winners))
+        if "tags" in winners:
+            await self._apply_note_tags(db, user, note, client_data)
+        clocks = dict(note.field_clocks or {})
+        for field, stamp in winners.items():
+            clocks[field] = serialize_clock(stamp)
+        note.field_clocks = clocks
+        newest = max(stamp[0] for stamp in winners.values())
+        note.edited_at = max(filter(None, (note.edited_at, newest)))
+        return set(winners)
 
     async def _apply_note_tags(self, db: AsyncSession, user: User, note: Note, client_data: dict) -> None:
         """Replace a note's tag links with the names the client sent.
@@ -404,51 +463,102 @@ class SyncService:
         existing = await self._get_one(db, Notebook, user, entity_id)
         client_data = change.data
         client_ts = _client_ts(change.timestamp)
+        now = datetime.now(timezone.utc)
+        device_id = str(change.device_id or "")[:255]
 
         if change.action == "create":
             if existing and not existing.is_deleted:
                 return {}  # idempotent: already there
             if existing and existing.is_deleted:
-                existing.is_deleted = False
-                existing.deleted_at = None
-            target = existing or Notebook(id=uuid.UUID(entity_id), user_id=user.id)
-            target.name = client_data.get("name", "New Notebook")
-            target.parent_id = await self._safe_notebook_parent(
-                db, user, client_data.get("parent_id"), target.id
+                changed = await self._merge_notebook_fields(
+                    db, user, existing, {**client_data, "is_deleted": False},
+                    change.timestamp, device_id, now
+                )
+                if changed:
+                    existing.updated_at = now
+                return {}
+            target = Notebook(id=uuid.UUID(entity_id), user_id=user.id)
+            await self._apply_notebook_values(
+                db, user, target, client_data, set(client_data)
             )
-            if "sort_order" in client_data:
-                target.sort_order = client_data["sort_order"]
-            target.updated_at = datetime.now(timezone.utc)
-            if existing is None:
-                created = _client_ts(client_data.get("created_at"))
-                if created is not None:
-                    target.created_at = created
-                db.add(target)
+            created = _client_ts(client_data.get("created_at"))
+            if created is not None:
+                target.created_at = created
+            target.updated_at = now
+            target.field_clocks = initial_field_clocks(
+                client_ts or created or now, device_id, NOTEBOOK_CRDT_FIELDS
+            )
+            db.add(target)
             return {}
 
         elif change.action == "update":
             if not existing:
                 return {"conflict": True, "reason": "Notebook not found on server"}
-            if client_ts is not None and existing.updated_at > client_ts:
-                return {"conflict": True, "reason": "Server version is newer"}
-            for key in ("name", "sort_order"):
-                if key in client_data:
-                    setattr(existing, key, client_data[key])
-            if "parent_id" in client_data:
-                existing.parent_id = await self._safe_notebook_parent(
-                    db, user, client_data["parent_id"], existing.id
-                )
-            existing.updated_at = datetime.now(timezone.utc)
+            payload = {key: value for key, value in client_data.items()
+                       if key != "is_deleted"}
+            changed = await self._merge_notebook_fields(
+                db, user, existing, payload, change.timestamp, device_id, now
+            )
+            if changed:
+                existing.updated_at = now
             return {}
 
         elif change.action == "delete":
-            if existing and not existing.is_deleted:
-                existing.is_deleted = True
-                existing.deleted_at = datetime.now(timezone.utc)
-                existing.updated_at = datetime.now(timezone.utc)
+            if existing:
+                changed = await self._merge_notebook_fields(
+                    db, user, existing,
+                    {"is_deleted": True,
+                     "field_clocks": client_data.get("field_clocks", {})},
+                    change.timestamp, device_id, now
+                )
+                if changed:
+                    existing.updated_at = now
             return {}
 
         return {}
+
+    async def _apply_notebook_values(
+        self, db: AsyncSession, user: User, notebook: Notebook,
+        client_data: dict, fields: set[str]
+    ) -> None:
+        if "name" in fields:
+            notebook.name = str(client_data["name"] or "New Notebook")[:255]
+        if "sort_order" in fields:
+            notebook.sort_order = int(client_data["sort_order"])
+        if "parent_id" in fields:
+            notebook.parent_id = await self._safe_notebook_parent(
+                db, user, client_data["parent_id"], notebook.id
+            )
+        if "is_deleted" in fields:
+            notebook.is_deleted = bool(client_data["is_deleted"])
+            notebook.deleted_at = (
+                datetime.now(timezone.utc) if notebook.is_deleted else None
+            )
+
+    async def _merge_notebook_fields(
+        self, db: AsyncSession, user: User, notebook: Notebook,
+        client_data: dict, envelope_timestamp: str,
+        device_id: str, now: datetime,
+    ) -> set[str]:
+        winners = winning_fields(
+            notebook.field_clocks,
+            client_data,
+            current_fallback_timestamp=notebook.updated_at,
+            incoming_fallback_timestamp=envelope_timestamp,
+            incoming_device_id=device_id,
+            now=now,
+            fields=NOTEBOOK_CRDT_FIELDS,
+        )
+        if not winners:
+            return set()
+        await self._apply_notebook_values(
+            db, user, notebook, client_data, set(winners)
+        )
+        clocks = dict(notebook.field_clocks or {})
+        for field, stamp in winners.items():
+            clocks[field] = serialize_clock(stamp)
+        notebook.field_clocks = clocks
+        return set(winners)
 
     async def _apply_tag_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         existing = await self._get_one(db, Tag, user, entity_id)
@@ -491,75 +601,143 @@ class SyncService:
         existing = await self._get_one(db, Task, user, entity_id)
         client_data = change.data
         client_ts = _client_ts(change.timestamp)
+        now = datetime.now(timezone.utc)
+        device_id = str(change.device_id or "")[:255]
 
         if change.action == "create":
             if existing and not existing.is_deleted:
                 return {"conflict": True, "server_data": self._task_to_dict(existing),
                         "reason": "Task already exists on server"}
             if existing and existing.is_deleted:
-                await self._apply_task_fields(db, user, existing, client_data)
-                existing.is_deleted = False
-                existing.deleted_at = None
-                now = datetime.now(timezone.utc)
-                existing.edited_at = client_ts or now
-                existing.updated_at = now
+                payload = {**client_data, "is_deleted": False}
+                changed = await self._merge_task_fields(
+                    db, user, existing, payload, change.timestamp, device_id, now
+                )
+                if changed:
+                    existing.updated_at = now
                 return {}
-            task = Task(id=uuid.UUID(entity_id), user_id=user.id, title="Untitled task")
-            await self._apply_task_fields(db, user, task, client_data)
             created = _client_ts(client_data.get("created_at"))
+            edit_time = client_ts or created or now
+            task = Task(id=uuid.UUID(entity_id), user_id=user.id, title="Untitled task")
+            await self._apply_task_values(
+                db,
+                user,
+                task,
+                client_data,
+                set(client_data),
+                {field: edit_time for field in TASK_CRDT_FIELDS},
+            )
             if created is not None:
                 task.created_at = created
-            task.updated_at = datetime.now(timezone.utc)
-            task.edited_at = client_ts or created or task.updated_at
+            task.updated_at = now
+            task.edited_at = edit_time
+            task.field_clocks = initial_field_clocks(edit_time, device_id)
             db.add(task)
             return {}
 
         elif change.action == "update":
-            if not existing or existing.is_deleted:
+            if not existing:
                 return {"conflict": True, "reason": "Task not found on server"}
-            basis = existing.edited_at or existing.updated_at
-            if client_ts is not None and basis is not None and basis > client_ts:
-                return {"conflict": True, "server_data": self._task_to_dict(existing),
-                        "reason": "Server version is newer"}
-            await self._apply_task_fields(db, user, existing, client_data)
-            now = datetime.now(timezone.utc)
-            existing.edited_at = client_ts or now
-            existing.updated_at = now
+            # Normal edits never implicitly resurrect a remotely deleted task.
+            payload = {key: value for key, value in client_data.items()
+                       if key != "is_deleted"}
+            changed = await self._merge_task_fields(
+                db, user, existing, payload, change.timestamp, device_id, now
+            )
+            if changed:
+                existing.updated_at = now
             return {}
 
         elif change.action == "delete":
-            if existing and not existing.is_deleted:
-                now = datetime.now(timezone.utc)
-                existing.is_deleted = True
-                existing.deleted_at = now
-                existing.updated_at = now
-                # A delete is an edit for LWW (see the note-delete rationale).
-                existing.edited_at = client_ts or now
+            if existing:
+                changed = await self._merge_task_fields(
+                    db,
+                    user,
+                    existing,
+                    {"is_deleted": True,
+                     "field_clocks": client_data.get("field_clocks", {})},
+                    change.timestamp,
+                    device_id,
+                    now,
+                )
+                if changed:
+                    existing.updated_at = now
             return {}
 
         return {"conflict": True, "reason": f"Unknown action: {change.action}"}
 
-    async def _apply_task_fields(self, db: AsyncSession, user: User, task: Task, client_data: dict) -> None:
-        if "title" in client_data:
+    async def _apply_task_values(
+        self,
+        db: AsyncSession,
+        user: User,
+        task: Task,
+        client_data: dict,
+        fields: set[str],
+        field_times: Optional[dict[str, datetime]] = None,
+    ) -> None:
+        if "title" in fields:
             title = str(client_data["title"] or "").strip()
             task.title = title[:500] if title else "Untitled task"
-        if "description" in client_data:
+        if "description" in fields:
             task.description = str(client_data["description"] or "")
-        if "sort_order" in client_data:
+        if "sort_order" in fields:
             try:
                 task.sort_order = int(client_data["sort_order"])
             except (ValueError, TypeError):
                 pass
-        if "is_completed" in client_data:
+        if "is_completed" in fields:
             completed = bool(client_data["is_completed"])
-            if completed != task.is_completed:
-                task.is_completed = completed
-                task.completed_at = datetime.now(timezone.utc) if completed else None
-        if "due_date" in client_data:
+            task.is_completed = completed
+            supplied = _parse_ts(client_data.get("completed_at"))
+            task.completed_at = (
+                (field_times or {}).get("is_completed") or supplied
+            ) if completed else None
+        if "due_date" in fields:
             # null/garbage clears; a valid ISO timestamp sets.
             task.due_date = _parse_ts(client_data["due_date"])
-        if "note_id" in client_data:
+        if "note_id" in fields:
             task.note_id = await self._owned_note_id(db, user, client_data["note_id"])
+        if "is_deleted" in fields:
+            task.is_deleted = bool(client_data["is_deleted"])
+            task.deleted_at = (
+                (field_times or {}).get("is_deleted") if task.is_deleted else None
+            )
+
+    async def _merge_task_fields(
+        self,
+        db: AsyncSession,
+        user: User,
+        task: Task,
+        client_data: dict,
+        envelope_timestamp: str,
+        device_id: str,
+        now: datetime,
+    ) -> set[str]:
+        winners = winning_fields(
+            task.field_clocks,
+            client_data,
+            current_fallback_timestamp=task.edited_at or task.updated_at,
+            incoming_fallback_timestamp=envelope_timestamp,
+            incoming_device_id=device_id,
+            now=now,
+        )
+        if not winners:
+            return set()
+        await self._apply_task_values(
+            db,
+            user,
+            task,
+            client_data,
+            set(winners),
+            {field: stamp[0] for field, stamp in winners.items()},
+        )
+        clocks = dict(task.field_clocks or {})
+        for field, stamp in winners.items():
+            clocks[field] = serialize_clock(stamp)
+        task.field_clocks = clocks
+        newest = max(stamp[0] for stamp in winners.values())
+        task.edited_at = max(filter(None, (task.edited_at, newest)))
+        return set(winners)
 
     @staticmethod
     async def _owned_note_id(db: AsyncSession, user: User, raw) -> Optional[uuid.UUID]:
@@ -636,6 +814,7 @@ class SyncService:
                 "is_deleted": nb.is_deleted,
                 "created_at": nb.created_at.isoformat(),
                 "updated_at": nb.updated_at.isoformat(),
+                "field_clocks": nb.field_clocks or {},
             },
             "timestamp": nb.updated_at.isoformat(),
         }
@@ -796,6 +975,7 @@ class SyncService:
             # an older edit synced later would otherwise clobber a newer local
             # edit until the next push round-trips.
             "edited_at": note.edited_at.isoformat() if note.edited_at else None,
+            "field_clocks": note.field_clocks or {},
             "tags": SyncService._loaded_tag_names(note),
         }
 
@@ -816,6 +996,7 @@ class SyncService:
             "updated_at": task.updated_at.isoformat(),
             # LWW basis, same contract as notes.
             "edited_at": task.edited_at.isoformat() if task.edited_at else None,
+            "field_clocks": task.field_clocks or {},
         }
 
     @staticmethod

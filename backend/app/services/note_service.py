@@ -10,6 +10,7 @@ from app.models.note import Note, NoteVersion
 from app.models.notebook import Notebook
 from app.models.tag import Tag, NoteTag
 from app.models.collaboration import CollaborationOperation
+from app.services.task_crdt import NOTE_CRDT_FIELDS, initial_field_clocks, serialize_clock
 from app.schemas.note import NoteCreate, NoteUpdate
 
 
@@ -136,6 +137,7 @@ class NoteService:
         """Create a new note."""
         notebook_uuid = await self._owned_notebook_uuid(db, user, data.notebook_id)
 
+        now = datetime.now(timezone.utc)
         note = Note(
             id=uuid.uuid4(),
             user_id=user.id,
@@ -143,7 +145,8 @@ class NoteService:
             title=data.title,
             content=data.content,
             content_type=data.content_type,
-            edited_at=datetime.now(timezone.utc),
+            edited_at=now,
+            field_clocks=initial_field_clocks(now, "server", NOTE_CRDT_FIELDS),
         )
         db.add(note)
         await db.flush()
@@ -202,36 +205,49 @@ class NoteService:
 
         content_changed = False
         update_fields = {}
+        crdt_fields: set[str] = set()
 
         if data.title is not None and data.title != note.title:
             update_fields["title"] = data.title
+            crdt_fields.add("title")
             content_changed = True
         if data.content is not None and data.content != note.content:
             update_fields["content"] = data.content
+            crdt_fields.add("content")
             content_changed = True
         if data.content_type is not None and data.content_type != note.content_type:
             update_fields["content_type"] = data.content_type
+            crdt_fields.add("content_type")
             content_changed = True
         # `model_fields_set` distinguishes an omitted field (leave unchanged)
         # from an explicit null/"" (detach the note from its notebook).
         if "notebook_id" in data.model_fields_set:
             update_fields["notebook_id"] = await self._owned_notebook_uuid(db, user, data.notebook_id)
+            crdt_fields.add("notebook_id")
         if data.is_pinned is not None:
             update_fields["is_pinned"] = data.is_pinned
+            crdt_fields.add("is_pinned")
         if data.is_archived is not None:
             update_fields["is_archived"] = data.is_archived
+            crdt_fields.add("is_archived")
             if data.is_archived:
                 update_fields["is_pinned"] = False
+                crdt_fields.add("is_pinned")
         if data.tag_ids is not None:
             await self._sync_tags(db, user, note.id, data.tag_ids)
+            crdt_fields.add("tags")
 
-        if update_fields:
+        if crdt_fields:
             update_fields["updated_at"] = datetime.now(timezone.utc)
             # Track edit time separately so offline sync LWW compares like-for-like.
             if content_changed:
                 update_fields["edited_at"] = update_fields["updated_at"]
             for key, value in update_fields.items():
                 setattr(note, key, value)
+            clocks = dict(note.field_clocks or {})
+            for field in crdt_fields:
+                clocks[field] = serialize_clock((update_fields["updated_at"], "server"))
+            note.field_clocks = clocks
 
         # Snapshot a version when content changes — but coalesce rapid autosaves
         # (e.g. a 30s client debounce) into the latest snapshot within a short
@@ -336,7 +352,14 @@ class NoteService:
                                 detail="Only the note's owner can delete it")
         note.is_deleted = True
         note.is_archived = False
-        note.deleted_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        note.deleted_at = now
+        note.updated_at = now
+        note.edited_at = now
+        clocks = dict(note.field_clocks or {})
+        for field in ("is_deleted", "is_archived"):
+            clocks[field] = serialize_clock((now, "server"))
+        note.field_clocks = clocks
         await db.flush()
 
     async def restore_note(self, db: AsyncSession, user: User, note_id: str) -> Note:
@@ -346,7 +369,13 @@ class NoteService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deleted note not found")
         note.is_deleted = False
         note.deleted_at = None
-        note.updated_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        note.updated_at = now
+        note.edited_at = now
+        note.field_clocks = {
+            **(note.field_clocks or {}),
+            "is_deleted": serialize_clock((now, "server")),
+        }
         await db.flush()
         return await self.get_note(db, user, note_id)
 

@@ -40,6 +40,7 @@ Map<String, dynamic> _taskChange(
   bool isCompleted = false,
   bool isDeleted = false,
   String? dueDate,
+  Map<String, dynamic>? fieldClocks,
 }) {
   final iso = editedAt.toUtc().toIso8601String();
   return {
@@ -61,6 +62,7 @@ Map<String, dynamic> _taskChange(
       // Server emits both; the client must merge on edited_at.
       'updated_at': '2030-01-01T00:00:00.000Z',
       'edited_at': iso,
+      'field_clocks': fieldClocks ?? <String, dynamic>{},
     },
   };
 }
@@ -69,13 +71,12 @@ SyncPushResponse _resp({
   List<String> applied = const [],
   List<Map<String, dynamic>> serverChanges = const [],
   String serverTime = '2026-07-09T12:00:00.000Z',
-}) =>
-    SyncPushResponse(
-      applied: applied,
-      conflicts: const [],
-      serverChanges: serverChanges,
-      serverTime: serverTime,
-    );
+}) => SyncPushResponse(
+  applied: applied,
+  conflicts: const [],
+  serverChanges: serverChanges,
+  serverTime: serverTime,
+);
 
 void main() {
   setUpAll(sqfliteFfiInit);
@@ -103,16 +104,16 @@ void main() {
   });
 
   SyncEngine engine(SyncRemoteDataSource remote) => SyncEngine(
-        appDb: db,
-        remote: remote,
-        outbox: outbox,
-        notes: NoteLocalDataSource(db),
-        notebooks: NotebookLocalDataSource(db),
-        tags: TagLocalDataSource(db),
-        tasks: tasks,
-        attachments: AttachmentLocalDataSource(db),
-        meta: meta,
-      );
+    appDb: db,
+    remote: remote,
+    outbox: outbox,
+    notes: NoteLocalDataSource(db),
+    notebooks: NotebookLocalDataSource(db),
+    tags: TagLocalDataSource(db),
+    tasks: tasks,
+    attachments: AttachmentLocalDataSource(db),
+    meta: meta,
+  );
 
   group('local task writes', () {
     test('create writes row and enqueues a task outbox entry', () async {
@@ -127,8 +128,7 @@ void main() {
       expect((await tasks.getById(task.id))!.title, 'Buy milk');
     });
 
-    test('setCompleted stamps completed_at and clears it on uncheck',
-        () async {
+    test('setCompleted stamps completed_at and clears it on uncheck', () async {
       final task = await repo.createTask(title: 'T');
 
       final done = await repo.setCompleted(task.id, true);
@@ -144,6 +144,21 @@ void main() {
       final before = await outbox.pendingCount();
       await repo.setCompleted(task.id, false);
       expect(await outbox.pendingCount(), before);
+    });
+
+    test('completion queues only the completion CRDT register', () async {
+      final task = await repo.createTask(title: 'Keep this title');
+      await repo.setCompleted(task.id, true);
+
+      final entries = await outbox.fetchBatch();
+      final completion = entries.last.change.data;
+      expect(completion['is_completed'], isTrue);
+      expect(completion['completed_at'], isNotNull);
+      expect(completion.containsKey('title'), isFalse);
+      expect(
+        (completion['field_clocks'] as Map).keys,
+        contains('is_completed'),
+      );
     });
 
     test('updateTask can clear a due date via clearDueDate', () async {
@@ -188,36 +203,41 @@ void main() {
 
       expect(await repo.listTasks(completed: null), isEmpty);
       expect((await tasks.getById(task.id))!.isDeleted, isTrue);
-      final actions =
-          (await outbox.fetchBatch()).map((e) => e.change.action).toList();
+      final actions = (await outbox.fetchBatch())
+          .map((e) => e.change.action)
+          .toList();
       expect(actions, ['create', 'delete']);
     });
   });
 
   group('sync', () {
-    test('engine applies server task changes and merges on edited_at',
-        () async {
-      final remote = _FakeRemote([
-        _resp(
-          serverChanges: [
-            _taskChange('srv-task',
-                title: 'from server', editedAt: DateTime.now()),
-          ],
-        ),
-      ]);
+    test(
+      'engine applies server task changes and merges on edited_at',
+      () async {
+        final remote = _FakeRemote([
+          _resp(
+            serverChanges: [
+              _taskChange(
+                'srv-task',
+                title: 'from server',
+                editedAt: DateTime.now(),
+              ),
+            ],
+          ),
+        ]);
 
-      final result = await engine(remote).syncOnce();
+        final result = await engine(remote).syncOnce();
 
-      expect(result.success, isTrue);
-      expect(result.pulled, 1);
-      final stored = await tasks.getById('srv-task');
-      expect(stored!.title, 'from server');
-      // edited_at (not the far-future updated_at) became the LWW basis.
-      expect(stored.updatedAt.year, DateTime.now().toUtc().year);
-    });
+        expect(result.success, isTrue);
+        expect(result.pulled, 1);
+        final stored = await tasks.getById('srv-task');
+        expect(stored!.title, 'from server');
+        // edited_at (not the far-future updated_at) became the LWW basis.
+        expect(stored.updatedAt.year, DateTime.now().toUtc().year);
+      },
+    );
 
-    test('LWW keeps a newer local task over an older server version',
-        () async {
+    test('LWW keeps a newer local task over an older server version', () async {
       final local = await repo.createTask(title: 'newer local');
 
       final remote = _FakeRemote([
@@ -258,6 +278,43 @@ void main() {
 
       expect(await repo.listTasks(completed: null), isEmpty);
       expect((await tasks.getById(local.id))!.isDeleted, isTrue);
+    });
+
+    test('concurrent server title and local completion both survive', () async {
+      final created = await repo.createTask(title: 'Original');
+      final completed = await repo.setCompleted(created.id, true);
+      final serverTitleTime = completed.updatedAt.add(
+        const Duration(seconds: 1),
+      );
+      final oldCompletionTime = created.updatedAt;
+      final remote = _FakeRemote([
+        _resp(
+          applied: [created.id],
+          serverChanges: [
+            _taskChange(
+              created.id,
+              title: 'Automated title',
+              editedAt: serverTitleTime,
+              fieldClocks: {
+                'title': {
+                  'timestamp': serverTitleTime.toIso8601String(),
+                  'device_id': 'laptop',
+                },
+                'is_completed': {
+                  'timestamp': oldCompletionTime.toIso8601String(),
+                  'device_id': 'laptop',
+                },
+              },
+            ),
+          ],
+        ),
+      ]);
+
+      await engine(remote).syncOnce();
+
+      final merged = await tasks.getById(created.id);
+      expect(merged!.title, 'Automated title');
+      expect(merged.isCompleted, isTrue);
     });
   });
 }

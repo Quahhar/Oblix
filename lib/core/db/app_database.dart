@@ -1,14 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 class SyncRoundLease {
-  SyncRoundLease._(
-    this.protectedNoteIds,
-    this._completion,
-    this._release,
-  );
+  SyncRoundLease._(this.protectedNoteIds, this._completion, this._release);
 
   final Set<String> protectedNoteIds;
   final Completer<void> _completion;
@@ -41,8 +38,8 @@ class CollaborativeNoteLease {
 /// in the background.
 class AppDatabase {
   AppDatabase._({DatabaseFactory? dbFactory, String? path})
-      : _dbFactory = dbFactory,
-        _pathOverride = path;
+    : _dbFactory = dbFactory,
+      _pathOverride = path;
 
   /// App-wide singleton used in production.
   static final AppDatabase instance = AppDatabase._();
@@ -50,14 +47,11 @@ class AppDatabase {
   /// Build a throwaway instance backed by an injected factory/path — used by
   /// tests to run against an in-memory database (sqflite_common_ffi) without
   /// touching the real device store.
-  factory AppDatabase.ephemeral({
-    DatabaseFactory? dbFactory,
-    String? path,
-  }) =>
+  factory AppDatabase.ephemeral({DatabaseFactory? dbFactory, String? path}) =>
       AppDatabase._(dbFactory: dbFactory, path: path);
 
   static const _dbName = 'oblix.db';
-  static const _dbVersion = 5;
+  static const _dbVersion = 6;
 
   final DatabaseFactory? _dbFactory;
   final String? _pathOverride;
@@ -152,7 +146,8 @@ class AppDatabase {
   }
 
   Future<Database> _open() async {
-    final path = _pathOverride ??
+    final path =
+        _pathOverride ??
         p.join((await getApplicationDocumentsDirectory()).path, _dbName);
     final options = OpenDatabaseOptions(
       version: _dbVersion,
@@ -216,6 +211,73 @@ class AppDatabase {
     if (oldVersion < 5) {
       await _createTasks(db);
     }
+    // Any older version -> v6: existing entity tables gain field-level CRDT
+    // clocks. Tables created earlier in this same upgrade already use the
+    // current schema, so only ALTER tables that predated the upgrade.
+    if (oldVersion < 6) {
+      await db.execute(
+        "ALTER TABLE notes ADD COLUMN field_clocks TEXT NOT NULL DEFAULT '{}'",
+      );
+      if (oldVersion >= 2) {
+        await db.execute(
+          "ALTER TABLE notebooks ADD COLUMN field_clocks TEXT NOT NULL DEFAULT '{}'",
+        );
+      }
+      if (oldVersion >= 5) {
+        await db.execute(
+          "ALTER TABLE tasks ADD COLUMN field_clocks TEXT NOT NULL DEFAULT '{}'",
+        );
+      }
+      await _backfillCrdtClocks(db, 'notes', const [
+        'title',
+        'content',
+        'content_type',
+        'notebook_id',
+        'is_pinned',
+        'is_archived',
+        'tags',
+        'is_deleted',
+      ]);
+      await _backfillCrdtClocks(db, 'notebooks', const [
+        'name',
+        'parent_id',
+        'sort_order',
+        'is_deleted',
+      ]);
+      await _backfillCrdtClocks(db, 'tasks', const [
+        'title',
+        'description',
+        'note_id',
+        'due_date',
+        'sort_order',
+        'is_completed',
+        'is_deleted',
+      ]);
+    }
+  }
+
+  Future<void> _backfillCrdtClocks(
+    Database db,
+    String table,
+    List<String> fields,
+  ) async {
+    final rows = await db.query(table, columns: ['id', 'updated_at']);
+    for (final row in rows) {
+      final stamp = {
+        'timestamp': row['updated_at'] as String,
+        'device_id': 'legacy',
+      };
+      await db.update(
+        table,
+        {
+          'field_clocks': jsonEncode({
+            for (final field in fields) field: stamp,
+          }),
+        },
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
   }
 
   // Booleans are stored as 0/1; timestamps as ISO-8601 UTC strings so lexical
@@ -235,7 +297,8 @@ class AppDatabase {
         is_deleted    INTEGER NOT NULL DEFAULT 0,
         created_at    TEXT NOT NULL,
         updated_at    TEXT NOT NULL,
-        tags          TEXT NOT NULL DEFAULT '[]'
+        tags          TEXT NOT NULL DEFAULT '[]',
+        field_clocks  TEXT NOT NULL DEFAULT '{}'
       )
     ''');
     await db.execute('CREATE INDEX idx_notes_updated ON notes(updated_at)');
@@ -255,10 +318,13 @@ class AppDatabase {
         sort_order  INTEGER NOT NULL DEFAULT 0,
         is_deleted  INTEGER NOT NULL DEFAULT 0,
         created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL
+        updated_at  TEXT NOT NULL,
+        field_clocks TEXT NOT NULL DEFAULT '{}'
       )
     ''');
-    await db.execute('CREATE INDEX idx_notebooks_parent ON notebooks(parent_id)');
+    await db.execute(
+      'CREATE INDEX idx_notebooks_parent ON notebooks(parent_id)',
+    );
   }
 
   Future<void> _createTags(Database db) async {
@@ -328,7 +394,9 @@ class AppDatabase {
         updated_at    TEXT NOT NULL
       )
     ''');
-    await db.execute('CREATE INDEX idx_attachments_note ON attachments(note_id)');
+    await db.execute(
+      'CREATE INDEX idx_attachments_note ON attachments(note_id)',
+    );
     await db.execute(
       'CREATE UNIQUE INDEX idx_attachments_remote ON attachments(remote_id) '
       'WHERE remote_id IS NOT NULL',
@@ -349,7 +417,8 @@ class AppDatabase {
         sort_order    INTEGER NOT NULL DEFAULT 0,
         is_deleted    INTEGER NOT NULL DEFAULT 0,
         created_at    TEXT NOT NULL,
-        updated_at    TEXT NOT NULL
+        updated_at    TEXT NOT NULL,
+        field_clocks  TEXT NOT NULL DEFAULT '{}'
       )
     ''');
     await db.execute('CREATE INDEX idx_tasks_due ON tasks(due_date)');

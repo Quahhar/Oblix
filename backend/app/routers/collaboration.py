@@ -28,6 +28,7 @@ from app.services.text_ot import (
     transform_delta,
     utf16_length,
 )
+from app.services.task_crdt import serialize_clock
 from app.utils.auth_dependency import authenticate_access_token
 from app.utils.security import decode_token
 
@@ -1525,6 +1526,12 @@ async def _handle_edit(note_id: uuid.UUID, peer: Peer, message: dict) -> None:
                                 note.collab_revision += 1
                                 note.updated_at = datetime.now(timezone.utc)
                                 note.edited_at = note.updated_at
+                                note.field_clocks = {
+                                    **(note.field_clocks or {}),
+                                    field_name: serialize_clock(
+                                        (note.updated_at, f"collab:{peer.client_id}")
+                                    ),
+                                }
                                 db.add(
                                     CollaborationOperation(
                                         note_id=note.id,

@@ -26,6 +26,7 @@ import 'package:oblix/data/models/note.dart';
 import 'package:oblix/data/models/sync_payload.dart';
 import 'package:oblix/data/models/tag.dart';
 import 'package:oblix/data/repositories/note_repository.dart';
+import 'package:oblix/data/repositories/notebook_repository.dart';
 import 'package:oblix/domain/usecases/sync_notes.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -86,6 +87,8 @@ Map<String, dynamic> _noteChange(
   required String title,
   required DateTime updatedAt,
   List<dynamic> tags = const [],
+  bool isPinned = false,
+  Map<String, dynamic>? fieldClocks,
 }) {
   final iso = updatedAt.toUtc().toIso8601String();
   return {
@@ -98,17 +101,24 @@ Map<String, dynamic> _noteChange(
       'title': title,
       'content': '',
       'content_type': 'plain',
-      'is_pinned': false,
+      'is_pinned': isPinned,
       'is_archived': false,
       'is_deleted': false,
       'created_at': iso,
       'updated_at': iso,
       'tags': tags,
+      'field_clocks': fieldClocks ?? <String, dynamic>{},
     },
   };
 }
 
-Map<String, dynamic> _notebookChange(String id, String name, DateTime at) {
+Map<String, dynamic> _notebookChange(
+  String id,
+  String name,
+  DateTime at, {
+  int sortOrder = 0,
+  Map<String, dynamic>? fieldClocks,
+}) {
   final iso = at.toUtc().toIso8601String();
   return {
     'entity_type': 'notebook',
@@ -119,10 +129,11 @@ Map<String, dynamic> _notebookChange(String id, String name, DateTime at) {
       'user_id': 'u1',
       'name': name,
       'parent_id': null,
-      'sort_order': 0,
+      'sort_order': sortOrder,
       'is_deleted': false,
       'created_at': iso,
       'updated_at': iso,
+      'field_clocks': fieldClocks ?? <String, dynamic>{},
     },
   };
 }
@@ -170,6 +181,7 @@ void main() {
   late OutboxDao outbox;
   late MetaDao meta;
   late NoteRepository noteRepo;
+  late NotebookRepository notebookRepo;
 
   setUp(() async {
     // A fresh in-memory database per test.
@@ -185,6 +197,12 @@ void main() {
     noteRepo = NoteRepository(
       appDb: db,
       local: notes,
+      outbox: outbox,
+      meta: meta,
+    );
+    notebookRepo = NotebookRepository(
+      appDb: db,
+      local: notebooks,
       outbox: outbox,
       meta: meta,
     );
@@ -250,7 +268,11 @@ void main() {
 
       final batch = await outbox.fetchBatch();
       final pinChange = batch.last.change;
-      expect(pinChange.data, {'is_pinned': true});
+      expect(pinChange.data['is_pinned'], true);
+      expect(pinChange.data.keys.toSet(), {'is_pinned', 'field_clocks'});
+      expect((pinChange.data['field_clocks']! as Map).keys.toSet(), {
+        'is_pinned',
+      });
       expect(pinChange.data, isNot(contains('title')));
       expect(pinChange.data, isNot(contains('content')));
     });
@@ -323,141 +345,148 @@ void main() {
         expect(stored.updatedAt, note.updatedAt);
       },
     );
-
-    test('collaboration revision ordering is shared across repositories', () async {
-      final note = await noteRepo.createNote(title: 'Old', content: 'Old');
-      final sql = await db.database;
-      await sql.delete('outbox');
-      final secondRepository = NoteRepository(
-        appDb: db,
-        local: NoteLocalDataSource(db),
-        outbox: OutboxDao(db),
-        meta: MetaDao(db),
-      );
-
-      await noteRepo.applyCollaborativeSnapshot(
-        note.id,
-        title: 'Revision two',
-        content: 'Newest',
-        epoch: 'shared-epoch',
-        revision: 2,
-      );
-      final stale = await secondRepository.applyCollaborativeSnapshot(
-        note.id,
-        title: 'Revision one',
-        content: 'Stale',
-        epoch: 'shared-epoch',
-        revision: 1,
-      );
-
-      expect(stale, isNull);
-      final stored = await notes.getById(note.id);
-      expect(stored!.title, 'Revision two');
-      expect(stored.content, 'Newest');
-    });
-
     test(
-      'acknowledgement retires only captured update fields',
+      'collaboration revision ordering is shared across repositories',
       () async {
         final note = await noteRepo.createNote(title: 'Old', content: 'Old');
         final sql = await db.database;
         await sql.delete('outbox');
-
-        await noteRepo.updateNote(
-          note.id,
-          title: 'Offline title',
-          isPinned: true,
-        );
-        await noteRepo.updateNote(note.id, content: 'Offline body');
-        final captured = await noteRepo.pendingCollaborativeContent(note.id);
-        final capturedTitleSeq = captured.titleUpdateSeqs.single;
-        final capturedContentSeq = captured.contentUpdateSeqs.single;
-
-        await noteRepo.updateNote(note.id, title: 'Later offline title');
-        final newerTitleSeq = (await outbox.fetchBatch()).last.seq;
-        final now = DateTime.now().toUtc().toIso8601String();
-        final createSeq = await sql.insert('outbox', {
-          'entity_type': 'note',
-          'entity_id': note.id,
-          'action': 'create',
-          'data': '{"title":"create fallback"}',
-          'timestamp': now,
-        });
-        final deleteSeq = await sql.insert('outbox', {
-          'entity_type': 'note',
-          'entity_id': note.id,
-          'action': 'delete',
-          'data': '{"title":"delete fallback"}',
-          'timestamp': now,
-        });
-        final malformedSeq = await sql.insert('outbox', {
-          'entity_type': 'note',
-          'entity_id': note.id,
-          'action': 'update',
-          'data': '{malformed',
-          'timestamp': now,
-        });
-
-        await noteRepo.applyCollaborativeSnapshot(
-          note.id,
-          title: 'Canonical title',
-          content: 'Canonical body',
-          epoch: 'retirement-epoch',
-          revision: 2,
-        );
-        final sameRevision = await NoteRepository(
+        final secondRepository = NoteRepository(
           appDb: db,
           local: NoteLocalDataSource(db),
           outbox: OutboxDao(db),
           meta: MetaDao(db),
-        ).applyCollaborativeSnapshot(
-          note.id,
-          title: 'Must not overwrite',
-          content: 'Must not overwrite',
-          epoch: 'retirement-epoch',
-          revision: 2,
-          acknowledgedUpdateSeqsByField: {
-            'title': {
-              ...captured.titleUpdateSeqs,
-              createSeq,
-              deleteSeq,
-              malformedSeq,
-            },
-          },
-        );
-        expect(sameRevision, isNull);
-
-        var rows = await sql.query('outbox', orderBy: 'seq ASC');
-        Map<String, dynamic> dataFor(int seq) =>
-            jsonDecode(rows.singleWhere((row) => row['seq'] == seq)['data']! as String)
-                as Map<String, dynamic>;
-        expect(dataFor(capturedTitleSeq), {'is_pinned': true});
-        expect(dataFor(capturedContentSeq), {'content': 'Offline body'});
-        expect(dataFor(newerTitleSeq), {'title': 'Later offline title'});
-        expect(dataFor(createSeq), {'title': 'create fallback'});
-        expect(dataFor(deleteSeq), {'title': 'delete fallback'});
-        expect(
-          rows.singleWhere((row) => row['seq'] == malformedSeq)['data'],
-          '{malformed',
         );
 
         await noteRepo.applyCollaborativeSnapshot(
           note.id,
-          title: 'Older ignored title',
-          content: 'Older ignored body',
-          epoch: 'retirement-epoch',
-          revision: 1,
-          acknowledgedUpdateSeqsByField: {
-            'content': captured.contentUpdateSeqs,
-          },
+          title: 'Revision two',
+          content: 'Newest',
+          epoch: 'shared-epoch',
+          revision: 2,
         );
-        rows = await sql.query('outbox', orderBy: 'seq ASC');
-        expect(rows.any((row) => row['seq'] == capturedContentSeq), isFalse);
+        final stale = await secondRepository.applyCollaborativeSnapshot(
+          note.id,
+          title: 'Revision one',
+          content: 'Stale',
+          epoch: 'shared-epoch',
+          revision: 1,
+        );
+
+        expect(stale, isNull);
         final stored = await notes.getById(note.id);
-        expect(stored!.title, 'Canonical title');
-        expect(stored.content, 'Canonical body');
+        expect(stored!.title, 'Revision two');
+        expect(stored.content, 'Newest');
       },
     );
+
+    test('acknowledgement retires only captured update fields', () async {
+      final note = await noteRepo.createNote(title: 'Old', content: 'Old');
+      final sql = await db.database;
+      await sql.delete('outbox');
+
+      await noteRepo.updateNote(
+        note.id,
+        title: 'Offline title',
+        isPinned: true,
+      );
+      await noteRepo.updateNote(note.id, content: 'Offline body');
+      final captured = await noteRepo.pendingCollaborativeContent(note.id);
+      final capturedTitleSeq = captured.titleUpdateSeqs.single;
+      final capturedContentSeq = captured.contentUpdateSeqs.single;
+
+      await noteRepo.updateNote(note.id, title: 'Later offline title');
+      final newerTitleSeq = (await outbox.fetchBatch()).last.seq;
+      final now = DateTime.now().toUtc().toIso8601String();
+      final createSeq = await sql.insert('outbox', {
+        'entity_type': 'note',
+        'entity_id': note.id,
+        'action': 'create',
+        'data': '{"title":"create fallback"}',
+        'timestamp': now,
+      });
+      final deleteSeq = await sql.insert('outbox', {
+        'entity_type': 'note',
+        'entity_id': note.id,
+        'action': 'delete',
+        'data': '{"title":"delete fallback"}',
+        'timestamp': now,
+      });
+      final malformedSeq = await sql.insert('outbox', {
+        'entity_type': 'note',
+        'entity_id': note.id,
+        'action': 'update',
+        'data': '{malformed',
+        'timestamp': now,
+      });
+
+      await noteRepo.applyCollaborativeSnapshot(
+        note.id,
+        title: 'Canonical title',
+        content: 'Canonical body',
+        epoch: 'retirement-epoch',
+        revision: 2,
+      );
+      final sameRevision =
+          await NoteRepository(
+            appDb: db,
+            local: NoteLocalDataSource(db),
+            outbox: OutboxDao(db),
+            meta: MetaDao(db),
+          ).applyCollaborativeSnapshot(
+            note.id,
+            title: 'Must not overwrite',
+            content: 'Must not overwrite',
+            epoch: 'retirement-epoch',
+            revision: 2,
+            acknowledgedUpdateSeqsByField: {
+              'title': {
+                ...captured.titleUpdateSeqs,
+                createSeq,
+                deleteSeq,
+                malformedSeq,
+              },
+            },
+          );
+      expect(sameRevision, isNull);
+
+      var rows = await sql.query('outbox', orderBy: 'seq ASC');
+      Map<String, dynamic> dataFor(int seq) =>
+          jsonDecode(
+                rows.singleWhere((row) => row['seq'] == seq)['data']! as String,
+              )
+              as Map<String, dynamic>;
+      void expectCrdtPatch(int seq, String field, Object value) {
+        final data = dataFor(seq);
+        expect(data[field], value);
+        expect(data.keys.toSet(), {field, 'field_clocks'});
+        expect((data['field_clocks']! as Map).keys.toSet(), {field});
+      }
+
+      expectCrdtPatch(capturedTitleSeq, 'is_pinned', true);
+      expectCrdtPatch(capturedContentSeq, 'content', 'Offline body');
+      expectCrdtPatch(newerTitleSeq, 'title', 'Later offline title');
+      expect(dataFor(createSeq), {'title': 'create fallback'});
+      expect(dataFor(deleteSeq), {'title': 'delete fallback'});
+      expect(
+        rows.singleWhere((row) => row['seq'] == malformedSeq)['data'],
+        '{malformed',
+      );
+
+      await noteRepo.applyCollaborativeSnapshot(
+        note.id,
+        title: 'Older ignored title',
+        content: 'Older ignored body',
+        epoch: 'retirement-epoch',
+        revision: 1,
+        acknowledgedUpdateSeqsByField: {'content': captured.contentUpdateSeqs},
+      );
+      rows = await sql.query('outbox', orderBy: 'seq ASC');
+      expect(rows.any((row) => row['seq'] == capturedContentSeq), isFalse);
+      final stored = await notes.getById(note.id);
+      expect(stored!.title, 'Canonical title');
+      expect(stored.content, 'Canonical body');
+    });
 
     test('missing-note snapshot rolls back fallback retirement', () async {
       final sql = await db.database;
@@ -571,10 +600,7 @@ void main() {
         tagNames: const ['after'],
       );
       await noteRepo.cacheSharedNote(
-        fetched.copyWith(
-          title: 'Canonical title',
-          content: 'Canonical body',
-        ),
+        fetched.copyWith(title: 'Canonical title', content: 'Canonical body'),
       );
 
       final stored = await notes.getById(fetched.id);
@@ -624,10 +650,7 @@ void main() {
       final other = await noteRepo.createNote(title: 'Other');
       final release = await noteRepo.protectForCollaboration(protected.id);
       final remote = _FakeRemote([
-        _resp(
-          applied: [other.id],
-          serverTime: '2026-07-09T12:00:00.000Z',
-        ),
+        _resp(applied: [other.id], serverTime: '2026-07-09T12:00:00.000Z'),
       ]);
 
       await engineWith(remote, batchSize: 1).syncOnce();
@@ -642,16 +665,15 @@ void main() {
     test('collaboration waits for a sync round that started first', () async {
       final note = await noteRepo.createNote(title: 'Pending');
       final remote = _BlockingRemote(
-        _resp(
-          applied: [note.id],
-          serverTime: '2026-07-09T12:00:00.000Z',
-        ),
+        _resp(applied: [note.id], serverTime: '2026-07-09T12:00:00.000Z'),
       );
       final syncing = engineWith(remote).syncOnce();
       await remote.entered.future;
 
       var protectionReady = false;
-      final protecting = noteRepo.protectForCollaboration(note.id).then((release) {
+      final protecting = noteRepo.protectForCollaboration(note.id).then((
+        release,
+      ) {
         protectionReady = true;
         return release;
       });
@@ -953,6 +975,83 @@ void main() {
       final trashed = await notes.list(archived: null, deleted: true);
       expect(trashed.map((n) => n.id), [c.id]);
     });
+  });
+
+  group('field CRDT merges', () {
+    test('note keeps local pin and accepts concurrent server title', () async {
+      final created = await noteRepo.createNote(title: 'Original');
+      final pinned = await noteRepo.updateNote(created.id, isPinned: true);
+      final serverTitleAt = pinned.updatedAt.add(const Duration(seconds: 1));
+      final remote = _FakeRemote([
+        _resp(
+          applied: [created.id],
+          serverChanges: [
+            _noteChange(
+              created.id,
+              title: 'Automated title',
+              updatedAt: serverTitleAt,
+              fieldClocks: {
+                'title': {
+                  'timestamp': serverTitleAt.toIso8601String(),
+                  'device_id': 'laptop',
+                },
+                'is_pinned': {
+                  'timestamp': created.updatedAt.toIso8601String(),
+                  'device_id': 'laptop',
+                },
+              },
+            ),
+          ],
+        ),
+      ]);
+
+      await engineWith(remote).syncOnce();
+
+      final merged = await notes.getById(created.id);
+      expect(merged!.title, 'Automated title');
+      expect(merged.isPinned, isTrue);
+    });
+
+    test(
+      'notebook keeps local name and accepts concurrent server order',
+      () async {
+        final created = await notebookRepo.createNotebook(name: 'Original');
+        final renamed = await notebookRepo.updateNotebook(
+          created.id,
+          name: 'My name',
+        );
+        final serverOrderAt = renamed.updatedAt.add(const Duration(seconds: 1));
+        final remote = _FakeRemote([
+          _resp(
+            applied: [created.id],
+            serverChanges: [
+              _notebookChange(
+                created.id,
+                'Old name',
+                serverOrderAt,
+                sortOrder: 99,
+                fieldClocks: {
+                  'name': {
+                    'timestamp': created.updatedAt.toIso8601String(),
+                    'device_id': 'laptop',
+                  },
+                  'sort_order': {
+                    'timestamp': serverOrderAt.toIso8601String(),
+                    'device_id': 'laptop',
+                  },
+                },
+              ),
+            ],
+          ),
+        ]);
+
+        await engineWith(remote).syncOnce();
+
+        final merged = await notebooks.getById(created.id);
+        expect(merged!.name, 'My name');
+        expect(merged.sortOrder, 99);
+      },
+    );
   });
 
   group('tag tombstones', () {

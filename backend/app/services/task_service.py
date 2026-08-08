@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.note import Note
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskUpdate
+from app.services.task_crdt import initial_field_clocks, serialize_clock
 
 
 def _uuid_or_404(value, detail: str) -> uuid.UUID:
@@ -73,6 +74,7 @@ class TaskService:
         return task
 
     async def create_task(self, db: AsyncSession, user: User, data: TaskCreate) -> Task:
+        now = datetime.now(timezone.utc)
         task = Task(
             id=uuid.uuid4(),
             user_id=user.id,
@@ -81,7 +83,8 @@ class TaskService:
             description=data.description,
             due_date=_aware(data.due_date),
             sort_order=data.sort_order,
-            edited_at=datetime.now(timezone.utc),
+            edited_at=now,
+            field_clocks=initial_field_clocks(now, "server"),
         )
         db.add(task)
         await db.flush()
@@ -95,41 +98,51 @@ class TaskService:
         if task.is_deleted:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-        changed = False
+        changed_fields: set[str] = set()
         if data.title is not None and data.title != task.title:
             task.title = data.title
-            changed = True
+            changed_fields.add("title")
         if data.description is not None and data.description != task.description:
             task.description = data.description
-            changed = True
+            changed_fields.add("description")
         # Explicit null clears; omitted leaves unchanged (same contract as notes).
         if "note_id" in data.model_fields_set:
             task.note_id = await self._owned_note_uuid(db, user, data.note_id)
-            changed = True
+            changed_fields.add("note_id")
         if "due_date" in data.model_fields_set:
             task.due_date = _aware(data.due_date)
-            changed = True
+            changed_fields.add("due_date")
         if data.is_completed is not None and data.is_completed != task.is_completed:
             task.is_completed = data.is_completed
             task.completed_at = datetime.now(timezone.utc) if data.is_completed else None
-            changed = True
+            changed_fields.add("is_completed")
         if data.sort_order is not None and data.sort_order != task.sort_order:
             task.sort_order = data.sort_order
-            changed = True
+            changed_fields.add("sort_order")
 
-        if changed:
+        if changed_fields:
             now = datetime.now(timezone.utc)
             task.updated_at = now
             task.edited_at = now
+            clocks = dict(task.field_clocks or {})
+            for field in changed_fields:
+                clocks[field] = serialize_clock((now, "server"))
+            task.field_clocks = clocks
             await db.flush()
         return task
 
     async def delete_task(self, db: AsyncSession, user: User, task_id: str) -> None:
         task = await self.get_task(db, user, task_id)
         if not task.is_deleted:
+            now = datetime.now(timezone.utc)
             task.is_deleted = True
-            task.deleted_at = datetime.now(timezone.utc)
-            task.updated_at = datetime.now(timezone.utc)
+            task.deleted_at = now
+            task.updated_at = now
+            task.edited_at = now
+            task.field_clocks = {
+                **(task.field_clocks or {}),
+                "is_deleted": serialize_clock((now, "server")),
+            }
             await db.flush()
 
     async def restore_task(self, db: AsyncSession, user: User, task_id: str) -> Task:
@@ -138,7 +151,13 @@ class TaskService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deleted task not found")
         task.is_deleted = False
         task.deleted_at = None
-        task.updated_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        task.updated_at = now
+        task.edited_at = now
+        task.field_clocks = {
+            **(task.field_clocks or {}),
+            "is_deleted": serialize_clock((now, "server")),
+        }
         await db.flush()
         return task
 

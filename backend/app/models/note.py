@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Enum, func, false, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -32,6 +32,9 @@ class Note(Base):
     # sync cursor) so conflict resolution compares edit-time-vs-edit-time and a
     # note synced later can't wrongly lose to one that was edited earlier.
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    field_clocks: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
     collab_revision: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"), nullable=False
     )

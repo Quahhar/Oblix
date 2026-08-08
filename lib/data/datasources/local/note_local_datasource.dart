@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
 import '../../models/note.dart';
+import '../../models/crdt_clock.dart';
 
 /// Local SQLite access for notes. This is what the UI reads from and writes to;
 /// the server is reconciled separately by the sync engine.
@@ -13,8 +14,12 @@ class NoteLocalDataSource {
 
   Future<Note?> getById(String id) async {
     final db = await _appDb.database;
-    final rows =
-        await db.query('notes', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'notes',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
@@ -73,10 +78,8 @@ class NoteLocalDataSource {
   }
 
   /// Escape LIKE wildcards in user input (used with `ESCAPE '\'`).
-  static String _escapeLike(String s) => s
-      .replaceAll(r'\', r'\\')
-      .replaceAll('%', r'\%')
-      .replaceAll('_', r'\_');
+  static String _escapeLike(String s) =>
+      s.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
 
   /// Turn free text into an FTS5 MATCH expression: every token quoted (so
   /// input can't inject MATCH syntax), the last one as a prefix so search
@@ -121,6 +124,7 @@ class NoteLocalDataSource {
             final bool value => value ? 1 : 0,
             final DateTime value => value.toUtc().toIso8601String(),
             final List<String> value => jsonEncode(value),
+            final Map value => jsonEncode(value),
             final value => value,
           },
       };
@@ -154,36 +158,47 @@ class NoteLocalDataSource {
     for (final server in serverNotes) {
       final rows = await txn.query(
         'notes',
-        columns: ['updated_at'],
         where: 'id = ?',
         whereArgs: [server.id],
         limit: 1,
       );
-      if (rows.isNotEmpty) {
-        final localUpdated =
-            DateTime.tryParse(rows.first['updated_at'] as String? ?? '');
+      if (rows.isNotEmpty && server.fieldClocks.isEmpty) {
+        final localUpdated = DateTime.tryParse(
+          rows.first['updated_at'] as String? ?? '',
+        );
         if (localUpdated != null &&
             server.updatedAt.toUtc().isBefore(localUpdated.toUtc())) {
           continue; // local is newer — keep it, it'll be pushed next cycle
         }
       }
+      final merged = rows.isEmpty
+          ? server
+          : _fromRow(rows.first).mergeCrdt(
+              server,
+              excludedFields: preserveDocumentForNoteIds.contains(server.id)
+                  ? const {'title', 'content'}
+                  : const {},
+            );
       if (rows.isNotEmpty && preserveDocumentForNoteIds.contains(server.id)) {
         // This response belongs to a sync round which overlapped a live editor.
         // Keep the OT-managed document while still consuming server metadata;
         // the cursor may advance past this response, so skipping it wholesale
         // would permanently miss pin/archive/tag/notebook changes.
         await updateFields(txn, server.id, {
-          'user_id': server.userId,
-          'notebook_id': server.notebookId,
-          'is_pinned': server.isPinned,
-          'is_archived': server.isArchived,
-          'is_deleted': server.isDeleted,
-          'created_at': server.createdAt,
-          'updated_at': server.updatedAt,
-          'tags': server.tagNames,
+          'user_id': merged.userId,
+          'notebook_id': merged.notebookId,
+          'is_pinned': merged.isPinned,
+          'is_archived': merged.isArchived,
+          'is_deleted': merged.isDeleted,
+          'created_at': merged.createdAt,
+          'updated_at': merged.updatedAt,
+          'tags': merged.tagNames,
+          'field_clocks': merged.fieldClocks.map(
+            (field, clock) => MapEntry(field, clock.toJson()),
+          ),
         });
       } else {
-        await upsert(txn, server);
+        await upsert(txn, merged);
       }
       applied++;
     }
@@ -196,7 +211,8 @@ class NoteLocalDataSource {
   Future<int> purgeDeletedBefore(DatabaseExecutor db, DateTime cutoffUtc) {
     return db.delete(
       'notes',
-      where: 'is_deleted = 1 AND updated_at < ? '
+      where:
+          'is_deleted = 1 AND updated_at < ? '
           'AND id NOT IN (SELECT entity_id FROM outbox)',
       whereArgs: [cutoffUtc.toIso8601String()],
     );
@@ -217,6 +233,9 @@ class NoteLocalDataSource {
     'created_at': n.createdAt.toUtc().toIso8601String(),
     'updated_at': n.updatedAt.toUtc().toIso8601String(),
     'tags': jsonEncode(n.tagNames),
+    'field_clocks': jsonEncode(
+      n.fieldClocks.map((field, clock) => MapEntry(field, clock.toJson())),
+    ),
   };
 
   Note _fromRow(Map<String, Object?> r) {
@@ -237,6 +256,9 @@ class NoteLocalDataSource {
       createdAt: DateTime.parse(r['created_at'] as String),
       updatedAt: DateTime.parse(r['updated_at'] as String),
       tagNames: tagNames,
+      fieldClocks: parseCrdtClocks(
+        jsonDecode(r['field_clocks'] as String? ?? '{}'),
+      ),
     );
   }
 }

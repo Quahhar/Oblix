@@ -25,13 +25,13 @@ class TaskRepository {
     MetaDao? meta,
     SyncClock? clock,
     Uuid? uuid,
-  })  : _appDb = appDb ?? AppDatabase.instance,
-        _local = local ?? TaskLocalDataSource(appDb ?? AppDatabase.instance),
-        _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
-        _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
-        _clock = clock ??
-            SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
-        _uuid = uuid ?? const Uuid();
+  }) : _appDb = appDb ?? AppDatabase.instance,
+       _local = local ?? TaskLocalDataSource(appDb ?? AppDatabase.instance),
+       _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
+       _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+       _clock =
+           clock ?? SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
+       _uuid = uuid ?? const Uuid();
 
   /// Fires whenever local data changes, so callers can re-query.
   Stream<void> get onChanged => _appDb.onChanged;
@@ -64,6 +64,8 @@ class TaskRepository {
     String? noteId,
   }) async {
     final now = await _clock.nowUtc();
+    final deviceId = await _meta.getOrCreateDeviceId();
+    final clocks = _stampedClocks(const {}, Task.crdtFields, now, deviceId);
     final task = Task(
       id: _uuid.v4(), // client-minted, stable across sync
       userId: await _meta.getUserId() ?? '',
@@ -73,8 +75,9 @@ class TaskRepository {
       dueDate: dueDate,
       createdAt: now,
       updatedAt: now,
+      fieldClocks: clocks,
     );
-    await _persist(task, 'create');
+    await _persist(task, 'create', Task.crdtFields, deviceId: deviceId);
     return task;
   }
 
@@ -91,15 +94,29 @@ class TaskRepository {
     int? sortOrder,
   }) async {
     final existing = await _require(taskId);
+    final fields = <String>{};
+    if (title != null && title != existing.title) fields.add('title');
+    if (description != null && description != existing.description) {
+      fields.add('description');
+    }
+    if (clearDueDate || dueDate != null) fields.add('due_date');
+    if (clearNoteId || noteId != null) fields.add('note_id');
+    if (sortOrder != null && sortOrder != existing.sortOrder) {
+      fields.add('sort_order');
+    }
+    if (fields.isEmpty) return existing;
+    final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
     final updated = existing.copyWith(
       title: title,
       description: description,
       dueDate: clearDueDate ? null : (dueDate ?? existing.dueDate),
       noteId: clearNoteId ? null : (noteId ?? existing.noteId),
       sortOrder: sortOrder,
-      updatedAt: await _clock.nextAfter(existing.updatedAt),
+      updatedAt: now,
+      fieldClocks: _stampedClocks(existing.fieldClocks, fields, now, deviceId),
     );
-    await _persist(updated, 'update');
+    await _persist(updated, 'update', fields, deviceId: deviceId);
     return updated;
   }
 
@@ -109,23 +126,40 @@ class TaskRepository {
     final existing = await _require(taskId);
     if (existing.isCompleted == completed) return existing;
     final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
     final toggled = existing.copyWith(
       isCompleted: completed,
       completedAt: completed ? now : null,
       updatedAt: now,
+      fieldClocks: _stampedClocks(
+        existing.fieldClocks,
+        const {'is_completed'},
+        now,
+        deviceId,
+      ),
     );
-    await _persist(toggled, 'update');
+    await _persist(toggled, 'update', const {
+      'is_completed',
+    }, deviceId: deviceId);
     return toggled;
   }
 
   Future<void> deleteTask(String taskId) async {
     final existing = await _local.getById(taskId);
     if (existing == null) return;
+    final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
     final deleted = existing.copyWith(
       isDeleted: true,
-      updatedAt: await _clock.nextAfter(existing.updatedAt),
+      updatedAt: now,
+      fieldClocks: _stampedClocks(
+        existing.fieldClocks,
+        const {'is_deleted'},
+        now,
+        deviceId,
+      ),
     );
-    await _persist(deleted, 'delete');
+    await _persist(deleted, 'delete', const {'is_deleted'}, deviceId: deviceId);
   }
 
   Future<Task> _require(String taskId) async {
@@ -136,13 +170,42 @@ class TaskRepository {
     return existing;
   }
 
-  Future<void> _persist(Task task, String action) async {
-    final deviceId = await _meta.getOrCreateDeviceId();
+  Map<String, TaskCrdtClock> _stampedClocks(
+    Map<String, TaskCrdtClock> existing,
+    Set<String> fields,
+    DateTime timestamp,
+    String deviceId,
+  ) {
+    final clocks = <String, TaskCrdtClock>{...existing};
+    for (final field in fields) {
+      clocks[field] = TaskCrdtClock(
+        timestamp: timestamp.toUtc(),
+        deviceId: deviceId,
+      );
+    }
+    return Map.unmodifiable(clocks);
+  }
+
+  Future<void> _persist(
+    Task task,
+    String action,
+    Set<String> fields, {
+    required String deviceId,
+  }) async {
+    final data = task.toSyncPatch(fields);
+    if (action == 'create') {
+      data.addAll({
+        'id': task.id,
+        'user_id': task.userId,
+        'created_at': task.createdAt.toUtc().toIso8601String(),
+        'updated_at': task.updatedAt.toUtc().toIso8601String(),
+      });
+    }
     final change = SyncChangeItem(
       entityType: 'task',
       entityId: task.id,
       action: action,
-      data: task.toJson(),
+      data: data,
       deviceId: deviceId,
       timestamp: task.updatedAt.toIso8601String(),
     );

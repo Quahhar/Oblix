@@ -9,6 +9,11 @@ from app.models.notebook import Notebook
 from app.schemas.notebook import NotebookCreate, NotebookUpdate, NotebookResponse
 from app.utils.auth_dependency import get_current_user
 from app.models.user import User
+from app.services.task_crdt import (
+    NOTEBOOK_CRDT_FIELDS,
+    initial_field_clocks,
+    serialize_clock,
+)
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
 
@@ -25,6 +30,7 @@ def _serialize(nb: Notebook, children=None) -> NotebookResponse:
         is_deleted=nb.is_deleted,
         created_at=nb.created_at,
         updated_at=nb.updated_at,
+        field_clocks=nb.field_clocks or {},
         children=children or [],
     )
 
@@ -112,12 +118,14 @@ async def create_notebook(
     current_user: User = Depends(get_current_user),
 ):
     parent_uuid = await _resolve_parent(db, current_user, data.parent_id)
+    now = datetime.now(timezone.utc)
     nb = Notebook(
         id=uuid.uuid4(),
         user_id=current_user.id,
         name=data.name,
         parent_id=parent_uuid,
         sort_order=data.sort_order,
+        field_clocks=initial_field_clocks(now, "server", NOTEBOOK_CRDT_FIELDS),
     )
     db.add(nb)
     await db.flush()
@@ -144,13 +152,25 @@ async def update_notebook(
     if not nb:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
 
+    changed_fields: set[str] = set()
     if data.name is not None:
         nb.name = data.name
+        changed_fields.add("name")
     # Omitted = leave unchanged; explicit null/"" = move to top level.
     if "parent_id" in data.model_fields_set:
         nb.parent_id = await _resolve_parent(db, current_user, data.parent_id, this_id=nb.id)
+        changed_fields.add("parent_id")
     if data.sort_order is not None:
         nb.sort_order = data.sort_order
+        changed_fields.add("sort_order")
+
+    if changed_fields:
+        now = datetime.now(timezone.utc)
+        nb.updated_at = now
+        clocks = dict(nb.field_clocks or {})
+        for field in changed_fields:
+            clocks[field] = serialize_clock((now, "server"))
+        nb.field_clocks = clocks
 
     await db.flush()
     await db.refresh(nb)
@@ -176,5 +196,11 @@ async def delete_notebook(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
 
     nb.is_deleted = True
-    nb.deleted_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    nb.deleted_at = now
+    nb.updated_at = now
+    nb.field_clocks = {
+        **(nb.field_clocks or {}),
+        "is_deleted": serialize_clock((now, "server")),
+    }
     await db.flush()

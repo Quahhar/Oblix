@@ -8,6 +8,7 @@ import '../datasources/local/note_local_datasource.dart';
 import '../datasources/local/outbox_dao.dart';
 import '../models/note.dart';
 import '../models/sync_payload.dart';
+import '../models/crdt_clock.dart';
 
 typedef PendingCollaborativeContent = ({
   bool title,
@@ -147,8 +148,7 @@ class NoteRepository {
     final retiresAcknowledgement = retirementScopes.isNotEmpty;
     final writeTurns = _appDb.collaborativeWriteTurns;
     final revisions = _appDb.collaborativeRevisions;
-    final previousTurn =
-        writeTurns[noteId] ?? Future<void>.value();
+    final previousTurn = writeTurns[noteId] ?? Future<void>.value();
     final turn = Completer<void>();
     final turnFuture = turn.future;
     writeTurns[noteId] = turnFuture;
@@ -234,6 +234,7 @@ class NoteRepository {
     List<String> tagNames = const [],
   }) async {
     final now = await _clock.nowUtc();
+    final deviceId = await _meta.getOrCreateDeviceId();
     final note = Note(
       id: _uuid.v4(), // client-minted, stable across sync
       userId: await _meta.getUserId() ?? '',
@@ -244,6 +245,7 @@ class NoteRepository {
       createdAt: now,
       updatedAt: now,
       tagNames: tagNames,
+      fieldClocks: stampCrdtFields(const {}, Note.crdtFields, now, deviceId),
     );
     await _persist(note, 'create');
     return note;
@@ -260,6 +262,24 @@ class NoteRepository {
     List<String>? tagNames,
   }) async {
     final existing = await _require(noteId);
+    final changedNames = <String>{
+      if (title != null) 'title',
+      if (content != null) 'content',
+      if (contentType != null) 'content_type',
+      if (notebookId != null) 'notebook_id',
+      if (isPinned != null) 'is_pinned',
+      if (isArchived != null) 'is_archived',
+      if (tagNames != null) 'tags',
+    };
+    if (changedNames.isEmpty) return existing;
+    final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
+    final clocks = stampCrdtFields(
+      existing.fieldClocks,
+      changedNames,
+      now,
+      deviceId,
+    );
     final updated = existing.copyWith(
       title: title,
       content: content,
@@ -268,7 +288,8 @@ class NoteRepository {
       isPinned: isPinned,
       isArchived: isArchived,
       tagNames: tagNames,
-      updatedAt: await _clock.nextAfter(existing.updatedAt),
+      updatedAt: now,
+      fieldClocks: clocks,
     );
     final changedFields = <String, dynamic>{
       if (title != null) 'title': updated.title,
@@ -278,12 +299,21 @@ class NoteRepository {
       if (isPinned != null) 'is_pinned': updated.isPinned,
       if (isArchived != null) 'is_archived': updated.isArchived,
       if (tagNames != null) 'tags': updated.tagNames,
+      'field_clocks': {
+        for (final field in changedNames) field: clocks[field]!.toJson(),
+      },
     };
     return _persist(
       updated,
       'update',
       data: changedFields,
-      localFields: {...changedFields, 'updated_at': updated.updatedAt},
+      localFields: {
+        ...changedFields,
+        'updated_at': updated.updatedAt,
+        'field_clocks': clocks.map(
+          (field, clock) => MapEntry(field, clock.toJson()),
+        ),
+      },
     );
   }
 
@@ -291,17 +321,32 @@ class NoteRepository {
   /// (Separate from [updateNote] because there a null means "unchanged".)
   Future<Note> moveToNotebook(String noteId, String? notebookId) async {
     final existing = await _require(noteId);
+    final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
+    final clocks = stampCrdtFields(
+      existing.fieldClocks,
+      const {'notebook_id'},
+      now,
+      deviceId,
+    );
     final moved = existing.copyWith(
       notebookId: notebookId,
-      updatedAt: await _clock.nextAfter(existing.updatedAt),
+      updatedAt: now,
+      fieldClocks: clocks,
     );
     return _persist(
       moved,
       'update',
-      data: {'notebook_id': moved.notebookId},
+      data: {
+        'notebook_id': moved.notebookId,
+        'field_clocks': {'notebook_id': clocks['notebook_id']!.toJson()},
+      },
       localFields: {
         'notebook_id': moved.notebookId,
         'updated_at': moved.updatedAt,
+        'field_clocks': clocks.map(
+          (field, clock) => MapEntry(field, clock.toJson()),
+        ),
       },
     );
   }
@@ -309,10 +354,19 @@ class NoteRepository {
   Future<void> deleteNote(String noteId) async {
     final existing = await _local.getById(noteId);
     if (existing == null) return;
+    final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
+    final clocks = stampCrdtFields(
+      existing.fieldClocks,
+      const {'is_deleted', 'is_archived'},
+      now,
+      deviceId,
+    );
     final deleted = existing.copyWith(
       isDeleted: true,
       isArchived: false,
-      updatedAt: await _clock.nextAfter(existing.updatedAt),
+      updatedAt: now,
+      fieldClocks: clocks,
     );
     await _persist(
       deleted,
@@ -321,23 +375,41 @@ class NoteRepository {
         'is_deleted': true,
         'is_archived': false,
         'updated_at': deleted.updatedAt,
+        'field_clocks': clocks.map(
+          (field, clock) => MapEntry(field, clock.toJson()),
+        ),
       },
     );
   }
 
   Future<Note> restoreNote(String noteId) async {
     final existing = await _require(noteId);
+    final now = await _clock.nextAfter(existing.updatedAt);
+    final deviceId = await _meta.getOrCreateDeviceId();
+    final clocks = stampCrdtFields(
+      existing.fieldClocks,
+      const {'is_deleted'},
+      now,
+      deviceId,
+    );
     final restored = existing.copyWith(
       isDeleted: false,
-      updatedAt: await _clock.nextAfter(existing.updatedAt),
+      updatedAt: now,
+      fieldClocks: clocks,
     );
     return _persist(
       restored,
       'update',
-      data: {'is_deleted': false},
+      data: {
+        'is_deleted': false,
+        'field_clocks': {'is_deleted': clocks['is_deleted']!.toJson()},
+      },
       localFields: {
         'is_deleted': false,
         'updated_at': restored.updatedAt,
+        'field_clocks': clocks.map(
+          (field, clock) => MapEntry(field, clock.toJson()),
+        ),
       },
     );
   }
@@ -369,14 +441,22 @@ class NoteRepository {
     final db = await _appDb.database;
     await db.transaction((txn) async {
       for (final note in notes) {
-        await _local.upsert(txn, note);
+        final stamped = note.copyWith(
+          fieldClocks: stampCrdtFields(
+            note.fieldClocks,
+            Note.crdtFields,
+            note.updatedAt,
+            deviceId,
+          ),
+        );
+        await _local.upsert(txn, stamped);
         await _outbox.enqueue(
           txn,
           SyncChangeItem(
             entityType: 'note',
             entityId: note.id,
             action: 'create',
-            data: note.toJson(),
+            data: stamped.toJson(),
             deviceId: deviceId,
             timestamp: note.updatedAt.toIso8601String(),
           ),

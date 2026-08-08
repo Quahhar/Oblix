@@ -1,14 +1,13 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, func, false, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
 class Task(Base):
-    """A to-do item. Standalone or attached to a note (note_id), tombstoned on
-    delete and synced offline like notes (edited_at drives sync LWW)."""
+    """A task whose mutable fields are independent LWW CRDT registers."""
 
     __tablename__ = "tasks"
 
@@ -24,8 +23,11 @@ class Task(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    # Client's last-edit time for sync LWW (see Note.edited_at for rationale).
+    # Maximum observed field clock, retained for compatibility and cursors.
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    field_clocks: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="tasks")
