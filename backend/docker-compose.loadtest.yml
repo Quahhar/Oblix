@@ -1,0 +1,56 @@
+# Completely isolated local performance-test stack. Do not point a load test at
+# docker-compose.yml or a production server.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: loadtest
+      POSTGRES_PASSWORD: loadtest
+      POSTGRES_DB: oblix_loadtest
+    volumes:
+      - loadtest_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loadtest -d oblix_loadtest"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: .
+    command: alembic upgrade head
+    environment: &app_environment
+      DATABASE_URL: postgresql+asyncpg://loadtest:loadtest@db:5432/oblix_loadtest
+      ENVIRONMENT: production
+      DEBUG: "false"
+      SECRET_KEY: loadtest-only-secret-key-at-least-32-characters
+      CORS_ORIGINS: '["http://localhost"]'
+      RATE_LIMIT_ENABLED: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    environment: *app_environment
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  k6:
+    image: grafana/k6:0.57.0
+    profiles: ["tools"]
+    volumes:
+      - ./loadtest:/scripts:ro
+    entrypoint: ["k6"]
+
+volumes:
+  # This volume only belongs to the `oblix-loadtest` Compose project. `down
+  # --volumes` removes it, including every generated account and note.
+  loadtest_pgdata:
