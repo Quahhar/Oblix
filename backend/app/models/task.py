@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, func, false, text
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, func, false, text, Index
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -10,6 +10,19 @@ class Task(Base):
     """A task whose mutable fields are independent LWW CRDT registers."""
 
     __tablename__ = "tasks"
+    __table_args__ = (
+        Index("ix_tasks_user_updated_cursor", "user_id", "updated_at", "id"),
+        Index(
+            "ix_tasks_user_list",
+            "user_id",
+            "is_deleted",
+            "is_completed",
+            "due_date",
+            "sort_order",
+            "created_at",
+            "id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

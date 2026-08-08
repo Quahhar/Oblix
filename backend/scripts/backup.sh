@@ -11,7 +11,8 @@
 # and --no-owner --no-privileges so it restores cleanly regardless of role names.
 #
 # Env overrides (all optional):
-#   OBLIX_DIR                  compose project dir      (default /var/oblix)
+#   OBLIX_DIR                  compose project dir      (default /var/oblix/backend)
+#   OBLIX_COMPOSE_PROJECT      Compose project name     (default oblix)
 #   OBLIX_BACKUP_DIR           where dumps are written  (default /var/backups/oblix)
 #   OBLIX_BACKUP_RETENTION_DAYS days to keep            (default 14)
 set -euo pipefail
@@ -20,9 +21,10 @@ umask 077
 # cron runs with a minimal PATH; make sure docker is findable.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-APP_DIR="${OBLIX_DIR:-/var/oblix}"
+APP_DIR="${OBLIX_DIR:-/var/oblix/backend}"
 BACKUP_DIR="${OBLIX_BACKUP_DIR:-/var/backups/oblix}"
 RETENTION_DAYS="${OBLIX_BACKUP_RETENTION_DAYS:-14}"
+COMPOSE_PROJECT="${OBLIX_COMPOSE_PROJECT:-oblix}"
 
 cd "$APP_DIR"
 
@@ -42,7 +44,7 @@ uploads_tmp="${uploads_out}.partial"
 trap 'rm -f "$db_tmp" "$uploads_tmp"' EXIT
 
 # -T: no pseudo-TTY (required under cron).
-docker compose -f docker-compose.prod.yml exec -T db \
+docker compose --project-name "$COMPOSE_PROJECT" -f docker-compose.prod.yml exec -T db \
   pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
     --clean --if-exists --no-owner --no-privileges \
   | gzip > "$db_tmp"

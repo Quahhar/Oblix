@@ -37,7 +37,8 @@ if [ -n "$uploads_file" ]; then
   fi
 fi
 
-APP_DIR="${OBLIX_DIR:-/var/oblix}"
+APP_DIR="${OBLIX_DIR:-/var/oblix/backend}"
+COMPOSE_PROJECT="${OBLIX_COMPOSE_PROJECT:-oblix}"
 cd "$APP_DIR"
 set -a
 # shellcheck disable=SC1091
@@ -52,7 +53,7 @@ echo "This REPLACES all current data. Ctrl-C within 5s to abort."
 sleep 5
 
 gunzip -c "$file" \
-  | docker compose -f docker-compose.prod.yml exec -T db \
+  | docker compose --project-name "$COMPOSE_PROJECT" -f docker-compose.prod.yml exec -T db \
       psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q
 
 if [ -n "$uploads_file" ]; then

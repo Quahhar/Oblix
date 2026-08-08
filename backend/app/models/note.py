@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Enum, func, false, text
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, Enum, func, false, text, Index
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -15,6 +15,18 @@ class ContentType(str, PyEnum):
 
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = (
+        Index("ix_notes_user_updated_cursor", "user_id", "updated_at", "id"),
+        Index(
+            "ix_notes_user_list",
+            "user_id",
+            "is_archived",
+            "is_deleted",
+            "is_pinned",
+            "updated_at",
+            "id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -63,7 +75,7 @@ class Note(Base):
     #     which loads it explicitly; raising turns any accidental access into a
     #     loud error instead of a silent per-note extra query.
     versions: Mapped[list["NoteVersion"]] = relationship("NoteVersion", back_populates="note", lazy="noload", cascade="all, delete-orphan", order_by="NoteVersion.version_number")
-    tags: Mapped[list["NoteTag"]] = relationship("NoteTag", back_populates="note", lazy="selectin", cascade="all, delete-orphan")
+    tags: Mapped[list["NoteTag"]] = relationship("NoteTag", back_populates="note", lazy="raise", cascade="all, delete-orphan")
     files: Mapped[list["File"]] = relationship("File", back_populates="note", lazy="raise")
 
     def __repr__(self) -> str:

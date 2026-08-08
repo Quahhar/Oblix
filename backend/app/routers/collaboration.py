@@ -590,8 +590,8 @@ def _operation_ack(note: Note, operation_id: uuid.UUID) -> dict:
 
 
 def _select_note(note_id: uuid.UUID, *, for_update: bool = False):
-    # Note.tags is select-in eager by default; live protocol paths only need
-    # scalar columns, so suppress that otherwise-per-message extra query.
+    # Live protocol paths only need scalar columns; keep relationships
+    # explicitly unloaded so future mapping changes cannot add hidden queries.
     query = (
         select(Note)
         .where(Note.id == note_id)

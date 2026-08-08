@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, String, DateTime, ForeignKey, func, false, UniqueConstraint
+from sqlalchemy import Boolean, String, DateTime, ForeignKey, func, false, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -10,6 +10,7 @@ class Tag(Base):
     __tablename__ = "tags"
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_tags_user_name"),
+        Index("ix_tags_user_updated_cursor", "user_id", "updated_at", "id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -24,7 +25,7 @@ class Tag(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="tags")
-    note_tags: Mapped[list["NoteTag"]] = relationship("NoteTag", back_populates="tag", lazy="selectin", cascade="all, delete-orphan")
+    note_tags: Mapped[list["NoteTag"]] = relationship("NoteTag", back_populates="tag", lazy="raise", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Tag {self.name}>"

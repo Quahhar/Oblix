@@ -21,7 +21,7 @@ export const options = {
 
 function registerUser(index, runId) {
   const response = http.post(`${baseUrl}/api/auth/register`, JSON.stringify({
-    email: `ws-loadtest-${runId}-${index}@oblix.invalid`,
+    email: `ws-loadtest-${runId}-${index}@tensoractivity.com`,
     password: 'loadtest-password-not-a-real-secret',
     display_name: `WS load test ${index}`,
   }), { headers: { 'Content-Type': 'application/json' } });

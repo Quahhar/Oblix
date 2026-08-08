@@ -5,13 +5,17 @@ import { Counter, Rate, Trend } from 'k6/metrics';
 const baseUrl = __ENV.BASE_URL || 'http://api:8000';
 const userCount = Number(__ENV.USER_COUNT || __ENV.VUS || 10);
 const duration = __ENV.DURATION || '30s';
+const syncIntervalSeconds = Number(__ENV.SYNC_INTERVAL_SECONDS || 1);
+const writeRate = Number(__ENV.WRITE_RATE || 0.2);
 const errors = new Rate('application_errors');
 const syncLatency = new Trend('sync_duration', true);
 const createdNotes = new Counter('sync_notes_created');
+let cursor = null;
 
 export const options = {
   vus: Number(__ENV.VUS || 10),
   duration,
+  setupTimeout: __ENV.SETUP_TIMEOUT || '5m',
   thresholds: {
     http_req_failed: ['rate<0.01'],
     application_errors: ['rate<0.01'],
@@ -41,7 +45,7 @@ export function setup() {
   const runId = Date.now();
   for (let index = 0; index < userCount; index += 1) {
     const response = http.post(`${baseUrl}/api/auth/register`, JSON.stringify({
-      email: `loadtest-${runId}-${index}@oblix.invalid`,
+      email: `loadtest-${runId}-${index}@tensoractivity.com`,
       password: 'loadtest-password-not-a-real-secret',
       display_name: `Load test ${index}`,
       device_id: `loadtest-${index}`,
@@ -57,31 +61,33 @@ export function setup() {
 export default function (tokens) {
   const token = tokens[(__VU - 1) % tokens.length];
   const headers = jsonHeaders(token);
-  const notes = http.get(`${baseUrl}/api/notes?page_size=50`, headers);
-  const pulled = http.get(`${baseUrl}/api/sync/pull?limit=100`, headers);
-  const readsOk = check(notes, { 'notes list succeeds': (r) => r.status === 200 }) &&
-    check(pulled, { 'sync pull succeeds': (r) => r.status === 200 });
-  errors.add(!readsOk);
-
-  // Twenty percent of normal client cycles include a small offline-sync write.
-  if (Math.random() < 0.2) {
-    const now = new Date().toISOString();
-    const started = Date.now();
-    const pushed = http.post(`${baseUrl}/api/sync/push`, JSON.stringify({
-      changes: [{
+  // Match the production client: one push request both drains the local
+  // outbox and pulls server changes since this device's cursor. Most cycles
+  // are idle; WRITE_RATE controls how often a small offline edit is included.
+  const writes = Math.random() < writeRate;
+  const changes = writes
+    ? [{
         entity_type: 'note',
         entity_id: uuidv4(),
         action: 'create',
         data: { title: 'Load test note', content: 'small sync payload', content_type: 'plain' },
         device_id: `loadtest-vu-${__VU}`,
-        timestamp: now,
-      }],
-      last_sync_at: null,
-    }), headers);
-    syncLatency.add(Date.now() - started);
-    const pushOk = check(pushed, { 'sync push succeeds': (r) => r.status === 200 });
-    errors.add(!pushOk);
-    if (pushOk) createdNotes.add(1);
+        timestamp: new Date().toISOString(),
+      }]
+    : [];
+
+  const started = Date.now();
+  const synced = http.post(`${baseUrl}/api/sync/push`, JSON.stringify({
+    changes,
+    last_sync_at: cursor,
+  }), headers);
+  syncLatency.add(Date.now() - started);
+  const syncOk = check(synced, { 'sync cycle succeeds': (r) => r.status === 200 });
+  errors.add(!syncOk);
+  if (syncOk) {
+    const body = JSON.parse(synced.body);
+    cursor = body.server_time || cursor;
+    if (writes) createdNotes.add(1);
   }
-  sleep(1);
+  sleep(syncIntervalSeconds);
 }

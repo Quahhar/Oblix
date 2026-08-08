@@ -50,9 +50,10 @@ class TaskService:
             conditions.append(Task.due_date <= _aware(due_before))
 
         base = select(Task).where(and_(*conditions))
-        total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
-        tasks = (await db.execute(
-            base.order_by(
+        offset = (page - 1) * page_size
+        count_query = select(func.count()).select_from(base.subquery())
+        rows = (await db.execute(
+            base.add_columns(func.count().over().label("_total")).order_by(
                 # Open tasks first; then by due date (undated last), manual
                 # order, and finally id as the stable pagination tiebreaker.
                 Task.is_completed.asc(),
@@ -60,8 +61,15 @@ class TaskService:
                 Task.sort_order.asc(),
                 Task.created_at.asc(),
                 Task.id.asc(),
-            ).offset((page - 1) * page_size).limit(page_size)
-        )).scalars().all()
+            ).offset(offset).limit(page_size)
+        )).all()
+        tasks = [row[0] for row in rows]
+        if rows:
+            total = int(rows[0][1])
+        elif offset:
+            total = int((await db.execute(count_query)).scalar() or 0)
+        else:
+            total = 0
         return {"tasks": tasks, "total": total, "page": page, "page_size": page_size}
 
     async def get_task(self, db: AsyncSession, user: User, task_id: str) -> Task:

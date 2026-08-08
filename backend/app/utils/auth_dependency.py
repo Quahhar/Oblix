@@ -38,21 +38,29 @@ async def authenticate_access_token(db: AsyncSession, token: str) -> User:
 
     try:
         session_id = uuid.UUID(str(jti))
+        subject_id = uuid.UUID(str(user_id))
     except (ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-    session = (await db.execute(select(Session).where(Session.id == session_id))).scalar_one_or_none()
     now = datetime.now(timezone.utc)
-    if (
-        session is None
-        or str(session.user_id) != str(user_id)
-        or session.revoked_at is not None
-        or session.expires_at <= now
-    ):
+    # Session validity and the active user are checked in one indexed query.
+    # This dependency runs on every authenticated HTTP request and WebSocket
+    # admission, so avoiding the former second round trip materially reduces
+    # database pressure without weakening immediate session revocation.
+    user = (
+        await db.execute(
+            select(User)
+            .join(Session, Session.user_id == User.id)
+            .where(
+                Session.id == session_id,
+                Session.user_id == subject_id,
+                Session.revoked_at.is_(None),
+                Session.expires_at > now,
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session is no longer valid")
-
-    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if user is None or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
 
     return user

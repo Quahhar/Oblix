@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import ORJSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,6 +42,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
     root_path=settings.ROOT_PATH,
+    # Response models are already converted to JSON-compatible values by
+    # FastAPI; encode the final payload with orjson to reduce CPU time for
+    # large note lists and first-sync responses.
+    default_response_class=ORJSONResponse,
 )
 
 # CORS

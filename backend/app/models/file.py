@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, BigInteger, Boolean, DateTime, ForeignKey, func, false
+from sqlalchemy import String, BigInteger, Boolean, DateTime, ForeignKey, func, false, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -8,6 +8,9 @@ from app.database import Base
 
 class File(Base):
     __tablename__ = "files"
+    __table_args__ = (
+        Index("ix_files_user_updated_cursor", "user_id", "updated_at", "id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

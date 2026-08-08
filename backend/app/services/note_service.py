@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from sqlalchemy import select, func, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.note import Note, NoteVersion
@@ -65,18 +65,15 @@ class NoteService:
             query = query.join(NoteTag).where(NoteTag.tag_id == _uuid_or_error(
                 tag_id, "Invalid tag_id", status.HTTP_400_BAD_REQUEST))
 
-        # Total count
-        count_query = select(func.count()).select_from(query.subquery())
-        total = (await db.execute(count_query)).scalar() or 0
-
-        # Paginated fetch
+        # Count and page in one round trip. The fallback preserves an accurate
+        # total for an out-of-range page, while the common first-page path no
+        # longer pays for a separate COUNT query.
         offset = (page - 1) * page_size
-        query = query.options(
-            # Load tags for each listed note, but NOT versions/files: the note
-            # list never shows history or attachments, and eager-loading full
-            # version history for every note was a large, needless payload.
-            # Note.versions is lazy="noload", so it serializes as [] here.
-            selectinload(Note.tags).selectinload(NoteTag.tag),
+        count_query = select(func.count()).select_from(query.subquery())
+        query = query.add_columns(func.count().over().label("_total")).options(
+            # A joined load avoids two extra select-in round trips for the
+            # common small tag collection. Versions/files remain unloaded.
+            joinedload(Note.tags).joinedload(NoteTag.tag),
         ).order_by(
             # Note.id is a stable tiebreaker: without it, notes sharing an
             # updated_at have no defined order across pages, so one can appear on
@@ -84,8 +81,14 @@ class NoteService:
             Note.is_pinned.desc(), Note.updated_at.desc(), Note.id.desc()
         ).offset(offset).limit(page_size)
 
-        result = await db.execute(query)
-        notes = result.scalars().unique().all()
+        rows = (await db.execute(query)).unique().all()
+        notes = [row[0] for row in rows]
+        if rows:
+            total = int(rows[0][1])
+        elif offset:
+            total = int((await db.execute(count_query)).scalar() or 0)
+        else:
+            total = 0
 
         return {
             "notes": notes,

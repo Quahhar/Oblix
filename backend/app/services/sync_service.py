@@ -3,8 +3,8 @@ import json
 import base64
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from sqlalchemy import select, delete, and_, or_, inspect as sa_inspect
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, delete, and_, or_, exists, literal, union_all, inspect as sa_inspect
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.note import Note, ContentType
@@ -153,7 +153,15 @@ class SyncService:
         # Return everything that changed since the client's last sync so the
         # push response alone is enough to catch the client up (it need not pull
         # separately right after).
-        server_changes = await self._get_changes_since(db, user, last_sync_at)
+        server_changes = await self._get_changes_since(
+            db,
+            user,
+            last_sync_at,
+            # A single indexed probe identifies the entity types that changed.
+            # An idle cycle stops there; a typical note edit then hydrates only
+            # notes instead of querying all five entity tables.
+            probe_changed_types=True,
+        )
 
         return {
             "applied": applied,
@@ -183,7 +191,9 @@ class SyncService:
         """
         server_time = datetime.now(timezone.utc).isoformat()
         if limit is None:
-            changes = await self._get_changes_since(db, user, since, entity_types)
+            changes = await self._get_changes_since(
+                db, user, since, entity_types, probe_changed_types=True
+            )
             return {"changes": changes, "server_time": server_time,
                     "has_more": False, "next_cursor": None}
         changes, has_more, next_cursor = await self._get_changes_page(
@@ -868,7 +878,7 @@ class SyncService:
     def _type_specs(self, target_types):
         """(name, model, change-builder, query-options) for the requested types."""
         specs = [
-            ("note", Note, self._note_change, (selectinload(Note.tags).selectinload(NoteTag.tag),)),
+            ("note", Note, self._note_change, (joinedload(Note.tags).joinedload(NoteTag.tag),)),
             ("notebook", Notebook, self._notebook_change, ()),
             ("tag", Tag, self._tag_change, ()),
             ("file", File, self._file_change, ()),
@@ -879,6 +889,7 @@ class SyncService:
     async def _get_changes_since(
         self, db: AsyncSession, user: User, since: Optional[str] = None,
         entity_types: Optional[list[str]] = None,
+        *, probe_changed_types: bool = False,
     ) -> list[dict]:
         """Build list of changed entities since timestamp (inclusive).
 
@@ -889,8 +900,18 @@ class SyncService:
         changes: list[dict] = []
         target_types = entity_types or ["note", "notebook", "tag", "file", "task"]
         since_dt = _parse_ts(since)
+        specs = self._type_specs(target_types)
 
-        for _name, model, builder, opts in self._type_specs(target_types):
+        # One UNION-of-EXISTS query tells us exactly which entity tables need
+        # hydration. Most background polls stop here; a typical note-only edit
+        # turns the old five ORM queries into one probe plus one note query.
+        if probe_changed_types and since_dt is not None:
+            changed_types = await self._changed_types_since(db, user, since_dt, specs)
+            if not changed_types:
+                return changes
+            specs = [spec for spec in specs if spec[0] in changed_types]
+
+        for _name, model, builder, opts in specs:
             q = select(model).where(model.user_id == user.id)
             for opt in opts:
                 q = q.options(opt)
@@ -900,6 +921,26 @@ class SyncService:
                 changes.append(builder(row))
 
         return changes
+
+    @staticmethod
+    async def _changed_types_since(
+        db, user: User, since_dt: datetime, specs
+    ) -> set[str]:
+        probes = [
+            select(literal(name)).where(
+                exists(
+                    select(model.id).where(
+                        model.user_id == user.id,
+                        model.updated_at >= since_dt,
+                    )
+                )
+            )
+            for name, model, _builder, _opts in specs
+        ]
+        if not probes:
+            return set()
+        result = await db.execute(union_all(*probes))
+        return set(result.scalars().all())
 
     async def _get_changes_page(
         self, db: AsyncSession, user: User, since: Optional[str],

@@ -127,8 +127,8 @@ the attachments. Both read `.env` for DB credentials and talk to the running
 Install the daily cron job (runs 03:30 UTC):
 
 ```bash
-chmod +x /var/oblix/scripts/*.sh
-printf '30 3 * * * root /var/oblix/scripts/backup.sh >> /var/log/oblix-backup.log 2>&1\n' \
+chmod +x /var/oblix/backend/scripts/*.sh
+printf '30 3 * * * root /var/oblix/backend/scripts/backup.sh >> /var/log/oblix-backup.log 2>&1\n' \
   | sudo tee /etc/cron.d/oblix-backup
 ```
 
