@@ -1,3 +1,5 @@
+import '../../core/native/crdt_types.dart';
+
 /// A note parsed from an import source (ENEX or .oblix), before it is given a
 /// local id/owner and persisted. Import always creates *new* notes on the
 /// current account, so ids are deliberately absent here — the service mints
@@ -78,6 +80,41 @@ class ImportBundle {
     this.notebookNames = const [],
     this.notebookPaths = const [],
   });
+
+  factory ImportBundle.fromCore(CoreImportBundleValue bundle) => ImportBundle(
+    [
+      for (final note in bundle.notes)
+        ImportedNote(
+          title: note.title,
+          content: note.content,
+          contentType: note.contentType,
+          tagNames: note.tagNames,
+          isPinned: note.isPinned,
+          isArchived: note.isArchived,
+          createdAt: DateTime.fromMicrosecondsSinceEpoch(
+            note.createdAtMicrosUtc,
+            isUtc: true,
+          ),
+          updatedAt: DateTime.fromMicrosecondsSinceEpoch(
+            note.updatedAtMicrosUtc,
+            isUtc: true,
+          ),
+          notebookName: note.notebookName,
+          notebookPath: note.notebookPath,
+          attachments: [
+            for (final attachment in note.attachments)
+              ImportedAttachment(
+                originalName: attachment.originalName,
+                mimeType: attachment.mimeType,
+                bytes: attachment.bytes,
+              ),
+          ],
+          skippedAttachments: note.skippedAttachments,
+        ),
+    ],
+    notebookNames: bundle.notebookNames,
+    notebookPaths: bundle.notebookPaths,
+  );
 
   int get noteCount => notes.length;
   int get skippedAttachments =>

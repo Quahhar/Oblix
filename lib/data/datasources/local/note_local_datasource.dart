@@ -56,13 +56,24 @@ class NoteLocalDataSource {
     if (search != null && search.trim().isNotEmpty) {
       final ftsQuery = _appDb.ftsAvailable ? _toFtsQuery(search) : null;
       if (ftsQuery != null) {
+        // A note matches on its own text, or on the words recognized inside a
+        // page scanned into it — which is what makes a photograph findable by
+        // something written on the paper.
         where.add(
-          'rowid IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)',
+          '(rowid IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?) '
+          'OR id IN (SELECT note_id FROM text_layers WHERE rowid IN '
+          '(SELECT rowid FROM text_layers_fts WHERE text_layers_fts MATCH ?)))',
         );
         args.add(ftsQuery);
+        args.add(ftsQuery);
       } else {
-        where.add("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')");
         final pattern = '%${_escapeLike(search.trim())}%';
+        where.add(
+          "(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' "
+          "OR id IN (SELECT note_id FROM text_layers "
+          "WHERE search_text LIKE ? ESCAPE '\\'))",
+        );
+        args.add(pattern);
         args.add(pattern);
         args.add(pattern);
       }

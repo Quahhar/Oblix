@@ -31,9 +31,7 @@ class _AskScreenState extends State<AskScreen> {
   List<Note> _results = const [];
   Map<String, String> _bookNames = const {};
 
-  static const _suggestions = [
-    'meeting', 'ideas', 'travel', 'recipe',
-  ];
+  static const _suggestions = ['meeting', 'ideas', 'travel', 'recipe'];
 
   @override
   void initState() {
@@ -149,8 +147,11 @@ class _AskScreenState extends State<AskScreen> {
                         decoration: InputDecoration(
                           border: InputBorder.none,
                           hintText: 'What are you looking for?',
-                          hintStyle: OblixType.ui(c,
-                              size: 14.5, color: c.inkMuted),
+                          hintStyle: OblixType.ui(
+                            c,
+                            size: 14.5,
+                            color: c.inkMuted,
+                          ),
                         ),
                       ),
                     ),
@@ -165,8 +166,7 @@ class _AskScreenState extends State<AskScreen> {
                       child: Center(
                         child: Text(
                           'Nothing matches "$_query".',
-                          style:
-                              OblixType.ui(c, size: 14, color: c.inkMuted),
+                          style: OblixType.ui(c, size: 14, color: c.inkMuted),
                         ),
                       ),
                     )
@@ -178,27 +178,29 @@ class _AskScreenState extends State<AskScreen> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.auto_awesome,
-                                  size: 11, color: c.accent),
+                              Icon(
+                                Icons.auto_awesome,
+                                size: 11,
+                                color: c.accent,
+                              ),
                               const SizedBox(width: 6),
-                              Text('FROM YOUR NOTES',
-                                  style: OblixType.eyebrow(c,
-                                      color: c.accent)),
+                              Text(
+                                'FROM YOUR NOTES',
+                                style: OblixType.eyebrow(c, color: c.accent),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 6),
                           for (var i = 0; i < _results.length; i++) ...[
-                            if (i > 0)
-                              Divider(height: 1, color: c.hairline),
+                            if (i > 0) Divider(height: 1, color: c.hairline),
                             _ResultRow(
                               note: _results[i],
-                              bookName:
-                                  _bookNames[_results[i].notebookId],
+                              bookName: _bookNames[_results[i].notebookId],
                               onTap: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => NoteEditorScreen(
-                                      noteId: _results[i].id),
+                                  builder: (_) =>
+                                      NoteEditorScreen(noteId: _results[i].id),
                                 ),
                               ),
                             ),
@@ -207,8 +209,10 @@ class _AskScreenState extends State<AskScreen> {
                       ),
                     )
             else ...[
-              const SectionEyebrow('Try',
-                  padding: EdgeInsets.fromLTRB(20, 18, 20, 8)),
+              const SectionEyebrow(
+                'Try',
+                padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Wrap(
@@ -216,23 +220,22 @@ class _AskScreenState extends State<AskScreen> {
                   runSpacing: 8,
                   children: [
                     for (final s in _suggestions)
-                      Material(
+                      GlassPill(
                         color: Colors.transparent,
-                        shape: StadiumBorder(
-                          side: BorderSide(
-                              color: c.ink.withValues(alpha: 0.14)),
+                        borderColor: c.ink.withValues(alpha: 0.14),
+                        glassAlpha: 0.16,
+                        blur: false,
+                        onTap: () => _fill(s),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () => _fill(s),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 8),
-                            child: Text(
-                              s,
-                              style: OblixType.ui(c,
-                                  size: 12.5, color: c.avatarInk),
-                            ),
+                        child: Text(
+                          s,
+                          style: OblixType.ui(
+                            c,
+                            size: 12.5,
+                            color: c.avatarInk,
                           ),
                         ),
                       ),
@@ -261,8 +264,7 @@ class _ResultRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = OblixColors.of(context);
-    final meta =
-        [?bookName, Formats.relative(note.updatedAt)].join(' · ');
+    final meta = [?bookName, Formats.relative(note.updatedAt)].join(' · ');
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -276,8 +278,7 @@ class _ResultRow extends StatelessWidget {
                 note.title.isEmpty ? 'Untitled' : note.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    OblixType.ui(c, size: 13, weight: FontWeight.w600),
+                style: OblixType.ui(c, size: 13, weight: FontWeight.w600),
               ),
             ),
             const SizedBox(width: 8),

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:dart_quill_delta/dart_quill_delta.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -18,6 +17,7 @@ import '../../data/repositories/tag_repository.dart';
 import '../../data/repositories/task_repository.dart';
 import '../../domain/services/import_export_service.dart';
 import '../../domain/services/collaboration_session.dart';
+import '../../core/native/oblix_core.dart';
 import '../sheets/ai_actions_sheet.dart';
 import '../sheets/manage_access_sheet.dart';
 import '../theme/oblix_theme.dart';
@@ -149,10 +149,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final fallbackNoteId = _isOwner ? _note?.id : null;
     _collaboration = null;
     if (previous != null) {
-      await _drainCollaboration(
-        previous,
-        fallbackNoteId: fallbackNoteId,
-      );
+      await _drainCollaboration(previous, fallbackNoteId: fallbackNoteId);
     } else {
       _releaseCollaborationProtection?.call();
       _releaseCollaborationProtection = null;
@@ -366,7 +363,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               for (final entry in confirmedScopes.entries) {
                 _removeFallbackSeqs(entry.key, entry.value);
               }
-              if (updated == null || _disposed ||
+              if (updated == null ||
+                  _disposed ||
                   expectedEpoch != _appliedSnapshotEpoch ||
                   expectedRevision < _appliedSnapshotRevision) {
                 return;
@@ -439,18 +437,17 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final oldText = controller.text;
     if (oldText == nextText) return;
     final selection = controller.selection;
-    final change = (Delta()..insert(oldText)).diff(Delta()..insert(nextText));
-
-    int move(int offset) {
-      if (offset < 0) return nextText.length;
-      return change.transformPosition(offset).clamp(0, nextText.length);
-    }
+    final moved = transformTextPositions(
+      before: oldText,
+      after: nextText,
+      positions: [selection.baseOffset, selection.extentOffset],
+    );
 
     controller.value = TextEditingValue(
       text: nextText,
       selection: TextSelection(
-        baseOffset: move(selection.baseOffset),
-        extentOffset: move(selection.extentOffset),
+        baseOffset: moved[0],
+        extentOffset: moved[1],
         affinity: selection.affinity,
         isDirectional: selection.isDirectional,
       ),
@@ -637,18 +634,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final completion = Completer<void>();
     _saveCompletion = completion;
     _dirty = false;
-    final title = _title.text.trim();
+    final rawTitle = _title.text;
+    final title = normalizeNoteTitle(rawTitle);
     final content = _content.text;
     var persisted = false;
     try {
       final current = _note;
       if (current == null) {
-        if (title.isEmpty && content.trim().isEmpty) {
+        if (noteDraftIsEmpty(title: rawTitle, content: content)) {
           persisted = true;
           return;
         }
         _note = await _repo.createNote(
-          title: title.isEmpty ? 'Untitled' : title,
+          title: title,
           content: content,
           notebookId: widget.initialNotebookId,
         );
@@ -657,7 +655,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           unawaited(_ensureCollaboration(created.id));
         }
       } else {
-        final savedTitle = title.isEmpty ? 'Untitled' : title;
+        final savedTitle = title;
         final titleChanged = savedTitle != current.title;
         final contentChanged = content != current.content;
         if (titleChanged || contentChanged) {
@@ -706,9 +704,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (noteId == null) return;
       final latest = await _repo.getNote(noteId);
       if (latest == null) return;
-      final title = capturedTitle.trim().isEmpty
-          ? 'Untitled'
-          : capturedTitle.trim();
+      final title = normalizeNoteTitle(capturedTitle);
       final titleChanged = title != latest.title;
       final contentChanged = capturedContent != latest.content;
       if (titleChanged || contentChanged) {
@@ -730,9 +726,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     if (_dirty) return;
     final note = _note;
     if (note != null) {
-      final title = _title.text.trim().isEmpty
-          ? 'Untitled'
-          : _title.text.trim();
+      final title = normalizeNoteTitle(_title.text);
       final content = _content.text;
       final hasNewerControllerText =
           title != note.title || content != note.content;
@@ -809,9 +803,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       return;
     }
     if (choice != 'copy') return;
-    final body = note.title.isEmpty || note.title == 'Untitled'
-        ? note.content
-        : '${note.title}\n\n${note.content}';
+    final body = noteShareText(title: note.title, content: note.content);
     await SharePlus.instance.share(ShareParams(text: body));
   });
 
@@ -866,11 +858,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final String filename;
     final String mimeType;
 
-    final stem = note.title == 'Untitled' ? 'note' : note.title;
-    final sanitizedStem = stem
-        .replaceAll(RegExp(r'[^a-zA-Z0-9\-\_\s]'), '')
-        .replaceAll(RegExp(r'\s+'), '_');
-    final safeStem = sanitizedStem.isEmpty ? 'note' : sanitizedStem;
+    final safeStem = sanitizeSingleExportStem(note.title);
 
     final io = ImportExportService();
 
@@ -1069,11 +1057,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       ),
     );
     if (result == null) return;
-    final names = <String>[];
-    for (final raw in result.split(',')) {
-      final name = raw.trim();
-      if (name.isNotEmpty && !names.contains(name)) names.add(name);
-    }
+    final names = parseTagNames(result);
     _note = await _repo.updateNote(note.id, tagNames: names);
     // Make sure every name exists as a Tag entity so it shows up on the
     // Books tab immediately (the server would create it on sync anyway).
@@ -1190,36 +1174,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Row(
                       children: [
-                        Material(
+                        GlassPill(
                           color: c.bg,
-                          shape: StadiumBorder(
-                            side: BorderSide(color: c.hairline),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: InkWell(
-                            onTap: () => Navigator.pop(context),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.arrow_back_ios_new,
-                                    size: 12,
-                                    color: c.ink,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _notebookName ?? 'Notes',
-                                    style: OblixType.ui(
-                                      c,
-                                      size: 13,
-                                      weight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
+                          onTap: () => Navigator.pop(context),
+                          padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 12,
+                                color: c.ink,
                               ),
-                            ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _notebookName ?? 'Notes',
+                                style: OblixType.ui(
+                                  c,
+                                  size: 13,
+                                  weight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const Spacer(),
@@ -1492,10 +1468,9 @@ class _OverflowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = OblixColors.of(context);
-    return Material(
+    return LiquidGlass(
       color: c.bg,
       shape: CircleBorder(side: BorderSide(color: c.hairline)),
-      clipBehavior: Clip.antiAlias,
       child: PopupMenuButton<String>(
         icon: Icon(Icons.more_horiz, size: 17, color: c.ink),
         tooltip: 'More',

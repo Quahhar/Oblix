@@ -41,13 +41,13 @@ class AttachmentRepository {
     FilesRemoteDataSource? remote,
     Uuid? uuid,
     Future<Directory> Function()? attachmentsDir,
-  })  : _appDb = appDb ?? AppDatabase.instance,
-        _local =
-            local ?? AttachmentLocalDataSource(appDb ?? AppDatabase.instance),
-        _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
-        _remote = remote ?? FilesRemoteDataSource(),
-        _uuid = uuid ?? const Uuid(),
-        _attachmentsDir = attachmentsDir ?? _defaultDir;
+  }) : _appDb = appDb ?? AppDatabase.instance,
+       _local =
+           local ?? AttachmentLocalDataSource(appDb ?? AppDatabase.instance),
+       _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+       _remote = remote ?? FilesRemoteDataSource(),
+       _uuid = uuid ?? const Uuid(),
+       _attachmentsDir = attachmentsDir ?? _defaultDir;
 
   Stream<void> get onChanged => _appDb.onChanged;
 
@@ -113,7 +113,9 @@ class AttachmentRepository {
   /// from the server if this device only had the remote copy. Null if the
   /// bytes are unavailable (offline with no local cache).
   Future<String?> ensureLocalPath(Attachment a) async {
-    if (a.hasLocalBytes && await File(a.localPath!).exists()) return a.localPath;
+    if (a.hasLocalBytes && await File(a.localPath!).exists()) {
+      return a.localPath;
+    }
     final bytes = await bytesFor(a);
     if (bytes == null) return null;
     return (await _local.getById(a.id))?.localPath;

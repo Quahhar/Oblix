@@ -1,8 +1,17 @@
 # Oblix
 
-Offline-first note-taking app (Evernote-style): notes, notebooks, tags, archive
-and trash, full-text search, background sync, and import/export. Flutter client
-+ FastAPI backend (in `backend/`).
+Offline-first note-taking app (Evernote-style): notes, notebooks, tags, tasks,
+archive and trash, full-text search, background sync, and import/export.
+Flutter client + FastAPI backend (in `backend/`).
+
+## Product priority: mobile first
+
+Oblix is a **mobile-first** product. Android and iOS are the primary targets;
+phone-sized touch layouts, offline operation, performance, battery use, and
+native mobile behavior take priority when designing or implementing features.
+Desktop and web support are valuable secondary targets, but a feature must not
+depend on desktop-only interaction, screen space, or platform APIs to be
+considered complete for the product.
 
 ## Architecture
 
@@ -51,6 +60,38 @@ Notes are indexed in an FTS5 table (`notes_fts`, external-content, kept in
 sync by triggers; `PRAGMA recursive_triggers` is on so `INSERT OR REPLACE`
 upserts fire them correctly). On SQLite builds without FTS5 the search falls
 back to escaped `LIKE`.
+
+### Tasks
+
+Tasks sync like notes (`entity_type` `task`, one LWW register per field) and
+are edited entirely offline. The scheduling brain is in Rust — see
+[RUST_CORE.md](RUST_CORE.md) — so the client decides the same thing on every
+platform:
+
+- **Quick add** is the only way to create a task. One line is parsed for a
+  date, a time, a priority (`p1`–`p4`), labels (`@email`), a list (`#work`), a
+  repeat (`every other tuesday`) and a reminder lead (`remind 30m before`), and
+  the recognized runs are tinted in the field as you type. Anything inside
+  double quotes is never parsed, so the parser can always be overruled.
+- **Repetition** is stored as a compact RRULE-shaped string
+  (`FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH`). Ticking a repeating task moves it to
+  its next occurrence instead of retiring it, and catches up past today so a
+  bill three months late lands next month rather than reappearing overdue.
+  `MODE=COMPLETION` measures the interval from the day the work was done.
+- **Reminders** are real local notifications, re-derived from SQLite whenever
+  anything changes and re-armed after a reboot. `reminder_at` syncs so other
+  devices know about it; each device schedules its own alarms from its own
+  clock. Inexact alarms are used deliberately — see `TaskReminderService`.
+- **Subtasks** nest via `parent_id`. Completing or deleting a parent takes its
+  children with it; a subtask whose parent is filtered off the current day is
+  promoted rather than hidden.
+- **Lists** reuse the notebook tree (`notebook_id`) rather than introducing a
+  second hierarchy, and **labels** are denormalized names, exactly as notes
+  denormalize their tags.
+
+The Tasks screen shows one day at a time — today, until another is picked. Its
+date header is also the calendar: tap for a week strip, pull for a month grid
+with per-day density dots, tap a day to retarget the list.
 
 ### Auth
 

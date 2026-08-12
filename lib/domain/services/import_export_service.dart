@@ -16,6 +16,7 @@ import '../../data/repositories/attachment_repository.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
 import '../../data/repositories/tag_repository.dart';
+import '../../core/native/oblix_core.dart';
 
 /// Summary of an import, shown to the user afterward.
 class ImportResult {
@@ -225,7 +226,13 @@ class ImportExportService {
       isArchived: n.isArchived,
       createdAt: n.createdAt,
       // Never let a bogus future timestamp win LWW forever.
-      updatedAt: n.updatedAt.isAfter(now) ? now : n.updatedAt,
+      updatedAt: DateTime.fromMicrosecondsSinceEpoch(
+        clampImportedTimestampMicros(
+          timestampMicrosUtc: n.updatedAt.toUtc().microsecondsSinceEpoch,
+          nowMicrosUtc: now.microsecondsSinceEpoch,
+        ),
+        isUtc: true,
+      ),
       tagNames: n.tagNames,
     );
   }
@@ -264,39 +271,20 @@ class ImportExportService {
   /// Broken parent links and cycles are treated as roots; imports must remain
   /// usable even if an older local database contains malformed hierarchy data.
   Map<String, String> _indexNotebookPaths(List<Notebook> notebooks) {
-    final byId = {for (final notebook in notebooks) notebook.id: notebook};
-    final memo = <String, List<String>>{};
-
-    List<String> resolve(Notebook notebook, Set<String> visiting) {
-      final cached = memo[notebook.id];
-      if (cached != null) return cached;
-      if (!visiting.add(notebook.id)) return [notebook.name];
-
-      final parent = notebook.parentId == null
-          ? null
-          : byId[notebook.parentId];
-      final path = parent == null
-          ? [notebook.name]
-          : [...resolve(parent, visiting), notebook.name];
-      visiting.remove(notebook.id);
-      memo[notebook.id] = path;
-      return path;
-    }
-
     final result = <String, String>{};
-    for (final notebook in notebooks) {
-      result.putIfAbsent(
-        _pathKey(resolve(notebook, <String>{})),
-        () => notebook.id,
-      );
+    final resolved = resolveNotebookPaths([
+      for (final notebook in notebooks)
+        (id: notebook.id, name: notebook.name, parentId: notebook.parentId),
+    ]);
+    for (final path in resolved) {
+      result.putIfAbsent(path.pathKey, () => path.id);
     }
     return result;
   }
 
   /// Length-prefix each component so names containing separators cannot make
   /// two different paths share a lookup key.
-  String _pathKey(List<String> path) =>
-      path.map((part) => '${part.length}:$part').join();
+  String _pathKey(List<String> path) => notebookPathKey(path);
 
   // --- Export ---
 
@@ -333,34 +321,25 @@ class ImportExportService {
     }
 
     final allNotebooks = await _notebooks.listNotebooks();
-    final notebookById = {
-      for (final notebook in allNotebooks) notebook.id: notebook,
-    };
-    final notebookIds = <String>{};
-    for (final note in selectedNotes) {
-      var notebookId = note.notebookId;
-      while (notebookId != null && notebookIds.add(notebookId)) {
-        notebookId = notebookById[notebookId]?.parentId;
-      }
-    }
+    final notebookIds = selectExportNotebookIds(
+      noteNotebookIds: selectedNotes.map((note) => note.notebookId).nonNulls,
+      notebooks: [
+        for (final notebook in allNotebooks)
+          (id: notebook.id, name: notebook.name, parentId: notebook.parentId),
+      ],
+    ).toSet();
     final notebooks = [
       for (final notebook in allNotebooks)
         if (notebookIds.contains(notebook.id)) notebook,
     ];
 
-    final wantedTagNames = {
-      for (final note in selectedNotes) ...note.tagNames,
-    };
+    final wantedTagNames = {for (final note in selectedNotes) ...note.tagNames};
     final tags = [
       for (final tag in await _tags.listTags())
         if (wantedTagNames.contains(tag.name)) tag,
     ];
 
-    return _encodeOblix(
-      notes: selectedNotes,
-      notebooks: notebooks,
-      tags: tags,
-    );
+    return _encodeOblix(notes: selectedNotes, notebooks: notebooks, tags: tags);
   }
 
   Future<List<int>> _encodeOblix({
@@ -383,8 +362,7 @@ class ImportExportService {
           // The common case is a remote-only file while offline. Do not expose
           // transport details, but do report that this archive is incomplete.
         }
-        if (bytes == null ||
-            (a.sizeBytes > 0 && bytes.length != a.sizeBytes)) {
+        if (bytes == null || (a.sizeBytes > 0 && bytes.length != a.sizeBytes)) {
           unavailableAttachments.add('${note.title} / ${a.originalName}');
           continue;
         }

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../core/native/oblix_core.dart';
 
 class CrdtClock extends Equatable implements Comparable<CrdtClock> {
   final DateTime timestamp;
@@ -48,9 +49,28 @@ Map<String, CrdtClock> stampCrdtFields(
   DateTime timestamp,
   String deviceId,
 ) {
-  final clocks = <String, CrdtClock>{...existing};
-  for (final field in fields) {
-    clocks[field] = CrdtClock(timestamp: timestamp.toUtc(), deviceId: deviceId);
-  }
-  return Map.unmodifiable(clocks);
+  final stamped = stampCrdtClockValues(
+    existing: {
+      for (final entry in existing.entries)
+        entry.key: (
+          timestampMicrosUtc: entry.value.timestamp
+              .toUtc()
+              .microsecondsSinceEpoch,
+          deviceId: entry.value.deviceId,
+        ),
+    },
+    fields: fields,
+    timestampMicrosUtc: timestamp.toUtc().microsecondsSinceEpoch,
+    deviceId: deviceId,
+  );
+  return Map.unmodifiable({
+    for (final entry in stamped.entries)
+      entry.key: CrdtClock(
+        timestamp: DateTime.fromMicrosecondsSinceEpoch(
+          entry.value.timestampMicrosUtc,
+          isUtc: true,
+        ),
+        deviceId: entry.value.deviceId,
+      ),
+  });
 }

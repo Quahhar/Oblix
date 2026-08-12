@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 import '../../core/network/api_exceptions.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../theme/oblix_theme.dart';
+import '../widgets/paper.dart';
 
 /// Email/password sign-in with a register toggle. On success the repository
 /// flips [AuthState] and the AuthGate swaps to the app — this widget never
 /// navigates itself.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({
-    super.key,
-    this.auth,
-    this.startInRegisterMode = false,
-  });
+  const LoginScreen({super.key, this.auth, this.startInRegisterMode = false});
 
   /// Injectable for widget tests.
   final AuthRepository? auth;
@@ -57,19 +54,18 @@ class _LoginScreenState extends State<LoginScreen> {
           displayName: _displayName.text.trim(),
         );
       } else {
-        await _auth.login(
-          email: _email.text.trim(),
-          password: _password.text,
-        );
+        await _auth.login(email: _email.text.trim(), password: _password.text);
       }
       // AuthState is now signedIn; the AuthGate takes it from here.
     } on UnauthorizedException {
       setState(() => _error = 'Wrong email or password.');
     } on RateLimitedException catch (e) {
       final wait = e.retryAfter;
-      setState(() => _error = wait == null
-          ? 'Too many attempts. Please wait a moment and try again.'
-          : 'Too many attempts. Try again in ${wait.inSeconds}s.');
+      setState(
+        () => _error = wait == null
+            ? 'Too many attempts. Please wait a moment and try again.'
+            : 'Too many attempts. Try again in ${wait.inSeconds}s.',
+      );
     } on NetworkException {
       setState(() => _error = 'Cannot reach the server. Are you online?');
     } on ApiException catch (e) {
@@ -138,7 +134,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: c.ink,
                       ),
                       children: [
-                        TextSpan(text: '.', style: TextStyle(color: c.accent)),
+                        TextSpan(
+                          text: '.',
+                          style: TextStyle(color: c.accent),
+                        ),
                       ],
                     ),
                     textAlign: TextAlign.center,
@@ -204,31 +203,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                   const SizedBox(height: 24),
-                  Material(
+                  GlassPill(
+                    onTap: _busy ? null : _submit,
                     color: _busy ? c.accent.withValues(alpha: 0.5) : c.accent,
-                    shape: const StadiumBorder(),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: _busy ? null : _submit,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Center(
-                          child: _busy
-                              ? SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: c.onAccent),
-                                )
-                              : Text(
-                                  _registerMode ? 'Create account' : 'Sign in',
-                                  style: OblixType.ui(c,
-                                      size: 15.5,
-                                      weight: FontWeight.w600,
-                                      color: c.onAccent),
-                                ),
-                        ),
-                      ),
+                    borderColor: Colors.transparent,
+                    glassAlpha: 0.66,
+                    padding: const EdgeInsets.all(16),
+                    child: Center(
+                      child: _busy
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: c.onAccent,
+                              ),
+                            )
+                          : Text(
+                              _registerMode ? 'Create account' : 'Sign in',
+                              style: OblixType.ui(
+                                c,
+                                size: 15.5,
+                                weight: FontWeight.w600,
+                                color: c.onAccent,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -236,17 +235,19 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _busy
                         ? null
                         : () => setState(() {
-                              _registerMode = !_registerMode;
-                              _error = null;
-                            }),
+                            _registerMode = !_registerMode;
+                            _error = null;
+                          }),
                     child: Text(
                       _registerMode
                           ? 'Already have an account? Sign in'
                           : 'New here? Create an account',
-                      style: OblixType.ui(c,
-                          size: 14,
-                          weight: FontWeight.w500,
-                          color: c.inkSecondary),
+                      style: OblixType.ui(
+                        c,
+                        size: 14,
+                        weight: FontWeight.w500,
+                        color: c.inkSecondary,
+                      ),
                     ),
                   ),
                 ],

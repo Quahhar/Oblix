@@ -9,6 +9,7 @@ import '../datasources/local/outbox_dao.dart';
 import '../models/note.dart';
 import '../models/sync_payload.dart';
 import '../models/crdt_clock.dart';
+import '../../core/native/oblix_core.dart';
 
 typedef PendingCollaborativeContent = ({
   bool title,
@@ -156,8 +157,12 @@ class NoteRepository {
     try {
       await previousTurn;
       final last = revisions[noteId];
-      final snapshotIsStale =
-          last != null && last.epoch == epoch && revision <= last.revision;
+      final snapshotIsStale = collaborationSnapshotIsStale(
+        lastEpoch: last?.epoch,
+        lastRevision: last?.revision,
+        incomingEpoch: epoch,
+        incomingRevision: revision,
+      );
       if (snapshotIsStale && !retiresAcknowledgement) {
         return null;
       }
@@ -233,19 +238,34 @@ class NoteRepository {
     String? notebookId,
     List<String> tagNames = const [],
   }) async {
+    final plan = planNoteCreate(
+      title: title,
+      content: content,
+      contentType: contentType,
+      notebookId: notebookId,
+      tagNames: tagNames,
+    );
     final now = await _clock.nowUtc();
     final deviceId = await _meta.getOrCreateDeviceId();
     final note = Note(
       id: _uuid.v4(), // client-minted, stable across sync
       userId: await _meta.getUserId() ?? '',
-      notebookId: notebookId,
-      title: title,
-      content: content,
-      contentType: contentType,
+      notebookId: plan.value.notebookId,
+      title: plan.value.title,
+      content: plan.value.content,
+      contentType: plan.value.contentType,
+      isPinned: plan.value.isPinned,
+      isArchived: plan.value.isArchived,
+      isDeleted: plan.value.isDeleted,
       createdAt: now,
       updatedAt: now,
-      tagNames: tagNames,
-      fieldClocks: stampCrdtFields(const {}, Note.crdtFields, now, deviceId),
+      tagNames: plan.value.tagNames,
+      fieldClocks: stampCrdtFields(
+        const {},
+        plan.selection.changedFields.toSet(),
+        now,
+        deviceId,
+      ),
     );
     await _persist(note, 'create');
     return note;
@@ -262,15 +282,18 @@ class NoteRepository {
     List<String>? tagNames,
   }) async {
     final existing = await _require(noteId);
-    final changedNames = <String>{
-      if (title != null) 'title',
-      if (content != null) 'content',
-      if (contentType != null) 'content_type',
-      if (notebookId != null) 'notebook_id',
-      if (isPinned != null) 'is_pinned',
-      if (isArchived != null) 'is_archived',
-      if (tagNames != null) 'tags',
-    };
+    final plan = planNoteUpdate(
+      current: _noteMutationState(existing),
+      title: title,
+      content: content,
+      contentType: contentType,
+      notebookIdProvided: notebookId != null,
+      notebookId: notebookId,
+      isPinned: isPinned,
+      isArchived: isArchived,
+      tagNames: tagNames,
+    );
+    final changedNames = plan.selection.changedFields.toSet();
     if (changedNames.isEmpty) return existing;
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
@@ -281,13 +304,14 @@ class NoteRepository {
       deviceId,
     );
     final updated = existing.copyWith(
-      title: title,
-      content: content,
-      contentType: contentType,
-      notebookId: notebookId ?? existing.notebookId,
-      isPinned: isPinned,
-      isArchived: isArchived,
-      tagNames: tagNames,
+      title: plan.value.title,
+      content: plan.value.content,
+      contentType: plan.value.contentType,
+      notebookId: plan.value.notebookId,
+      isPinned: plan.value.isPinned,
+      isArchived: plan.value.isArchived,
+      isDeleted: plan.value.isDeleted,
+      tagNames: plan.value.tagNames,
       updatedAt: now,
       fieldClocks: clocks,
     );
@@ -321,16 +345,21 @@ class NoteRepository {
   /// (Separate from [updateNote] because there a null means "unchanged".)
   Future<Note> moveToNotebook(String noteId, String? notebookId) async {
     final existing = await _require(noteId);
+    final plan = planNoteUpdate(
+      current: _noteMutationState(existing),
+      notebookIdProvided: true,
+      notebookId: notebookId,
+    );
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
     final clocks = stampCrdtFields(
       existing.fieldClocks,
-      const {'notebook_id'},
+      plan.selection.changedFields.toSet(),
       now,
       deviceId,
     );
     final moved = existing.copyWith(
-      notebookId: notebookId,
+      notebookId: plan.value.notebookId,
       updatedAt: now,
       fieldClocks: clocks,
     );
@@ -354,17 +383,18 @@ class NoteRepository {
   Future<void> deleteNote(String noteId) async {
     final existing = await _local.getById(noteId);
     if (existing == null) return;
+    final plan = planNoteDelete(_noteMutationState(existing));
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
     final clocks = stampCrdtFields(
       existing.fieldClocks,
-      const {'is_deleted', 'is_archived'},
+      plan.selection.changedFields.toSet(),
       now,
       deviceId,
     );
     final deleted = existing.copyWith(
-      isDeleted: true,
-      isArchived: false,
+      isDeleted: plan.value.isDeleted,
+      isArchived: plan.value.isArchived,
       updatedAt: now,
       fieldClocks: clocks,
     );
@@ -384,16 +414,17 @@ class NoteRepository {
 
   Future<Note> restoreNote(String noteId) async {
     final existing = await _require(noteId);
+    final plan = planNoteRestore(_noteMutationState(existing));
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
     final clocks = stampCrdtFields(
       existing.fieldClocks,
-      const {'is_deleted'},
+      plan.selection.changedFields.toSet(),
       now,
       deviceId,
     );
     final restored = existing.copyWith(
-      isDeleted: false,
+      isDeleted: plan.value.isDeleted,
       updatedAt: now,
       fieldClocks: clocks,
     );
@@ -497,3 +528,14 @@ class NoteRepository {
     return persisted;
   }
 }
+
+NoteMutationStateValue _noteMutationState(Note note) => (
+  title: note.title,
+  content: note.content,
+  contentType: note.contentType,
+  notebookId: note.notebookId,
+  isPinned: note.isPinned,
+  isArchived: note.isArchived,
+  isDeleted: note.isDeleted,
+  tagNames: note.tagNames,
+);

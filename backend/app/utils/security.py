@@ -40,7 +40,12 @@ def create_access_token(user_id: str, session_id: str, expires_delta: Optional[t
 
 
 def refresh_token_expiry() -> datetime:
-    """Absolute expiry for a newly issued refresh token."""
+    """Expiry for a newly issued refresh token.
+
+    Rotation issues a *new* session each time, so this is re-applied on every
+    refresh — making the effective rule "expires after this long with no
+    activity" rather than a hard cap on session age.
+    """
     return datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
 

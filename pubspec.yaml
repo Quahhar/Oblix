@@ -54,6 +54,29 @@ dependencies:
   dart_quill_delta: ^10.8.3
   # PDF generation for note export
   pdf: ^3.11.3
+  # Camera/gallery capture for document scanning.
+  image_picker: ^1.2.3
+  # On-device OCR. Android/iOS only, so every use of it sits behind the
+  # conditional import in lib/domain/services/scanner/.
+  google_mlkit_text_recognition: ^0.16.0
+  # Guided document capture: edge detection, perspective correction, and
+  # multi-page. Play Services backed, so Android in practice — the scanner
+  # falls back to a plain camera shot wherever it is unavailable.
+  google_mlkit_document_scanner: ^0.5.0
+  # Typed Dart <-> Rust bridge for the platform-neutral client core.
+  flutter_rust_bridge: 2.13.0-beta.5
+  # Native Assets build hook: Cargo output is bundled by Flutter automatically.
+  flutter_rust_bridge_hooks: 2.13.0-beta.5
+  pdfrx: ^2.4.7
+  google_mlkit_digital_ink_recognition: ^0.15.0
+  # Task reminders. Scheduled with inexact alarms so no SCHEDULE_EXACT_ALARM
+  # declaration is needed for the Play Store; see TaskReminderService for the
+  # one-line switch if to-the-minute firing is ever wanted.
+  flutter_local_notifications: ^19.4.2
+  # Required by the notification plugin's zoned scheduling: an alarm is a wall
+  # clock instant, so it has to survive the user flying to another timezone.
+  timezone: ^0.10.1
+  flutter_timezone: ^4.1.1
 
 dev_dependencies:
   flutter_test:
@@ -68,7 +91,7 @@ dev_dependencies:
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
-
+ 
 # The following section is specific to Flutter packages.
 flutter:
 

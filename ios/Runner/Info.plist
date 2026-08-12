@@ -4,6 +4,10 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Oblix uses the camera to scan documents into notes. Pages are read on this device.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Oblix reads text from photos you choose so you can turn them into notes.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

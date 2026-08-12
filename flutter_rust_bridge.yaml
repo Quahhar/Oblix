@@ -1,0 +1,11 @@
+rust_input: crate::api
+rust_root: rust/
+dart_output: lib/core/native/generated
+# Dependencies are pinned in pubspec/Cargo.lock; avoid Flutter CLI probing in
+# codegen so generation is deterministic in CI and while another Flutter task
+# owns the tool startup lock.
+deps_check: false
+auto_upgrade_dependency: false
+dart_format: false
+dart_fix: false
+rust_format: false

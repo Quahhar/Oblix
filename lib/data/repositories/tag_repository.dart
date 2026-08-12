@@ -25,13 +25,13 @@ class TagRepository {
     MetaDao? meta,
     SyncClock? clock,
     Uuid? uuid,
-  })  : _appDb = appDb ?? AppDatabase.instance,
-        _local = local ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
-        _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
-        _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
-        _clock = clock ??
-            SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
-        _uuid = uuid ?? const Uuid();
+  }) : _appDb = appDb ?? AppDatabase.instance,
+       _local = local ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
+       _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
+       _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+       _clock =
+           clock ?? SyncClock(meta ?? MetaDao(appDb ?? AppDatabase.instance)),
+       _uuid = uuid ?? const Uuid();
 
   Stream<void> get onChanged => _appDb.onChanged;
 

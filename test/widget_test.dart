@@ -8,15 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// Screens read their palette through `OblixColors.of(context)`, so they must
 /// be pumped under the real theme (a bare MaterialApp has no extension).
 Widget _app(Widget home, {ThemeMode mode = ThemeMode.light}) => MaterialApp(
-      theme: OblixTheme.lightTheme,
-      darkTheme: OblixTheme.darkTheme,
-      themeMode: mode,
-      home: home,
-    );
+  theme: OblixTheme.lightTheme,
+  darkTheme: OblixTheme.darkTheme,
+  themeMode: mode,
+  home: home,
+);
 
 void main() {
-  testWidgets('login screen renders and toggles to register mode',
-      (tester) async {
+  testWidgets('login screen renders and toggles to register mode', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(const LoginScreen()));
 
     expect(find.text('Sign in'), findsOneWidget);
@@ -43,25 +44,58 @@ void main() {
     expect(find.text('Enter a password'), findsOneWidget);
   });
 
-  testWidgets('onboarding "Get started" lands on the register form',
-      (tester) async {
+  testWidgets('onboarding "Get started" lands on the register form', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app(const LoginScreen(startInRegisterMode: true)));
 
     expect(find.text('Create account'), findsOneWidget);
     expect(find.text('Name'), findsOneWidget);
   });
 
-  testWidgets('both themes carry the Oblix palette', (tester) async {
+  testWidgets('Classic light and dark themes carry the Oblix palette', (
+    tester,
+  ) async {
     for (final mode in [ThemeMode.light, ThemeMode.dark]) {
       late OblixColors colors;
-      await tester.pumpWidget(_app(
-        Builder(builder: (context) {
-          colors = OblixColors.of(context); // throws if the extension is absent
-          return const SizedBox();
-        }),
-        mode: mode,
-      ));
-      expect(colors.accent, const Color(0xFFB0562F));
+      await tester.pumpWidget(
+        _app(
+          Builder(
+            builder: (context) {
+              colors = OblixColors.of(
+                context,
+              ); // throws if the extension is absent
+              return const SizedBox();
+            },
+          ),
+          mode: mode,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        colors.accent,
+        mode == ThemeMode.light
+            ? const Color(0xFFE0AA12)
+            : const Color(0xFFFFD60A),
+      );
     }
+  });
+
+  testWidgets('Paper keeps the original warm palette', (tester) async {
+    late OblixColors colors;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OblixTheme.paperLightTheme,
+        home: Builder(
+          builder: (context) {
+            colors = OblixColors.of(context);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    expect(colors.bg, const Color(0xFFF0EEE6));
+    expect(colors.accent, const Color(0xFFB0562F));
   });
 }

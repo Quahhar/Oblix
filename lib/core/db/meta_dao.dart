@@ -28,11 +28,10 @@ class MetaDao {
   }
 
   Future<void> _set(DatabaseExecutor db, String key, String? value) async {
-    await db.insert(
-      'meta',
-      {'key': key, 'value': value},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('meta', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   // --- Sync cursor ---
@@ -105,8 +104,11 @@ class MetaDao {
       await txn.delete('tasks');
       await txn.delete('attachments');
       await txn.delete('outbox');
-      await txn.delete('meta', where: 'key IN (?, ?, ?, ?)',
-          whereArgs: [_kCursor, _kUserId, kProfileName, kProfileEmail]);
+      await txn.delete(
+        'meta',
+        where: 'key IN (?, ?, ?, ?)',
+        whereArgs: [_kCursor, _kUserId, kProfileName, kProfileEmail],
+      );
     });
     _appDb.clearCollaborativeWriteState();
   }

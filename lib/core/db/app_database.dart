@@ -51,7 +51,7 @@ class AppDatabase {
       AppDatabase._(dbFactory: dbFactory, path: path);
 
   static const _dbName = 'oblix.db';
-  static const _dbVersion = 6;
+  static const _dbVersion = 8;
 
   final DatabaseFactory? _dbFactory;
   final String? _pathOverride;
@@ -185,6 +185,7 @@ class AppDatabase {
     await _createMeta(db);
     await _createAttachments(db);
     await _createTasks(db);
+    await _createTextLayers(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -254,6 +255,77 @@ class AppDatabase {
         'is_deleted',
       ]);
     }
+    // v6 -> v7: recognized text kept beside the image it came from, so a scan
+    // stays searchable and can be re-read without the original photograph.
+    if (oldVersion < 7) {
+      await _createTextLayers(db);
+    }
+    // v7 -> v8: tasks gain priority, lists, labels, repetition, reminders and
+    // subtasks. Every existing task survives with these at their defaults, so
+    // nothing a user already wrote down is lost or reinterpreted.
+    //
+    // No field_clocks backfill: a register a row has never carried falls back
+    // to that row's updated_at, which is the right basis for a column that did
+    // not exist until this upgrade ran.
+    if (oldVersion < 8) {
+      if (oldVersion >= 5) {
+        for (final column in const [
+          'notebook_id TEXT',
+          'parent_id TEXT',
+          'due_has_time INTEGER NOT NULL DEFAULT 0',
+          'priority INTEGER NOT NULL DEFAULT 0',
+          "labels TEXT NOT NULL DEFAULT '[]'",
+          'recurrence TEXT',
+          'reminder_at TEXT',
+          'reminder_lead_minutes INTEGER',
+        ]) {
+          await db.execute('ALTER TABLE tasks ADD COLUMN $column');
+        }
+        await db.execute('CREATE INDEX idx_tasks_parent ON tasks(parent_id)');
+        await db.execute(
+          'CREATE INDEX idx_tasks_notebook ON tasks(notebook_id)',
+        );
+        await db.execute(
+          'CREATE INDEX idx_tasks_reminder ON tasks(reminder_at) '
+          'WHERE reminder_at IS NOT NULL',
+        );
+      }
+    }
+  }
+
+  /// What the recognizer saw, kept per note.
+  ///
+  /// Local-only and deliberately outside the CRDT tables: a text layer is
+  /// derived from an attachment this device already holds, so syncing it would
+  /// be paying to move something every device can regenerate. It carries no
+  /// field clocks and never reaches the outbox.
+  ///
+  /// [search_text] is the flattened prose, denormalized out of [encoded] so
+  /// FTS has a column to index — the encoded layer is JSON and matching
+  /// against it would hit coordinates as readily as words.
+  Future<void> _createTextLayers(Database db) async {
+    await db.execute('''
+      CREATE TABLE text_layers (
+        id            TEXT PRIMARY KEY,
+        note_id       TEXT NOT NULL,
+        attachment_id TEXT,
+        source        TEXT NOT NULL DEFAULT '',
+        fingerprint   TEXT NOT NULL DEFAULT '',
+        search_text   TEXT NOT NULL DEFAULT '',
+        encoded       TEXT NOT NULL,
+        created_at    TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_text_layers_note ON text_layers(note_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_text_layers_fingerprint ON text_layers(fingerprint)',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX idx_text_layers_attachment '
+      'ON text_layers(attachment_id) WHERE attachment_id IS NOT NULL',
+    );
   }
 
   Future<void> _backfillCrdtClocks(
@@ -403,27 +475,57 @@ class AppDatabase {
     );
   }
 
+  /// The local task mirror.
+  ///
+  /// `notebook_id` files a task under a notebook — notes and tasks share one
+  /// organizing tree rather than the app growing a second. `parent_id` is the
+  /// self-reference that makes subtasks possible. Neither carries a SQLite
+  /// foreign key: rows arrive from sync in whatever order the server sends
+  /// them, so a child can legitimately land before its parent, and the tree is
+  /// resolved in the engine instead.
+  ///
+  /// `due_has_time` distinguishes "Tuesday" from "Tuesday at 5pm". It is not
+  /// its own CRDT register — it travels with `due_date`.
   Future<void> _createTasks(Database db) async {
     await db.execute('''
       CREATE TABLE tasks (
-        id            TEXT PRIMARY KEY,
-        user_id       TEXT NOT NULL,
-        note_id       TEXT,
-        title         TEXT NOT NULL DEFAULT 'Untitled task',
-        description   TEXT NOT NULL DEFAULT '',
-        is_completed  INTEGER NOT NULL DEFAULT 0,
-        completed_at  TEXT,
-        due_date      TEXT,
-        sort_order    INTEGER NOT NULL DEFAULT 0,
-        is_deleted    INTEGER NOT NULL DEFAULT 0,
-        created_at    TEXT NOT NULL,
-        updated_at    TEXT NOT NULL,
-        field_clocks  TEXT NOT NULL DEFAULT '{}'
+        id                    TEXT PRIMARY KEY,
+        user_id               TEXT NOT NULL,
+        note_id               TEXT,
+        notebook_id           TEXT,
+        parent_id             TEXT,
+        title                 TEXT NOT NULL DEFAULT 'Untitled task',
+        description           TEXT NOT NULL DEFAULT '',
+        is_completed          INTEGER NOT NULL DEFAULT 0,
+        completed_at          TEXT,
+        due_date              TEXT,
+        due_has_time          INTEGER NOT NULL DEFAULT 0,
+        priority              INTEGER NOT NULL DEFAULT 0,
+        labels                TEXT NOT NULL DEFAULT '[]',
+        recurrence            TEXT,
+        reminder_at           TEXT,
+        reminder_lead_minutes INTEGER,
+        sort_order            INTEGER NOT NULL DEFAULT 0,
+        is_deleted            INTEGER NOT NULL DEFAULT 0,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL,
+        field_clocks          TEXT NOT NULL DEFAULT '{}'
       )
     ''');
+    await _createTaskIndexes(db);
+  }
+
+  Future<void> _createTaskIndexes(Database db) async {
     await db.execute('CREATE INDEX idx_tasks_due ON tasks(due_date)');
     await db.execute(
       'CREATE INDEX idx_tasks_state ON tasks(is_deleted, is_completed)',
+    );
+    await db.execute('CREATE INDEX idx_tasks_parent ON tasks(parent_id)');
+    await db.execute('CREATE INDEX idx_tasks_notebook ON tasks(notebook_id)');
+    // The reminder scheduler asks for every pending alarm on launch.
+    await db.execute(
+      'CREATE INDEX idx_tasks_reminder ON tasks(reminder_at) '
+      'WHERE reminder_at IS NOT NULL',
     );
   }
 
@@ -436,7 +538,7 @@ class AppDatabase {
       final existing = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes_fts'",
       );
-      if (existing.isNotEmpty) return true;
+      if (existing.isNotEmpty) return await _ensureTextLayerFts(db);
       await db.execute('''
         CREATE VIRTUAL TABLE notes_fts USING fts5(
           title, content,
@@ -465,9 +567,59 @@ class AppDatabase {
       ''');
       // Index whatever already exists (relevant on upgrade from v2).
       await db.execute("INSERT INTO notes_fts(notes_fts) VALUES ('rebuild')");
-      return true;
+      return await _ensureTextLayerFts(db);
     } catch (_) {
       // FTS5 unavailable on this SQLite build — search falls back to LIKE.
+      return false;
+    }
+  }
+
+  /// The index that makes the words inside a photograph findable.
+  ///
+  /// Created outside the version callbacks for the same reason `notes_fts` is:
+  /// FTS5 is a compile-time option, so its absence is a property of the SQLite
+  /// build rather than of the schema version, and it has to be re-checked on
+  /// every open. Returning false here degrades search to LIKE over note text —
+  /// scanned pages simply stop being searchable, rather than the app failing
+  /// to start.
+  Future<bool> _ensureTextLayerFts(Database db) async {
+    try {
+      final existing = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'text_layers_fts'",
+      );
+      if (existing.isNotEmpty) return true;
+      await db.execute('''
+        CREATE VIRTUAL TABLE text_layers_fts USING fts5(
+          search_text,
+          content='text_layers', content_rowid='rowid'
+        )
+      ''');
+      await db.execute('''
+        CREATE TRIGGER text_layers_fts_ai AFTER INSERT ON text_layers BEGIN
+          INSERT INTO text_layers_fts(rowid, search_text)
+          VALUES (new.rowid, new.search_text);
+        END
+      ''');
+      await db.execute('''
+        CREATE TRIGGER text_layers_fts_ad AFTER DELETE ON text_layers BEGIN
+          INSERT INTO text_layers_fts(text_layers_fts, rowid, search_text)
+          VALUES ('delete', old.rowid, old.search_text);
+        END
+      ''');
+      await db.execute('''
+        CREATE TRIGGER text_layers_fts_au AFTER UPDATE ON text_layers BEGIN
+          INSERT INTO text_layers_fts(text_layers_fts, rowid, search_text)
+          VALUES ('delete', old.rowid, old.search_text);
+          INSERT INTO text_layers_fts(rowid, search_text)
+          VALUES (new.rowid, new.search_text);
+        END
+      ''');
+      await db.execute(
+        "INSERT INTO text_layers_fts(text_layers_fts) VALUES ('rebuild')",
+      );
+      return true;
+    } catch (_) {
       return false;
     }
   }

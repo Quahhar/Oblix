@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup rules for Android 11 and below (android:fullBackupContent).
+
+     The notes database is worth backing up. The auth tokens are not: they live
+     in EncryptedSharedPreferences, whose encryption key sits in the Android
+     Keystore and cannot leave the device. Backing up the encrypted file alone
+     restores something no key can open, so flutter_secure_storage's resetOnError
+     wipes it — losing the session anyway, but only after a confusing detour.
+     Excluding it makes the outcome honest: after a restore you sign in once. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml"/>
+</full-backup-content>

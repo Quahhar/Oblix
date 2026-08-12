@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SecureStorage {
@@ -14,36 +16,102 @@ class SecureStorage {
     resetOnError: true,
   );
 
-  static const _storage = FlutterSecureStorage(aOptions: _android);
-  static const _accessTokenKey = 'access_token';
-  static const _refreshTokenKey = 'refresh_token';
+  // Default iOS/macOS accessibility is "unlocked" (kSecAttrAccessibleWhenUnlocked):
+  // the tokens become unreadable the moment the screen locks. Anything that
+  // runs while locked — a sync the OS resumes us for, a notification action —
+  // then reads null and can't tell "no session" from "can't look right now".
+  // "after first unlock" keeps them readable from the first unlock after boot
+  // onward, which is the normal setting for an app that syncs in the
+  // background. `_this_device` keeps them out of iCloud/iTunes backups: a
+  // restore onto a new phone asks for a fresh sign-in, which is the intended
+  // trade for not shipping bearer tokens into a backup.
+  static const _ios = IOSOptions(
+    accessibility: KeychainAccessibility.first_unlock_this_device,
+  );
+  static const _macOs = MacOsOptions(
+    accessibility: KeychainAccessibility.first_unlock_this_device,
+  );
+
+  static const _storage = FlutterSecureStorage(
+    aOptions: _android,
+    iOptions: _ios,
+    mOptions: _macOs,
+  );
+
+  /// Both tokens live in ONE entry so the pair is written atomically. They used
+  /// to be two writes, which could be interrupted (process killed on
+  /// backgrounding, or the second write failing) and leave the device holding a
+  /// refresh token the server had already rotated away. Replaying that token
+  /// after the server's 60s reuse grace window looks exactly like token theft,
+  /// so the backend revokes every session for the account — an unrecoverable
+  /// logout on all devices. One key, one write, no half-updated pair.
+  static const _tokensKey = 'auth_tokens';
+
+  // Pre-atomic keys. Still read (so an existing install stays signed in across
+  // the upgrade) and still deleted, but never written again.
+  static const _legacyAccessTokenKey = 'access_token';
+  static const _legacyRefreshTokenKey = 'refresh_token';
 
   // --- Tokens ---
 
-  static Future<String?> getAccessToken() async {
-    return _storage.read(key: _accessTokenKey);
-  }
+  static Future<String?> getAccessToken() async =>
+      (await _readTokens())?.accessToken;
 
-  static Future<String?> getRefreshToken() async {
-    return _storage.read(key: _refreshTokenKey);
-  }
+  static Future<String?> getRefreshToken() async =>
+      (await _readTokens())?.refreshToken;
 
   static Future<void> saveTokens({
     required String accessToken,
     required String refreshToken,
   }) async {
-    await _storage.write(key: _accessTokenKey, value: accessToken);
-    await _storage.write(key: _refreshTokenKey, value: refreshToken);
+    await _storage.write(
+      key: _tokensKey,
+      value: jsonEncode({'access': accessToken, 'refresh': refreshToken}),
+    );
+    await _deleteIfPresent(_legacyAccessTokenKey);
+    await _deleteIfPresent(_legacyRefreshTokenKey);
   }
 
   static Future<void> clearTokens() async {
-    // Guard with containsKey: EncryptedSharedPreferences on some Android
-    // versions hangs indefinitely when deleting a key that doesn't exist.
-    if (await _storage.containsKey(key: _accessTokenKey)) {
-      await _storage.delete(key: _accessTokenKey);
+    await _deleteIfPresent(_tokensKey);
+    await _deleteIfPresent(_legacyAccessTokenKey);
+    await _deleteIfPresent(_legacyRefreshTokenKey);
+  }
+
+  static Future<_TokenPair?> _readTokens() async {
+    final raw = await _storage.read(key: _tokensKey);
+    if (raw != null) {
+      try {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        final access = map['access'];
+        final refresh = map['refresh'];
+        if (access is String && refresh is String) {
+          return _TokenPair(access, refresh);
+        }
+      } on FormatException {
+        // Corrupt entry: fall through to the legacy keys, then to null, which
+        // routes to login rather than throwing on every request.
+      }
     }
-    if (await _storage.containsKey(key: _refreshTokenKey)) {
-      await _storage.delete(key: _refreshTokenKey);
+    final access = await _storage.read(key: _legacyAccessTokenKey);
+    final refresh = await _storage.read(key: _legacyRefreshTokenKey);
+    // An access token with no refresh token is a session that dies in <30
+    // minutes with no way back; treat it as no session at all.
+    if (access != null && refresh != null) return _TokenPair(access, refresh);
+    return null;
+  }
+
+  /// Guard with containsKey: EncryptedSharedPreferences on some Android
+  /// versions hangs indefinitely when deleting a key that doesn't exist.
+  static Future<void> _deleteIfPresent(String key) async {
+    if (await _storage.containsKey(key: key)) {
+      await _storage.delete(key: key);
     }
   }
+}
+
+class _TokenPair {
+  final String accessToken;
+  final String refreshToken;
+  const _TokenPair(this.accessToken, this.refreshToken);
 }

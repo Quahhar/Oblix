@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/native/oblix_core.dart';
 import '../models/note.dart';
 
 /// Hand-built EPUB 3 export (no dependency beyond `archive`). The layout:
@@ -25,7 +26,17 @@ class EpubExporter {
     final date = exportedAt.toIso8601String().split('T').first;
     // dcterms:modified wants whole seconds, no fractional part.
     final modified = '${exportedAt.toIso8601String().split('.').first}Z';
-    final bookId = 'urn:uuid:${uuid.v4()}';
+    final generatedUuid = uuid.v4();
+    if (isRustCoreReady) {
+      return exportEpubCore(
+        notes: [
+          for (final note in notes) (title: note.title, content: note.content),
+        ],
+        exportedAtMicrosUtc: exportedAt.microsecondsSinceEpoch,
+        bookUuid: generatedUuid,
+      );
+    }
+    final bookId = 'urn:uuid:$generatedUuid';
     final title = 'Oblix export $date';
 
     final archive = Archive();

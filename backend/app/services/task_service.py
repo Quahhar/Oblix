@@ -8,9 +8,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.models.note import Note
+from app.models.notebook import Notebook
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskUpdate
 from app.services.task_crdt import initial_field_clocks, serialize_clock
+
+
+# A chain deeper than this costs a query per level to validate and is far past
+# anything a person builds on purpose.
+_MAX_SUBTASK_DEPTH = 32
+
+
+def _clean_labels(value: Optional[list[str]]) -> list[str]:
+    """Trim, bound and de-duplicate label names, preserving display case."""
+    if not value:
+        return []
+    seen: set[str] = set()
+    labels: list[str] = []
+    for entry in value:
+        if not isinstance(entry, str):
+            continue
+        name = entry.strip()[:64]
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        labels.append(name)
+    return labels
 
 
 def _uuid_or_404(value, detail: str) -> uuid.UUID:
@@ -83,13 +109,24 @@ class TaskService:
 
     async def create_task(self, db: AsyncSession, user: User, data: TaskCreate) -> Task:
         now = datetime.now(timezone.utc)
+        task_id = uuid.uuid4()
+        due_date = _aware(data.due_date)
         task = Task(
-            id=uuid.uuid4(),
+            id=task_id,
             user_id=user.id,
             note_id=await self._owned_note_uuid(db, user, data.note_id),
+            notebook_id=await self._owned_notebook_uuid(db, user, data.notebook_id),
+            parent_id=await self._owned_parent_uuid(db, user, task_id, data.parent_id),
             title=data.title,
             description=data.description,
-            due_date=_aware(data.due_date),
+            due_date=due_date,
+            # A time of day is only meaningful with a date to attach it to.
+            due_has_time=bool(data.due_has_time) and due_date is not None,
+            priority=data.priority,
+            labels=_clean_labels(data.labels),
+            recurrence=data.recurrence or None,
+            reminder_at=_aware(data.reminder_at),
+            reminder_lead_minutes=data.reminder_lead_minutes,
             sort_order=data.sort_order,
             edited_at=now,
             field_clocks=initial_field_clocks(now, "server"),
@@ -119,7 +156,42 @@ class TaskService:
             changed_fields.add("note_id")
         if "due_date" in data.model_fields_set:
             task.due_date = _aware(data.due_date)
+            # due_has_time rides inside the due_date register, so setting a
+            # date without saying anything about time clears the flag rather
+            # than leaving a stale "5pm" attached to an all-day task.
+            requested_time = (
+                data.due_has_time
+                if "due_has_time" in data.model_fields_set
+                else task.due_has_time
+            )
+            task.due_has_time = bool(requested_time) and task.due_date is not None
             changed_fields.add("due_date")
+        elif "due_has_time" in data.model_fields_set:
+            task.due_has_time = bool(data.due_has_time) and task.due_date is not None
+            changed_fields.add("due_date")
+        if "notebook_id" in data.model_fields_set:
+            task.notebook_id = await self._owned_notebook_uuid(db, user, data.notebook_id)
+            changed_fields.add("notebook_id")
+        if "parent_id" in data.model_fields_set:
+            task.parent_id = await self._owned_parent_uuid(db, user, task.id, data.parent_id)
+            changed_fields.add("parent_id")
+        if data.priority is not None and data.priority != task.priority:
+            task.priority = data.priority
+            changed_fields.add("priority")
+        if data.labels is not None:
+            cleaned = _clean_labels(data.labels)
+            if cleaned != (task.labels or []):
+                task.labels = cleaned
+                changed_fields.add("labels")
+        if "recurrence" in data.model_fields_set:
+            task.recurrence = data.recurrence or None
+            changed_fields.add("recurrence")
+        if "reminder_at" in data.model_fields_set:
+            task.reminder_at = _aware(data.reminder_at)
+            changed_fields.add("reminder_at")
+        if "reminder_lead_minutes" in data.model_fields_set:
+            task.reminder_lead_minutes = data.reminder_lead_minutes
+            changed_fields.add("reminder_lead_minutes")
         if data.is_completed is not None and data.is_completed != task.is_completed:
             task.is_completed = data.is_completed
             task.completed_at = datetime.now(timezone.utc) if data.is_completed else None
@@ -185,6 +257,71 @@ class TaskService:
         if ok is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
         return n_uuid
+
+    @staticmethod
+    async def _owned_notebook_uuid(db: AsyncSession, user: User, notebook_id_str) -> Optional[uuid.UUID]:
+        """The notebook a task is filed under. Empty/None → unfiled.
+
+        Tasks reuse the notebook tree rather than introducing a second
+        hierarchy, so the same ownership rules apply as for notes.
+        """
+        if not notebook_id_str:
+            return None
+        nb_uuid = _uuid_or_404(notebook_id_str, "Notebook not found")
+        ok = (await db.execute(
+            select(Notebook.id).where(
+                Notebook.id == nb_uuid,
+                Notebook.user_id == user.id,
+                Notebook.is_deleted == False,  # noqa: E712
+            )
+        )).scalar_one_or_none()
+        if ok is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
+        return nb_uuid
+
+    @staticmethod
+    async def _owned_parent_uuid(
+        db: AsyncSession, user: User, task_id: uuid.UUID, parent_id_str
+    ) -> Optional[uuid.UUID]:
+        """The parent of a subtask. Empty/None → top level.
+
+        A task cannot be its own parent, nor descend from itself. The client
+        walks this tree to indent rows and roll subtask progress up, so a cycle
+        would hang the UI rather than merely look wrong.
+        """
+        if not parent_id_str:
+            return None
+        parent_uuid = _uuid_or_404(parent_id_str, "Parent task not found")
+        if parent_uuid == task_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A task cannot be its own parent",
+            )
+
+        cursor: Optional[uuid.UUID] = parent_uuid
+        for _ in range(_MAX_SUBTASK_DEPTH):
+            if cursor is None:
+                return parent_uuid
+            if cursor == task_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="That would make the task a descendant of itself",
+                )
+            row = (await db.execute(
+                select(Task.parent_id).where(
+                    Task.id == cursor,
+                    Task.user_id == user.id,
+                    Task.is_deleted == False,  # noqa: E712
+                )
+            )).one_or_none()
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Parent task not found"
+                )
+            cursor = row[0]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Subtask nesting is too deep"
+        )
 
 
 task_service = TaskService()

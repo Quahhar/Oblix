@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_quill_delta/dart_quill_delta.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/config/api_config.dart';
 import '../../core/network/api_client.dart';
 import '../../core/storage/secure_storage.dart';
+import '../../core/native/oblix_core.dart';
 
 enum CollaborationConnection { connecting, live, offline, accessEnded, closed }
 
@@ -215,17 +215,14 @@ class CollaborationSession {
         cancelOnError: true,
       );
       _pingTimer?.cancel();
-      _pingTimer = Timer.periodic(
-        const Duration(seconds: 15),
-        (_) {
-          if (DateTime.now().difference(_lastServerMessageAt) >
-              const Duration(seconds: 45)) {
-            _goOffline(generation);
-            return;
-          }
-          _send({'type': 'ping'});
-        },
-      );
+      _pingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (DateTime.now().difference(_lastServerMessageAt) >
+            const Duration(seconds: 45)) {
+          _goOffline(generation);
+          return;
+        }
+        _send({'type': 'ping'});
+      });
     } catch (_) {
       _goOffline(generation);
     } finally {
@@ -250,20 +247,10 @@ class CollaborationSession {
   }
 
   bool _tokenNeedsRefresh(String token) {
-    try {
-      final pieces = token.split('.');
-      final payload =
-          jsonDecode(
-                utf8.decode(base64Url.decode(base64Url.normalize(pieces[1]))),
-              )
-              as Map<String, dynamic>;
-      final expires = payload['exp'] as int?;
-      if (expires == null) return true;
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      return expires <= now + 60;
-    } catch (_) {
-      return true;
-    }
+    return collaborationTokenNeedsRefresh(
+      token,
+      nowSeconds: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
   }
 
   /// Records a controller edit even while the socket is connecting, so the
@@ -322,9 +309,7 @@ class CollaborationSession {
     }
     if (field == null) return;
 
-    final oldDocument = Delta()..insert(before);
-    final newDocument = Delta()..insert(after);
-    final change = oldDocument.diff(newDocument);
+    final change = plainTextDiff(before, after);
     if (change.isEmpty) return;
     final operationId = const Uuid().v4();
     final payload = <String, dynamic>{
@@ -333,7 +318,7 @@ class CollaborationSession {
       'base_revision': _revision,
       'base_epoch': _epoch,
       'field': field,
-      'delta': change.toJson(),
+      'delta': change,
     };
     _pending = _PendingEdit(operationId, field, before, after, payload);
     _pendingCompletion = Completer<void>();
@@ -469,8 +454,9 @@ class CollaborationSession {
     final isOwn = operationId != null && operationId == _pending?.operationId;
     final pending = _pending;
     final kind = message['type']?.toString();
-    final acknowledgedField =
-        (kind == 'edit' || kind == 'ack') && isOwn ? pending?.field : null;
+    final acknowledgedField = (kind == 'edit' || kind == 'ack') && isOwn
+        ? pending?.field
+        : null;
     String? resyncPendingOperationId;
     if (kind == 'resync') {
       final requestId = message['request_id']?.toString();
@@ -521,12 +507,12 @@ class CollaborationSession {
     var content = message['content'] as String? ?? _serverContent;
     var editorTitle = currentTitle;
     var editorContent = currentContent;
-    Delta? serverDelta;
+    List<dynamic>? serverDelta;
     String? editedField;
     if (kind == 'edit') {
       final delta = message['delta'] as List<dynamic>? ?? const [];
       final field = message['field']?.toString();
-      serverDelta = Delta.fromJson(delta);
+      serverDelta = delta;
       editedField = field;
       if (field == 'title') {
         title = _applyPlainTextDelta(title, delta);
@@ -568,11 +554,7 @@ class CollaborationSession {
       }
     } else if (kind == 'edit' && editedField == 'content') {
       if (isOwn && pending?.field == 'content') {
-        editorContent = _rebaseLocal(
-          pending!.value,
-          content,
-          currentContent,
-        );
+        editorContent = _rebaseLocal(pending!.value, content, currentContent);
       } else {
         editorContent = _rebaseLocal(
           oldServerContent,
@@ -663,24 +645,18 @@ class CollaborationSession {
     _flush(allowClosing: _closing);
   }
 
-  Delta _plainTextDiff(String before, String after) {
-    final oldDocument = Delta()..insert(before);
-    final newDocument = Delta()..insert(after);
-    return oldDocument.diff(newDocument);
-  }
-
   String _rebaseLocal(
     String oldServer,
     String newServer,
     String local, {
-    Delta? serverChange,
+    List<dynamic>? serverChange,
   }) {
-    if (local == oldServer) return newServer;
-    final localChange = _plainTextDiff(oldServer, local);
-    final canonicalChange =
-        serverChange ?? _plainTextDiff(oldServer, newServer);
-    final transformedLocal = canonicalChange.transform(localChange, true);
-    return _applyPlainTextDelta(newServer, transformedLocal.toJson());
+    return rebasePlainText(
+      oldServer: oldServer,
+      newServer: newServer,
+      local: local,
+      serverChange: serverChange,
+    );
   }
 
   void _setClosingValues(String title, String content) {
@@ -712,24 +688,7 @@ class CollaborationSession {
   }
 
   String _applyPlainTextDelta(String text, List<dynamic> delta) {
-    var cursor = 0;
-    final output = StringBuffer();
-    for (final raw in delta) {
-      final operation = Map<String, dynamic>.from(raw as Map);
-      if (operation.containsKey('retain')) {
-        final count = operation['retain'] as int;
-        output.write(text.substring(cursor, cursor + count));
-        cursor += count;
-      } else if (operation.containsKey('delete')) {
-        cursor += operation['delete'] as int;
-      } else if (operation.containsKey('insert')) {
-        output.write(operation['insert'] as String);
-      } else {
-        throw const FormatException('Unsupported collaboration delta');
-      }
-    }
-    output.write(text.substring(cursor));
-    return output.toString();
+    return applyPlainTextDelta(text, delta);
   }
 
   void _receivePresence(Map<String, dynamic> message) {
@@ -801,9 +760,7 @@ class CollaborationSession {
       _discardOnNextResync = _pending?.field;
       _clearPending();
     }
-    lastError =
-        message['message']?.toString() ??
-        _friendlyError(code);
+    lastError = message['message']?.toString() ?? _friendlyError(code);
     if (code == 'note_too_large' && !_hasSnapshot) {
       _reconnectAllowed = false;
     }
@@ -849,10 +806,7 @@ class CollaborationSession {
     _send({'type': 'resync', 'request_id': requestId});
     if (!_awaitingResync || requestId != _resyncRequestId) return;
     _resyncTimer?.cancel();
-    _resyncTimer = Timer(
-      _resyncResponseTimeout,
-      () => _sendResyncRequest(),
-    );
+    _resyncTimer = Timer(_resyncResponseTimeout, () => _sendResyncRequest());
   }
 
   void _finishResyncRequest({bool resolved = false}) {
@@ -948,8 +902,7 @@ class CollaborationSession {
     if (!_closing) onStateChanged();
   }
 
-  Future<CollaborationCloseResult> close() =>
-      _closeFuture ??= _performClose();
+  Future<CollaborationCloseResult> close() => _closeFuture ??= _performClose();
 
   Future<CollaborationCloseResult> _performClose() async {
     _editDebounce?.cancel();
@@ -997,9 +950,7 @@ class CollaborationSession {
       canonicalContent: _serverContent,
       epoch: _epoch,
       revision: _revision,
-      acknowledgedFields: Set<String>.unmodifiable(
-        _closingAcknowledgedFields,
-      ),
+      acknowledgedFields: Set<String>.unmodifiable(_closingAcknowledgedFields),
       canonicalConfirmed: _hasSnapshot,
     );
 

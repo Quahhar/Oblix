@@ -31,7 +31,12 @@ class Settings(BaseSettings):
 
     # JWT
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    # Inactivity window, not an absolute session lifetime: every refresh rotates
+    # into a new session carrying a full expiry again (see
+    # AuthService.refresh_token), so a user who opens the app at least once
+    # every REFRESH_TOKEN_EXPIRE_DAYS days is never asked to sign in again.
+    # Going quiet for longer than that is what ends the session.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 90
     ALGORITHM: str = "HS256"
     # Grace window for refresh-token rotation: if a just-rotated token is
     # replayed within this many seconds AND its successor is still unused, treat

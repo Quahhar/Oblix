@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
+import '../../core/native/oblix_core.dart';
 import 'import_models.dart';
 
 /// Parses an EPUB file into an [ImportBundle] — one note per spine chapter.
@@ -15,6 +16,14 @@ import 'import_models.dart';
 class EpubImporter {
   /// Parse raw EPUB bytes. Throws [FormatException] on an unrecognised file.
   static ImportBundle parse(List<int> bytes) {
+    if (isRustCoreReady) {
+      return ImportBundle.fromCore(
+        importEpubCore(
+          bytes: bytes,
+          nowMicrosUtc: DateTime.now().toUtc().microsecondsSinceEpoch,
+        ),
+      );
+    }
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes);

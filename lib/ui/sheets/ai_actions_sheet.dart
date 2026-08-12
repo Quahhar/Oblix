@@ -64,14 +64,19 @@ class _AiActionsSheetState extends State<_AiActionsSheet> {
       if (mounted) setState(() => _error = e.message);
     } on ApiException catch (e) {
       if (mounted) {
-        setState(() => _error = e.message.isEmpty
-            ? 'Could not summarize this note.'
-            : e.message);
+        setState(
+          () => _error = e.message.isEmpty
+              ? 'Could not summarize this note.'
+              : e.message,
+        );
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Could not reach the server. Try again once '
-            'you are back online.');
+        setState(
+          () => _error =
+              'Could not reach the server. Try again once '
+              'you are back online.',
+        );
       }
     } finally {
       if (mounted) setState(() => _running = false);
@@ -168,7 +173,8 @@ class _AiActionsSheetState extends State<_AiActionsSheet> {
                       context,
                       icon: Icons.translate,
                       title: 'Translate',
-                      subtitle: 'Rewrite a note in another language, '
+                      subtitle:
+                          'Rewrite a note in another language, '
                           'keeping the original alongside.',
                     ),
                   ),
@@ -194,8 +200,10 @@ class _AiActionsSheetState extends State<_AiActionsSheet> {
                       children: [
                         Icon(Icons.auto_awesome, size: 11, color: c.accent),
                         const SizedBox(width: 6),
-                        Text('SUMMARY',
-                            style: OblixType.eyebrow(c, color: c.accent)),
+                        Text(
+                          'SUMMARY',
+                          style: OblixType.eyebrow(c, color: c.accent),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -208,22 +216,22 @@ class _AiActionsSheetState extends State<_AiActionsSheet> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Material(
+                      child: GlassPill(
                         color: c.accent,
-                        shape: const StadiumBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () => Navigator.pop(context, _summary),
-                          child: Padding(
-                            padding: const EdgeInsets.all(13),
-                            child: Center(
-                              child: Text(
-                                'Insert at top',
-                                style: OblixType.ui(c,
-                                    size: 14.5,
-                                    weight: FontWeight.w600,
-                                    color: c.onAccent),
-                              ),
+                        borderColor: Colors.transparent,
+                        glassAlpha: 0.66,
+                        // On a sheet — see the note in capture_sheet.dart.
+                        blur: false,
+                        onTap: () => Navigator.pop(context, _summary),
+                        padding: const EdgeInsets.all(13),
+                        child: Center(
+                          child: Text(
+                            'Insert at top',
+                            style: OblixType.ui(
+                              c,
+                              size: 14.5,
+                              weight: FontWeight.w600,
+                              color: c.onAccent,
                             ),
                           ),
                         ),
@@ -283,11 +291,14 @@ class _ActionRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: OblixType.ui(c,
-                            size: 15, weight: FontWeight.w600)),
-                    Text(subtitle,
-                        style: OblixType.ui(c, size: 12, color: c.inkMuted)),
+                    Text(
+                      title,
+                      style: OblixType.ui(c, size: 15, weight: FontWeight.w600),
+                    ),
+                    Text(
+                      subtitle,
+                      style: OblixType.ui(c, size: 12, color: c.inkMuted),
+                    ),
                   ],
                 ),
               ),
@@ -296,7 +307,9 @@ class _ActionRow extends StatelessWidget {
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: c.accent),
+                    strokeWidth: 2,
+                    color: c.accent,
+                  ),
                 ),
             ],
           ),

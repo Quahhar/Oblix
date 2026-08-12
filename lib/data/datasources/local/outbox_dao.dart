@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
+import '../../../core/native/oblix_core.dart';
 import '../../models/sync_payload.dart';
 
 /// A queued local mutation plus its stable sequence number (the ack cursor)
@@ -166,24 +167,15 @@ class OutboxDao {
       whereArgs: [entityType, entityId],
       orderBy: 'seq ASC',
     );
-    final fields = <String>{};
-    final updateSeqsByField = <String, Set<int>>{};
-    for (final row in rows) {
-      try {
-        final data = jsonDecode(row['data'] as String) as Map;
-        final rowFields = data.keys.map((key) => key.toString());
-        fields.addAll(rowFields);
-        if (row['action'] == 'update') {
-          final seq = row['seq'] as int;
-          for (final field in rowFields) {
-            updateSeqsByField.putIfAbsent(field, () => <int>{}).add(seq);
-          }
-        }
-      } catch (_) {
-        fields.add('*');
-      }
-    }
-    return PendingOutboxData(fields, updateSeqsByField);
+    final summary = summarizePendingOutbox([
+      for (final row in rows)
+        (
+          seq: row['seq'] as int,
+          action: row['action'] as String,
+          dataJson: row['data'] as String,
+        ),
+    ]);
+    return PendingOutboxData(summary.fields, summary.updateSeqsByField);
   }
 
   /// Remove one server-acknowledged document field from pre-session update
@@ -213,33 +205,18 @@ class OutboxDao {
       );
       for (final row in rows) {
         if (row['action'] != 'update') continue;
-        Map<String, dynamic> data;
-        try {
-          data = (jsonDecode(row['data'] as String) as Map)
-              .cast<String, dynamic>();
-        } catch (_) {
-          // Never mutate a malformed durable fallback automatically.
-          continue;
-        }
-        if (!data.containsKey(field)) continue;
-        data.remove(field);
-        final rawClocks = data['field_clocks'];
-        if (rawClocks is Map) {
-          final clocks = rawClocks.cast<String, dynamic>();
-          clocks.remove(field);
-          if (clocks.isEmpty) {
-            data.remove('field_clocks');
-          } else {
-            data['field_clocks'] = clocks;
-          }
-        }
+        final retirement = retireAcknowledgedOutboxField(
+          dataJson: row['data'] as String,
+          field: field,
+        );
+        if (!retirement.changed) continue;
         final seq = row['seq'] as int;
-        if (data.isEmpty) {
+        if (retirement.deleteRow) {
           await db.delete('outbox', where: 'seq = ?', whereArgs: [seq]);
         } else {
           await db.update(
             'outbox',
-            {'data': jsonEncode(data)},
+            {'data': retirement.dataJson},
             where: 'seq = ?',
             whereArgs: [seq],
           );

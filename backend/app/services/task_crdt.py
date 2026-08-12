@@ -13,10 +13,19 @@ TASK_CRDT_FIELDS = (
     "title",
     "description",
     "note_id",
+    # due_has_time is applied with due_date, not stamped separately: an all-day
+    # task and a 5pm task differ in one fact, so they must converge as one.
     "due_date",
     "sort_order",
     "is_completed",
     "is_deleted",
+    "priority",
+    "labels",
+    "recurrence",
+    "reminder_at",
+    "reminder_lead_minutes",
+    "notebook_id",
+    "parent_id",
 )
 NOTE_CRDT_FIELDS = (
     "title",

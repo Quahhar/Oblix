@@ -7,16 +7,15 @@ import '../../data/datasources/remote/collaboration_remote_datasource.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
 import '../../data/repositories/tag_repository.dart';
-import '../sheets/note_actions_sheet.dart';
 import '../sheets/manage_access_sheet.dart';
 import '../theme/oblix_theme.dart';
-import '../util/formats.dart';
+import '../widgets/note_timeline.dart';
 import '../widgets/paper.dart';
 import 'note_editor_screen.dart';
 
-/// One notebook: eyebrow, big serif name, note count, and its notes in a
-/// two-column card grid. "+" creates a note inside this notebook; "⋯" offers
-/// rename/delete.
+/// One notebook: eyebrow, big serif name, note count, and its notes in the same
+/// day-grouped list the Notes page uses. "+" creates a note inside this
+/// notebook; "⋯" offers rename/delete.
 class NotebookDetailScreen extends StatefulWidget {
   final Notebook notebook;
   const NotebookDetailScreen({super.key, required this.notebook});
@@ -190,7 +189,17 @@ class _NotebookDetailScreenState extends State<NotebookDetailScreen> {
                         style: OblixType.ui(c, size: 14, color: c.inkMuted),
                       ),
                     )
-                  : NoteCardGrid(notes: _items),
+                  : NoteTimelineList(
+                      notes: _items,
+                      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+                      horizontalMargin: 22,
+                      onOpen: (note) => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => NoteEditorScreen(noteId: note.id),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -199,7 +208,7 @@ class _NotebookDetailScreenState extends State<NotebookDetailScreen> {
   }
 }
 
-/// Notes filtered by one tag, in the same card grid.
+/// Notes filtered by one tag, in the same day-grouped list.
 class TagNotesScreen extends StatefulWidget {
   final Tag tag;
   const TagNotesScreen({super.key, required this.tag});
@@ -311,95 +320,20 @@ class _TagNotesScreenState extends State<TagNotesScreen> {
                         style: OblixType.ui(c, size: 14, color: c.inkMuted),
                       ),
                     )
-                  : NoteCardGrid(notes: _items),
+                  : NoteTimelineList(
+                      notes: _items,
+                      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+                      horizontalMargin: 22,
+                      onOpen: (note) => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => NoteEditorScreen(noteId: note.id),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Two-column grid of note cards (notebook detail, tag view).
-class NoteCardGrid extends StatelessWidget {
-  final List<Note> notes;
-  const NoteCardGrid({super.key, required this.notes});
-
-  @override
-  Widget build(BuildContext context) {
-    final left = <Note>[];
-    final right = <Note>[];
-    for (var i = 0; i < notes.length; i++) {
-      (i.isEven ? left : right).add(notes[i]);
-    }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: _column(context, left)),
-          const SizedBox(width: 12),
-          Expanded(child: _column(context, right)),
-        ],
-      ),
-    );
-  }
-
-  Widget _column(BuildContext context, List<Note> notes) {
-    return Column(
-      children: [
-        for (final note in notes)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _NoteCard(note: note),
-          ),
-      ],
-    );
-  }
-}
-
-class _NoteCard extends StatelessWidget {
-  final Note note;
-  const _NoteCard({required this.note});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
-    final snippet = note.content.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return PaperCard(
-      padding: const EdgeInsets.all(14),
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => NoteEditorScreen(noteId: note.id)),
-      ),
-      onLongPress: () => showNoteActionsSheet(context, note),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            note.title.isEmpty ? 'Untitled' : note.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: OblixType.serif,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              height: 1.25,
-              color: c.ink,
-            ),
-          ),
-          if (snippet.isNotEmpty) ...[
-            const SizedBox(height: 5),
-            Text(
-              snippet,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: OblixType.snippet(c),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Text(Formats.relative(note.updatedAt), style: OblixType.meta(c)),
-        ],
       ),
     );
   }

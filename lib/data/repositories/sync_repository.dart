@@ -14,8 +14,7 @@ class SyncRepository {
   /// Parse server `changes` entries of type `notebook` into Notebook models.
   static List<Notebook> parseNotebookChanges(
     List<Map<String, dynamic>> changes,
-  ) =>
-      _parse(changes, 'notebook', Notebook.fromJson);
+  ) => _parse(changes, 'notebook', Notebook.fromJson);
 
   /// Parse server `changes` entries of type `tag` into Tag models.
   static List<Tag> parseTagChanges(List<Map<String, dynamic>> changes) =>
@@ -30,12 +29,11 @@ class SyncRepository {
   /// placeholder here is never persisted.
   static List<Attachment> parseFileChanges(
     List<Map<String, dynamic>> changes,
-  ) =>
-      _parse(
-        changes,
-        'file',
-        (json) => Attachment.fromServerJson(json, localId: ''),
-      );
+  ) => _parse(
+    changes,
+    'file',
+    (json) => Attachment.fromServerJson(json, localId: ''),
+  );
 
   static List<T> _parse<T>(
     List<Map<String, dynamic>> changes,

@@ -2,12 +2,22 @@ import 'package:flutter/material.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
 import '../theme/oblix_theme.dart';
+import '../widgets/paper.dart';
 import 'login_screen.dart';
 
 /// First-run walkthrough: the card fan, what capture will cover, and Ask.
 /// Shown once per install (flag in the meta table), then never again.
+///
+/// Like [LoginScreen], this screen never navigates itself — it reports that
+/// onboarding is done and the AuthGate decides what comes next. Pushing a
+/// route here would put the login form *outside* the gate, so a successful
+/// sign-in would flip [AuthState] with nothing left listening.
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key});
+  const OnboardingScreen({super.key, required this.onFinished});
+
+  /// Called once the walkthrough is done or skipped. `register` is true when
+  /// the user arrived via "Get started" and should land on the register form.
+  final void Function({required bool register}) onFinished;
 
   static const _seenKey = 'onboarding_seen';
 
@@ -34,12 +44,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _finish({bool register = false}) async {
     await OnboardingScreen.markSeen();
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LoginScreen(startInRegisterMode: register),
-      ),
-    );
+    widget.onFinished(register: register);
   }
 
   void _next() {
@@ -113,24 +118,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
-                    child: Material(
+                    child: GlassPill(
+                      onTap: _next,
                       color: c.accent,
-                      shape: const StadiumBorder(),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: _next,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Center(
-                            child: Text(
-                              _page == 2 ? 'Get started' : 'Continue',
-                              style: OblixType.ui(
-                                c,
-                                size: 16,
-                                weight: FontWeight.w600,
-                                color: c.onAccent,
-                              ),
-                            ),
+                      borderColor: Colors.transparent,
+                      glassAlpha: 0.66,
+                      padding: const EdgeInsets.all(16),
+                      child: Center(
+                        child: Text(
+                          _page == 2 ? 'Get started' : 'Continue',
+                          style: OblixType.ui(
+                            c,
+                            size: 16,
+                            weight: FontWeight.w600,
+                            color: c.onAccent,
                           ),
                         ),
                       ),

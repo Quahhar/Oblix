@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:archive/archive.dart';
+import '../../core/native/oblix_core.dart';
 import '../models/note.dart';
 import '../models/notebook.dart';
 import '../models/tag.dart';
@@ -47,6 +48,51 @@ class OblixArchive {
     required List<Tag> tags,
     Map<String, List<OblixAttachment>> attachmentsByNoteId = const {},
   }) {
+    if (isRustCoreReady) {
+      return encodeOblixArchiveCore(
+        notes: [
+          for (final note in notes)
+            (
+              id: note.id,
+              notebookId: note.notebookId,
+              title: note.title,
+              content: note.content,
+              contentType: note.contentType,
+              tagNames: note.tagNames,
+              isPinned: note.isPinned,
+              isArchived: note.isArchived,
+              createdAtIsoUtc: note.createdAt.toUtc().toIso8601String(),
+              updatedAtIsoUtc: note.updatedAt.toUtc().toIso8601String(),
+            ),
+        ],
+        notebooks: [
+          for (final notebook in notebooks)
+            (
+              id: notebook.id,
+              name: notebook.name,
+              parentId: notebook.parentId,
+              sortOrder: notebook.sortOrder,
+            ),
+        ],
+        tagNames: [for (final tag in tags) tag.name],
+        attachmentGroups: [
+          for (final entry in attachmentsByNoteId.entries)
+            (
+              noteId: entry.key,
+              attachments: [
+                for (final attachment in entry.value)
+                  (
+                    id: attachment.id,
+                    originalName: attachment.originalName,
+                    mimeType: attachment.mimeType,
+                    bytes: attachment.bytes,
+                  ),
+              ],
+            ),
+        ],
+        exportedAtMicrosUtc: DateTime.now().toUtc().microsecondsSinceEpoch,
+      );
+    }
     final nbById = {for (final nb in notebooks) nb.id: nb};
     final pathById = {
       for (final nb in notebooks) nb.id: _notebookPath(nb, nbById),
@@ -62,8 +108,9 @@ class OblixArchive {
             'tags': n.tagNames,
             'is_pinned': n.isPinned,
             'is_archived': n.isArchived,
-            'notebook_path':
-                n.notebookId == null ? null : pathById[n.notebookId],
+            'notebook_path': n.notebookId == null
+                ? null
+                : pathById[n.notebookId],
             if ((attachmentsByNoteId[n.id] ?? const []).isNotEmpty)
               'attachments': [
                 for (final a in attachmentsByNoteId[n.id]!)
@@ -99,8 +146,10 @@ class OblixArchive {
         'notes': notes.length,
         'notebooks': notebooks.length,
         'tags': tags.length,
-        'attachments':
-            attachmentsByNoteId.values.fold(0, (sum, l) => sum + l.length),
+        'attachments': attachmentsByNoteId.values.fold(
+          0,
+          (sum, l) => sum + l.length,
+        ),
       },
     };
 
@@ -109,7 +158,9 @@ class OblixArchive {
       ..addFile(_jsonFile(dataName, data));
     for (final n in notes) {
       for (final a in attachmentsByNoteId[n.id] ?? const <OblixAttachment>[]) {
-        archive.addFile(ArchiveFile(_blobRef(n.id, a), a.bytes.length, a.bytes));
+        archive.addFile(
+          ArchiveFile(_blobRef(n.id, a), a.bytes.length, a.bytes),
+        );
       }
     }
     return ZipEncoder().encode(archive);
@@ -119,6 +170,14 @@ class OblixArchive {
   /// the file isn't a recognizable Oblix export. A declared attachment whose
   /// blob is missing from the ZIP is counted as skipped, not fatal.
   static ImportBundle decode(List<int> bytes) {
+    if (isRustCoreReady) {
+      return ImportBundle.fromCore(
+        decodeOblixArchiveCore(
+          bytes: bytes,
+          nowMicrosUtc: DateTime.now().toUtc().microsecondsSinceEpoch,
+        ),
+      );
+    }
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes);
@@ -161,7 +220,8 @@ class OblixArchive {
     final notes = <ImportedNote>[];
     for (final raw in (data['notes'] as List? ?? const [])) {
       final n = raw as Map<String, dynamic>;
-      final created = DateTime.tryParse(n['created_at'] as String? ?? '') ??
+      final created =
+          DateTime.tryParse(n['created_at'] as String? ?? '') ??
           DateTime.now().toUtc();
 
       final attachments = <ImportedAttachment>[];
@@ -176,30 +236,34 @@ class OblixArchive {
           missingBlobs++;
           continue;
         }
-        attachments.add(ImportedAttachment(
-          originalName: entry['original_name'] as String? ?? 'file',
-          mimeType: entry['mime_type'] as String?,
-          bytes: file.content as List<int>,
-        ));
+        attachments.add(
+          ImportedAttachment(
+            originalName: entry['original_name'] as String? ?? 'file',
+            mimeType: entry['mime_type'] as String?,
+            bytes: file.content as List<int>,
+          ),
+        );
       }
 
-      notes.add(ImportedNote(
-        title: n['title'] as String? ?? 'Untitled',
-        content: n['content'] as String? ?? '',
-        contentType: n['content_type'] as String? ?? 'plain',
-        tagNames: [
-          for (final t in (n['tags'] as List? ?? const [])) t.toString(),
-        ],
-        isPinned: n['is_pinned'] as bool? ?? false,
-        isArchived: n['is_archived'] as bool? ?? false,
-        createdAt: created,
-        updatedAt:
-            DateTime.tryParse(n['updated_at'] as String? ?? '') ?? created,
-        notebookName: n['notebook_name'] as String?,
-        notebookPath: _stringList(n['notebook_path']),
-        attachments: attachments,
-        skippedAttachments: missingBlobs,
-      ));
+      notes.add(
+        ImportedNote(
+          title: n['title'] as String? ?? 'Untitled',
+          content: n['content'] as String? ?? '',
+          contentType: n['content_type'] as String? ?? 'plain',
+          tagNames: [
+            for (final t in (n['tags'] as List? ?? const [])) t.toString(),
+          ],
+          isPinned: n['is_pinned'] as bool? ?? false,
+          isArchived: n['is_archived'] as bool? ?? false,
+          createdAt: created,
+          updatedAt:
+              DateTime.tryParse(n['updated_at'] as String? ?? '') ?? created,
+          notebookName: n['notebook_name'] as String?,
+          notebookPath: _stringList(n['notebook_path']),
+          attachments: attachments,
+          skippedAttachments: missingBlobs,
+        ),
+      );
     }
 
     return ImportBundle(

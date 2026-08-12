@@ -2,11 +2,27 @@
 /// design's labels are English-only anyway).
 abstract final class Formats {
   static const _weekdays = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
   static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June', 'July',
-    'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   /// "FRIDAY, JULY 11" — the home header eyebrow.
@@ -35,19 +51,23 @@ abstract final class Formats {
     return local.year == ref.toLocal().year ? label : '$label, ${local.year}';
   }
 
-  /// Day-group heading: TODAY / YESTERDAY / a weekday within the last week /
-  /// "JULY 8" (with year when older).
-  static String dayGroup(DateTime d, {DateTime? now}) {
+  /// The stamp on a note's row in a list: "2:41 PM" for a note touched today,
+  /// "Jun 28" otherwise, with the year once it is not this one.
+  ///
+  /// A bare time only reads as a time under a heading that fixes the day. The
+  /// list's headings are windows — PREVIOUS 7 DAYS, a month, a year (see
+  /// `group_notes_by_day` in `rust/src/api/view.rs`) — so each row carries its
+  /// own date.
+  static String listStamp(DateTime d, {DateTime? now}) {
     final ref = (now ?? DateTime.now()).toLocal();
     final local = d.toLocal();
-    final today = DateTime(ref.year, ref.month, ref.day);
-    final day = DateTime(local.year, local.month, local.day);
-    final days = today.difference(day).inDays;
-    if (days <= 0) return 'TODAY';
-    if (days == 1) return 'YESTERDAY';
-    if (days < 7) return _weekdays[day.weekday - 1].toUpperCase();
-    final label = '${_months[day.month - 1]} ${day.day}'.toUpperCase();
-    return day.year == ref.year ? label : '$label, ${day.year}';
+    if (local.year == ref.year &&
+        local.month == ref.month &&
+        local.day == ref.day) {
+      return time(d);
+    }
+    final label = '${_months[local.month - 1].substring(0, 3)} ${local.day}';
+    return local.year == ref.year ? label : '$label, ${local.year}';
   }
 
   /// Task-group heading relative to today: OVERDUE handled by the caller;

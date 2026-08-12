@@ -12,6 +12,7 @@ import '../../data/datasources/local/task_local_datasource.dart';
 import '../../data/datasources/remote/sync_remote_datasource.dart';
 import '../../data/models/sync_payload.dart';
 import '../../data/repositories/sync_repository.dart';
+import '../../core/native/oblix_core.dart';
 
 /// Drives a sync cycle end-to-end. Per round:
 ///  1. drain a batch from the outbox,
@@ -53,20 +54,21 @@ class SyncEngine {
     Uuid? uuid,
     int batchSize = ApiConfig.maxSyncBatchSize,
     int maxPushAttempts = ApiConfig.maxPushAttempts,
-  })  : _appDb = appDb ?? AppDatabase.instance,
-        _remote = remote ?? SyncRemoteDataSource(),
-        _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
-        _notes = notes ?? NoteLocalDataSource(appDb ?? AppDatabase.instance),
-        _notebooks = notebooks ??
-            NotebookLocalDataSource(appDb ?? AppDatabase.instance),
-        _tags = tags ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
-        _tasks = tasks ?? TaskLocalDataSource(appDb ?? AppDatabase.instance),
-        _attachments = attachments ??
-            AttachmentLocalDataSource(appDb ?? AppDatabase.instance),
-        _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
-        _uuid = uuid ?? const Uuid(),
-        _batchSize = batchSize,
-        _maxPushAttempts = maxPushAttempts;
+  }) : _appDb = appDb ?? AppDatabase.instance,
+       _remote = remote ?? SyncRemoteDataSource(),
+       _outbox = outbox ?? OutboxDao(appDb ?? AppDatabase.instance),
+       _notes = notes ?? NoteLocalDataSource(appDb ?? AppDatabase.instance),
+       _notebooks =
+           notebooks ?? NotebookLocalDataSource(appDb ?? AppDatabase.instance),
+       _tags = tags ?? TagLocalDataSource(appDb ?? AppDatabase.instance),
+       _tasks = tasks ?? TaskLocalDataSource(appDb ?? AppDatabase.instance),
+       _attachments =
+           attachments ??
+           AttachmentLocalDataSource(appDb ?? AppDatabase.instance),
+       _meta = meta ?? MetaDao(appDb ?? AppDatabase.instance),
+       _uuid = uuid ?? const Uuid(),
+       _batchSize = batchSize,
+       _maxPushAttempts = maxPushAttempts;
 
   /// Run a sync cycle. Concurrency-safe: if one is already running, the request
   /// is coalesced into a single follow-up run instead of overlapping.
@@ -102,121 +104,138 @@ class SyncEngine {
     for (var round = 0; round < _maxRoundsPerCycle; round++) {
       final syncRound = _appDb.beginSyncRound();
       try {
-      final cursor = await _meta.getCursor();
-      final fetchedBatch = await _outbox.fetchBatch(
-        limit: _batchSize,
-        excludedNoteIds: syncRound.protectedNoteIds,
-      );
-      // Keep a defensive in-memory filter in case a custom/test DAO does not
-      // implement the query exclusion. Settlement must use this sent batch too.
-      final batch = fetchedBatch
-          .where(
-            (entry) =>
-                entry.change.entityType != 'note' ||
-                !syncRound.protectedNoteIds.contains(entry.change.entityId),
-          )
-          .toList(growable: false);
-      final changes = batch.map((e) => e.change).toList();
-
-      final requestedAt = DateTime.now().toUtc();
-      final SyncPushResponse resp;
-      try {
-        resp = await _remote.pushChanges(changes: changes, lastSyncAt: cursor);
-      } on UnauthorizedException catch (e) {
-        // Session is dead; the scheduler reacts by stopping and signing out.
-        return SyncResult.failure(e.toString(), unauthorized: true);
-      } catch (e) {
-        // Transport failure: leave the outbox and cursor untouched to retry
-        // later. Server merges already committed in earlier rounds are kept.
-        return SyncResult.failure(e.toString());
-      }
-
-      // Observed skew between server and device clocks; local mutation
-      // timestamps are corrected by this (see SyncClock).
-      final serverTime = DateTime.tryParse(resp.serverTime);
-      final skew = serverTime?.toUtc().difference(requestedAt);
-
-      final serverNotes = SyncRepository.parseNoteChanges(resp.serverChanges);
-      final protectedServerNoteSeen = serverNotes.any(
-        (note) => syncRound.protectedNoteIds.contains(note.id),
-      );
-      final serverNotebooks =
-          SyncRepository.parseNotebookChanges(resp.serverChanges);
-      final serverTags = SyncRepository.parseTagChanges(resp.serverChanges);
-      final serverTasks = SyncRepository.parseTaskChanges(resp.serverChanges);
-      final serverFiles = SyncRepository.parseFileChanges(resp.serverChanges);
-
-      // Entities the server explicitly decided on — applied or conflict-
-      // resolved (LWW favoured the server; its copy arrives in
-      // server_changes). Batch entries it never mentioned were not processed
-      // and stay queued for a bounded number of retries. A server that
-      // doesn't fill `applied` at all acks the whole batch (legacy behavior).
-      final decided = <String>{
-        ...resp.applied,
-        ...resp.conflicts.map((c) => c.entityId),
-      };
-      final ackAll = batch.isNotEmpty && decided.isEmpty;
-      final ackedSeqs = <int>[];
-      final retrySeqs = <int>[];
-      for (final entry in batch) {
-        if (ackAll || decided.contains(entry.change.entityId)) {
-          ackedSeqs.add(entry.seq);
-        } else {
-          retrySeqs.add(entry.seq);
-        }
-      }
-
-      var droppedThisRound = 0;
-      final db = await _appDb.database;
-      await db.transaction((txn) async {
-        await _notes.applyServerNotes(
-          txn,
-          serverNotes,
-          preserveDocumentForNoteIds: syncRound.protectedNoteIds,
+        final cursor = await _meta.getCursor();
+        final fetchedBatch = await _outbox.fetchBatch(
+          limit: _batchSize,
+          excludedNoteIds: syncRound.protectedNoteIds,
         );
-        await _notebooks.applyServerNotebooks(txn, serverNotebooks);
-        await _tags.applyServerTags(txn, serverTags);
-        await _tasks.applyServerTasks(txn, serverTasks);
-        await _attachments.applyServerFiles(
-          txn,
-          serverFiles,
-          newLocalId: _uuid.v4,
-        );
-        droppedThisRound = await _outbox.settleBatch(
-          txn,
-          ackedSeqs: ackedSeqs,
-          retrySeqs: retrySeqs,
-          maxAttempts: _maxPushAttempts,
-        );
-        if (resp.serverTime.isNotEmpty && !protectedServerNoteSeen) {
-          await _meta.setCursor(txn, resp.serverTime);
-        }
-        if (skew != null) {
-          await _meta.setClockSkew(txn, skew);
-        }
-      });
+        // Keep a defensive in-memory filter in case a custom/test DAO does not
+        // implement the query exclusion. Settlement must use this sent batch too.
+        final eligibleSeqs = eligibleSyncSequences(
+          entries: [
+            for (final entry in fetchedBatch)
+              (
+                seq: entry.seq,
+                entityType: entry.change.entityType,
+                entityId: entry.change.entityId,
+              ),
+          ],
+          protectedNoteIds: syncRound.protectedNoteIds,
+        ).toSet();
+        final batch = fetchedBatch
+            .where((entry) => eligibleSeqs.contains(entry.seq))
+            .toList(growable: false);
+        final changes = batch.map((e) => e.change).toList();
 
-      pushed += ackedSeqs.length;
-      rejected += droppedThisRound;
-      conflicts.addAll(resp.conflicts);
-      final pulledThisRound = serverNotes.length +
-          serverNotebooks.length +
-          serverTags.length +
-          serverTasks.length +
-          serverFiles.length;
-      pulled += pulledThisRound;
-      anythingChanged = anythingChanged ||
-          pulledThisRound > 0 ||
-          ackedSeqs.isNotEmpty ||
-          droppedThisRound > 0;
+        final requestedAt = DateTime.now().toUtc();
+        final SyncPushResponse resp;
+        try {
+          resp = await _remote.pushChanges(
+            changes: changes,
+            lastSyncAt: cursor,
+          );
+        } on UnauthorizedException catch (e) {
+          // Session is dead; the scheduler reacts by stopping and signing out.
+          return SyncResult.failure(e.toString(), unauthorized: true);
+        } catch (e) {
+          // Transport failure: leave the outbox and cursor untouched to retry
+          // later. Server merges already committed in earlier rounds are kept.
+          return SyncResult.failure(e.toString());
+        }
 
-      // Another round only if this one was full AND fully acked — otherwise
-      // the unacked head would just be re-pushed in a tight loop.
-      final drainedMore =
-          !protectedServerNoteSeen &&
-          batch.length >= _batchSize &&
-          retrySeqs.isEmpty;
-      if (!drainedMore) break;
+        // Observed skew between server and device clocks; local mutation
+        // timestamps are corrected by this (see SyncClock).
+        final serverTime = DateTime.tryParse(resp.serverTime);
+        final skew = serverTime?.toUtc().difference(requestedAt);
+
+        final serverNotes = SyncRepository.parseNoteChanges(resp.serverChanges);
+        final protectedServerNoteSeen = serverNotes.any(
+          (note) => syncRound.protectedNoteIds.contains(note.id),
+        );
+        final serverNotebooks = SyncRepository.parseNotebookChanges(
+          resp.serverChanges,
+        );
+        final serverTags = SyncRepository.parseTagChanges(resp.serverChanges);
+        final serverTasks = SyncRepository.parseTaskChanges(resp.serverChanges);
+        final serverFiles = SyncRepository.parseFileChanges(resp.serverChanges);
+
+        // Entities the server explicitly decided on — applied or conflict-
+        // resolved (LWW favoured the server; its copy arrives in
+        // server_changes). Batch entries it never mentioned were not processed
+        // and stay queued for a bounded number of retries. A server that
+        // doesn't fill `applied` at all acks the whole batch (legacy behavior).
+        final decided = <String>{
+          ...resp.applied,
+          ...resp.conflicts.map((c) => c.entityId),
+        };
+        final settlement = planSyncSettlement(
+          entries: [
+            for (final entry in batch)
+              (
+                seq: entry.seq,
+                entityType: entry.change.entityType,
+                entityId: entry.change.entityId,
+              ),
+          ],
+          decidedEntityIds: decided,
+          protectedServerNoteSeen: protectedServerNoteSeen,
+          batchSize: _batchSize,
+          pulledEntityCounts: [
+            serverNotes.length,
+            serverNotebooks.length,
+            serverTags.length,
+            serverTasks.length,
+            serverFiles.length,
+          ],
+          droppedCount: 0,
+        );
+        final ackedSeqs = settlement.ackedSeqs;
+        final retrySeqs = settlement.retrySeqs;
+
+        var droppedThisRound = 0;
+        final db = await _appDb.database;
+        await db.transaction((txn) async {
+          await _notes.applyServerNotes(
+            txn,
+            serverNotes,
+            preserveDocumentForNoteIds: syncRound.protectedNoteIds,
+          );
+          await _notebooks.applyServerNotebooks(txn, serverNotebooks);
+          await _tags.applyServerTags(txn, serverTags);
+          await _tasks.applyServerTasks(txn, serverTasks);
+          await _attachments.applyServerFiles(
+            txn,
+            serverFiles,
+            newLocalId: _uuid.v4,
+          );
+          droppedThisRound = await _outbox.settleBatch(
+            txn,
+            ackedSeqs: ackedSeqs,
+            retrySeqs: retrySeqs,
+            maxAttempts: _maxPushAttempts,
+          );
+          if (resp.serverTime.isNotEmpty && !protectedServerNoteSeen) {
+            await _meta.setCursor(txn, resp.serverTime);
+          }
+          if (skew != null) {
+            await _meta.setClockSkew(txn, skew);
+          }
+        });
+
+        pushed += ackedSeqs.length;
+        rejected += droppedThisRound;
+        conflicts.addAll(resp.conflicts);
+        final pulledThisRound = settlement.pulledCount;
+        pulled += pulledThisRound;
+        anythingChanged =
+            anythingChanged ||
+            settlement.anythingChanged ||
+            droppedThisRound > 0;
+
+        // Another round only if this one was full AND fully acked — otherwise
+        // the unacked head would just be re-pushed in a tight loop.
+        final drainedMore = settlement.continueDraining;
+        if (!drainedMore) break;
       } finally {
         syncRound.release();
       }
@@ -236,8 +255,9 @@ class SyncEngine {
 
   /// Hard-delete soft-deleted rows that synced long ago; keeps trash bounded.
   Future<void> _purgeTombstones() async {
-    final cutoff =
-        DateTime.now().toUtc().subtract(ApiConfig.tombstoneRetention);
+    final cutoff = DateTime.now().toUtc().subtract(
+      ApiConfig.tombstoneRetention,
+    );
     final db = await _appDb.database;
     await db.transaction((txn) async {
       await _notes.purgeDeletedBefore(txn, cutoff);
@@ -269,27 +289,27 @@ class SyncResult {
     this.rejected = 0,
     required this.success,
     this.error,
-  })  : skipped = false,
-        unauthorized = false;
+  }) : skipped = false,
+       unauthorized = false;
 
   const SyncResult.failure(String message, {this.unauthorized = false})
-      : pushed = 0,
-        pulled = 0,
-        conflicts = const [],
-        rejected = 0,
-        success = false,
-        error = message,
-        skipped = false;
+    : pushed = 0,
+      pulled = 0,
+      conflicts = const [],
+      rejected = 0,
+      success = false,
+      error = message,
+      skipped = false;
 
   const SyncResult.skipped()
-      : pushed = 0,
-        pulled = 0,
-        conflicts = const [],
-        rejected = 0,
-        success = true,
-        error = null,
-        skipped = true,
-        unauthorized = false;
+    : pushed = 0,
+      pulled = 0,
+      conflicts = const [],
+      rejected = 0,
+      success = true,
+      error = null,
+      skipped = true,
+      unauthorized = false;
 
   bool get hasConflicts => conflicts.isNotEmpty;
 }

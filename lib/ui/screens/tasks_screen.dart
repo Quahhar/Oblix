@@ -1,16 +1,25 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../../core/native/oblix_core.dart';
 import '../../data/models/task.dart';
 import '../../data/repositories/task_repository.dart';
-import '../sheets/new_task_sheet.dart';
+import '../sheets/task_detail_sheet.dart';
 import '../theme/oblix_theme.dart';
-import '../util/formats.dart';
 import '../widgets/paper.dart';
+import '../widgets/quick_add_field.dart';
+import '../widgets/task_calendar.dart';
+import '../widgets/task_row.dart';
 
-enum _TaskTab { open, scheduled, done }
-
-/// The Tasks tab: Open / Scheduled / Done segments, groups by due date with
-/// OVERDUE in red, tap the circle to complete, long-press to delete.
+/// The Tasks tab.
+///
+/// One list, focused on a single day — today, until you pick another. The date
+/// header doubles as the calendar, and the only control that creates anything
+/// is the line at the bottom. Everything else the screen knows how to do —
+/// overdue first, urgent above calm, subtasks under their parent, repeating
+/// chores rolling forward — is decided by the portable core and simply
+/// rendered here.
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
 
@@ -20,347 +29,499 @@ class TasksScreen extends StatefulWidget {
 
 class _TasksScreenState extends State<TasksScreen> {
   final _tasks = TaskRepository();
+  final _quickAdd = QuickAddController();
 
-  _TaskTab _tab = _TaskTab.open;
-  List<Task> _open = const [];
-  List<Task> _done = const [];
-  StreamSubscription<void>? _sub;
+  StreamSubscription<void>? _changes;
+
+  /// The whole working set. The core turns it into a screenful.
+  List<Task> _all = const [];
+  Map<String, Task> _byId = const {};
+
+  TaskViewPlanValue? _plan;
+  List<CalendarDayValue> _density = const [];
+
+  DateTime _today = _startOfDay(DateTime.now());
+  DateTime _focus = _startOfDay(DateTime.now());
+  DateTime _visibleMonth = _firstOfMonth(DateTime.now());
+  CalendarMode _calendar = CalendarMode.collapsed;
+  CoreTaskSort _sort = CoreTaskSort.smart;
+  bool _showCompleted = true;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _sub = _tasks.onChanged.listen((_) => _reload());
+    _changes = _tasks.onChanged.listen((_) => _reload());
     _reload();
   }
 
   @override
   void dispose() {
-    _sub?.cancel();
+    _changes?.cancel();
+    _quickAdd.dispose();
     super.dispose();
   }
 
   Future<void> _reload() async {
-    final open = await _tasks.listTasks();
-    final done = await _tasks.listTasks(completed: true);
+    final all = await _tasks.loadWorkingSet();
     if (!mounted) return;
     setState(() {
-      _open = open;
-      _done = done;
+      _all = all;
+      _byId = {for (final task in all) task.id: task};
+      // Recomputed on every load so a session left open overnight rolls to the
+      // new day instead of insisting it is still yesterday.
+      _today = _startOfDay(DateTime.now());
+      _loading = false;
+      _replan();
     });
   }
 
-  Future<void> _delete(Task task) async {
-    final confirmed = await showDialog<bool>(
+  /// Ask the core what to show. Cheap enough to run on every rebuild trigger.
+  void _replan() {
+    final inputs = [for (final task in _all) _toViewInput(task)];
+    _plan = planTaskView(
+      tasks: inputs,
+      context: (
+        today: civilDateOf(_today),
+        focus: civilDateOf(_focus),
+        sort: _sort,
+        showCompleted: _showCompleted,
+        showAnytime: true,
+      ),
+    );
+    _density = monthDensity(
+      tasks: inputs,
+      year: _visibleMonth.year,
+      month: _visibleMonth.month,
+      today: civilDateOf(_today),
+    );
+  }
+
+  TaskViewInputValue _toViewInput(Task task) {
+    final due = task.dueDate?.toLocal();
+    final completed = task.completedAt?.toLocal();
+    return (
+      id: task.id,
+      title: task.title,
+      parentId: task.parentId,
+      priority: task.priority.value,
+      due: due == null ? null : civilDateOf(due),
+      dueTime: due == null || !task.dueHasTime ? null : civilTimeOf(due),
+      isCompleted: task.isCompleted,
+      completedOn: completed == null ? null : civilDateOf(completed),
+      sortOrder: task.sortOrder,
+      createdSeq: task.createdAt.microsecondsSinceEpoch,
+    );
+  }
+
+  void _setFocus(DateTime day) {
+    setState(() {
+      _focus = day;
+      if (day.year != _visibleMonth.year || day.month != _visibleMonth.month) {
+        _visibleMonth = _firstOfMonth(day);
+      }
+      _replan();
+    });
+  }
+
+  Future<void> _add(String text) async {
+    final parsed = _tasks.previewQuickAdd(text);
+    final created = await _tasks.createFromQuickAdd(text);
+    // A task typed while looking at Thursday belongs to Thursday — but only
+    // when the line said nothing about a day itself. An explicit "tomorrow"
+    // always beats the date that happens to be on screen.
+    if (parsed.due == null && !_sameDay(_focus, _today)) {
+      await _tasks.updateTask(created.id, dueDate: _focus.toUtc());
+    }
+  }
+
+  Future<void> _toggle(Task task) async {
+    final wasRepeating = task.repeats;
+    await _tasks.setCompleted(task.id, !task.isCompleted);
+    if (!mounted) return;
+    if (wasRepeating && !task.isCompleted) {
+      _snack('Moved to the next occurrence');
+    }
+  }
+
+  Future<void> _swipe(Task task, TaskSwipe action) async {
+    switch (action) {
+      case TaskSwipe.schedule:
+        await _quickSchedule(task);
+      case TaskSwipe.delete:
+        await _deleteWithUndo(task);
+    }
+  }
+
+  /// One tap to push a task to a sensible day. The full picker is in the
+  /// detail sheet; this covers the case that actually happens — "not today".
+  Future<void> _quickSchedule(Task task) async {
+    final choice = await showModalBottomSheet<DateTime?>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete task?'),
-        content: Text('"${task.title}" will be removed everywhere.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder: (context) {
+        final c = OblixColors.of(context);
+        final today = _startOfDay(DateTime.now());
+        final options = <(IconData, String, DateTime?)>[
+          (Icons.wb_sunny_outlined, 'Today', today),
+          (
+            Icons.arrow_forward,
+            'Tomorrow',
+            today.add(const Duration(days: 1)),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+          (
+            Icons.next_week_outlined,
+            'Next week',
+            today.add(const Duration(days: 7)),
           ),
-        ],
-      ),
-    );
-    if (confirmed ?? false) await _tasks.deleteTask(task.id);
-  }
-
-  List<Task> get _visible => switch (_tab) {
-    _TaskTab.open => _open,
-    _TaskTab.scheduled => _open.where((t) => t.dueDate != null).toList(),
-    _TaskTab.done => _done,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
-    final groups = _tab == _TaskTab.done
-        ? [_TaskGroup('COMPLETED', c.inkMuted, _done)]
-        : _groupByDue(_visible, c);
-
-    return SafeArea(
-      bottom: false,
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 24, 22, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(child: Text('Tasks', style: OblixType.pageTitle(c))),
-                AccentPill(
-                  label: 'New',
-                  icon: Icons.add,
-                  onTap: () => showNewTaskSheet(context),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: c.chip,
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Row(
-                children: [
-                  _segment('Open · ${_open.length}', _TaskTab.open),
-                  _segment('Scheduled', _TaskTab.scheduled),
-                  _segment('Done', _TaskTab.done),
-                ],
-              ),
-            ),
-          ),
-          if (_visible.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 60, 22, 0),
-              child: Center(
-                child: Text(switch (_tab) {
-                  _TaskTab.open => 'All clear, nothing to do.',
-                  _TaskTab.scheduled => 'No scheduled tasks.',
-                  _TaskTab.done => 'Nothing completed yet.',
-                }, style: OblixType.ui(c, size: 14, color: c.inkMuted)),
-              ),
-            )
-          else
-            for (final group in groups) ...[
+          (Icons.block, 'No date', null),
+        ];
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetGrabHandle(),
               SectionEyebrow(
-                group.label,
-                color: group.color,
-                rule: true,
-                padding: const EdgeInsets.fromLTRB(22, 18, 22, 4),
+                'Move to',
+                padding: const EdgeInsets.fromLTRB(22, 2, 22, 4),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 22),
-                child: Column(
-                  children: [
-                    for (var i = 0; i < group.tasks.length; i++) ...[
-                      if (i > 0) Divider(height: 1, color: c.hairline),
-                      _TaskRow(
-                        task: group.tasks[i],
-                        overdue: group.overdue,
-                        onToggle: () => _tasks.setCompleted(
-                          group.tasks[i].id,
-                          !group.tasks[i].isCompleted,
-                        ),
-                        onLongPress: () => _delete(group.tasks[i]),
-                      ),
-                    ],
-                  ],
+              for (final option in options)
+                ListTile(
+                  leading: Icon(option.$1, color: c.inkSecondary, size: 20),
+                  title: Text(option.$2, style: OblixType.ui(c, size: 15)),
+                  onTap: () => Navigator.pop(context, option.$3),
                 ),
-              ),
+              const SizedBox(height: 10),
             ],
-        ],
-      ),
+          ),
+        );
+      },
     );
+    if (!mounted) return;
+    // A null choice is ambiguous — the sheet was dismissed, or "No date" was
+    // chosen — so the list is asked to rebuild either way and the write only
+    // happens when something was actually picked.
+    if (choice != null) {
+      await _tasks.updateTask(task.id, dueDate: choice.toUtc(), dueHasTime: false);
+    }
+    setState(() {});
   }
 
-  Widget _segment(String label, _TaskTab tab) {
-    final c = OblixColors.of(context);
-    final selected = _tab == tab;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _tab = tab),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? c.surface : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: c.ink.withValues(alpha: 0.08),
-                      blurRadius: 3,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: OblixType.ui(
-                c,
-                size: 12.5,
-                weight: selected ? FontWeight.w600 : FontWeight.w500,
-                color: selected ? c.ink : c.inkMuted,
-              ),
-            ),
+  Future<void> _deleteWithUndo(Task task) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await _tasks.deleteTask(task.id);
+    if (!mounted) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Deleted "${task.title}"'),
+        action: SnackBarAction(
+          label: 'Undo',
+          // Recreating rather than un-tombstoning keeps the outbox honest:
+          // the delete has already been queued for every other device.
+          onPressed: () => _tasks.createTask(
+            title: task.title,
+            description: task.description,
+            dueDate: task.dueDate,
+            dueHasTime: task.dueHasTime,
+            priority: task.priority,
+            labels: task.labels,
+            recurrence: task.recurrence,
+            reminderLeadMinutes: task.reminderLeadMinutes,
+            noteId: task.noteId,
+            notebookId: task.notebookId,
+            parentId: task.parentId,
           ),
         ),
       ),
     );
   }
 
-  List<_TaskGroup> _groupByDue(List<Task> tasks, OblixColors c) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final overdue = <Task>[];
-    final dated = <String, _TaskGroup>{};
-    final anytime = <Task>[];
-
-    for (final task in tasks) {
-      final due = task.dueDate?.toLocal();
-      if (due == null) {
-        anytime.add(task);
-        continue;
-      }
-      final day = DateTime(due.year, due.month, due.day);
-      if (day.isBefore(today)) {
-        overdue.add(task);
-      } else {
-        final label = Formats.dueGroup(due);
-        final color = label == 'TODAY' ? c.accent : c.inkMuted;
-        dated
-            .putIfAbsent(label, () => _TaskGroup(label, color, []))
-            .tasks
-            .add(task);
-      }
-    }
-
-    return [
-      if (overdue.isNotEmpty)
-        _TaskGroup('OVERDUE', c.danger, overdue, overdue: true),
-      ...dated.values,
-      if (anytime.isNotEmpty && _tab == _TaskTab.open)
-        _TaskGroup('ANYTIME', c.inkMuted, anytime),
-    ];
+  void _snack(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
-}
 
-class _TaskGroup {
-  final String label;
-  final Color color;
-  final List<Task> tasks;
-  final bool overdue;
-  _TaskGroup(this.label, this.color, this.tasks, {this.overdue = false});
-}
-
-class _TaskRow extends StatelessWidget {
-  final Task task;
-  final bool overdue;
-  final VoidCallback onToggle;
-  final VoidCallback onLongPress;
-
-  const _TaskRow({
-    required this.task,
-    required this.overdue,
-    required this.onToggle,
-    required this.onLongPress,
-  });
+  Future<void> _openSortMenu() async {
+    final choice = await showModalBottomSheet<CoreTaskSort>(
+      context: context,
+      builder: (context) {
+        final c = OblixColors.of(context);
+        const labels = {
+          CoreTaskSort.smart: 'Smart',
+          CoreTaskSort.dueDate: 'By time',
+          CoreTaskSort.priority: 'By priority',
+          CoreTaskSort.manual: 'My order',
+          CoreTaskSort.alphabetical: 'A to Z',
+        };
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetGrabHandle(),
+              SectionEyebrow(
+                'Sort',
+                padding: const EdgeInsets.fromLTRB(22, 2, 22, 4),
+              ),
+              for (final entry in labels.entries)
+                ListTile(
+                  title: Text(entry.value, style: OblixType.ui(c, size: 15)),
+                  trailing: entry.key == _sort
+                      ? Icon(Icons.check, size: 20, color: c.accent)
+                      : null,
+                  onTap: () => Navigator.pop(context, entry.key),
+                ),
+              SwitchListTile(
+                value: _showCompleted,
+                onChanged: (value) {
+                  Navigator.pop(context);
+                  setState(() {
+                    _showCompleted = value;
+                    _replan();
+                  });
+                },
+                title: Text(
+                  'Show completed',
+                  style: OblixType.ui(c, size: 15),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+    if (choice == null) return;
+    setState(() {
+      _sort = choice;
+      _replan();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = OblixColors.of(context);
-    final due = task.dueDate?.toLocal();
-    return InkWell(
-      onTap: onToggle,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: task.isCompleted
-                  ? Container(
-                      width: 21,
-                      height: 21,
-                      decoration: BoxDecoration(
-                        color: c.accent,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.check, size: 13, color: c.onAccent),
-                    )
-                  : Container(
-                      width: 21,
-                      height: 21,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: overdue ? c.danger : c.outline,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    task.title,
-                    style:
-                        OblixType.ui(
-                          c,
-                          size: 15,
-                          weight: FontWeight.w500,
-                          color: task.isCompleted ? c.inkFaint : c.ink,
-                        ).copyWith(
-                          decoration: task.isCompleted
-                              ? TextDecoration.lineThrough
-                              : null,
-                          decorationColor: c.inkFaint,
-                        ),
-                  ),
-                  if (!task.isCompleted &&
-                      (due != null || task.description.isNotEmpty)) ...[
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        if (due != null) ...[
-                          Icon(
-                            Icons.schedule,
-                            size: 11,
-                            color: overdue ? c.danger : c.inkMuted,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            overdue ? Formats.relative(due) : Formats.time(due),
-                            style: OblixType.ui(
-                              c,
-                              size: 11.5,
-                              weight: overdue
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: overdue ? c.danger : c.inkMuted,
-                            ),
-                          ),
-                        ],
-                        if (due != null && task.description.isNotEmpty)
-                          const SizedBox(width: 8),
-                        if (task.description.isNotEmpty)
-                          Expanded(
-                            child: Text(
-                              task.description,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: OblixType.ui(
-                                c,
-                                size: 11.5,
-                                color: c.inkMuted,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ],
+    final plan = _plan;
+
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TaskCalendar(
+                  mode: _calendar,
+                  today: _today,
+                  focus: _focus,
+                  visibleMonth: _visibleMonth,
+                  density: _density,
+                  openCount: plan?.openCount ?? 0,
+                  overdueCount: plan?.overdueCount ?? 0,
+                  onModeChanged: (mode) => setState(() => _calendar = mode),
+                  onFocusChanged: _setFocus,
+                  onMonthChanged: (month) => setState(() {
+                    _visibleMonth = month;
+                    _replan();
+                  }),
+                ),
               ),
+              Padding(
+                padding: const EdgeInsets.only(right: 12, top: 20),
+                child: CircleIconButton(
+                  Icons.tune,
+                  tooltip: 'Sort and filter',
+                  onTap: _openSortMenu,
+                ),
+              ),
+            ],
+          ),
+          Expanded(
+            child: _loading
+                ? const SizedBox.shrink()
+                : RefreshIndicator(
+                    onRefresh: _reload,
+                    child: _list(c, plan),
+                  ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              14,
+              8,
+              14,
+              // Clear the floating dock, and the keyboard when it is up.
+              MediaQuery.viewInsetsOf(context).bottom > 0 ? 12 : 78,
+            ),
+            child: QuickAddField(
+              controller: _quickAdd,
+              parse: _tasks.previewQuickAdd,
+              onSubmit: _add,
+              hint: _sameDay(_focus, _today)
+                  ? 'Add a task…'
+                  : 'Add to ${_shortDay(_focus)}…',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _list(OblixColors c, TaskViewPlanValue? plan) {
+    if (plan == null || plan.sections.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [const SizedBox(height: 70), _empty(c)],
+      );
+    }
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 20),
+      children: [
+        for (final section in plan.sections) ...[
+          SectionEyebrow(
+            section.rows.length > 1
+                ? '${section.label} · ${section.rows.length}'
+                : section.label,
+            color: switch (section.kind) {
+              CoreTaskSectionKind.overdue => c.danger,
+              CoreTaskSectionKind.focus => c.accentDeep,
+              _ => c.inkMuted,
+            },
+            rule: true,
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 2),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: _sort == CoreTaskSort.manual
+                ? _reorderable(c, section)
+                : Column(
+                    children: [
+                      for (var i = 0; i < section.rows.length; i++)
+                        _row(c, section.rows[i], first: i == 0),
+                    ],
+                  ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Drag to arrange, but only under "My order".
+  ///
+  /// Offering a drag handle while the list is sorted by urgency would be a lie
+  /// — the row would snap back the moment the core re-planned. Manual sort is
+  /// the one mode where the stored rank is what you see.
+  Widget _reorderable(OblixColors c, TaskSectionValue section) {
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: section.rows.length,
+      onReorder: (oldIndex, newIndex) => _reorder(section, oldIndex, newIndex),
+      itemBuilder: (context, index) {
+        final row = section.rows[index];
+        return ReorderableDelayedDragStartListener(
+          key: ValueKey('reorder-${row.id}'),
+          index: index,
+          child: _row(c, row, first: index == 0),
+        );
+      },
+    );
+  }
+
+  Future<void> _reorder(
+    TaskSectionValue section,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    // ReorderableListView reports the insertion point in the pre-removal list.
+    final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    final ids = section.rows.map((row) => row.id).toList();
+    final moved = ids.removeAt(oldIndex);
+    ids.insert(target, moved);
+    // Optimistic: the drag has already animated, so re-plan from the new order
+    // immediately and let the write settle behind it.
+    await _tasks.reorder(ids);
+  }
+
+  Widget _row(OblixColors c, TaskRowValue row, {required bool first}) {
+    final task = _byId[row.id];
+    if (task == null) return const SizedBox.shrink();
+    return Column(
+      children: [
+        if (!first) Divider(height: 1, indent: 33, color: c.hairline),
+        TaskRowTile(
+          task: task,
+          row: row,
+          onToggle: () => _toggle(task),
+          onOpen: () => showTaskDetailSheet(context, task.id),
+          onSwipe: (action) => _swipe(task, action),
+        ),
+      ],
+    );
+  }
+
+  /// Empty is a state worth designing. "All clear" is a result, not an error,
+  /// so it reads as one.
+  Widget _empty(OblixColors c) {
+    final isToday = _sameDay(_focus, _today);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          children: [
+            Icon(
+              isToday ? Icons.wb_sunny_outlined : Icons.event_available,
+              size: 30,
+              color: c.inkFaint,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              isToday ? 'Nothing due today' : 'Nothing on ${_shortDay(_focus)}',
+              style: TextStyle(
+                fontFamily: OblixType.serif,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: c.inkSecondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Type below — try "pay rent friday 5pm p1".',
+              textAlign: TextAlign.center,
+              style: OblixType.ui(c, size: 13, color: c.inkMuted),
             ),
           ],
         ),
       ),
     );
   }
+
+  static String _shortDay(DateTime day) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[day.month - 1]} ${day.day}';
+  }
 }
+
+DateTime _startOfDay(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+DateTime _firstOfMonth(DateTime value) => DateTime(value.year, value.month, 1);
+
+bool _sameDay(DateTime left, DateTime right) =>
+    left.year == right.year &&
+    left.month == right.month &&
+    left.day == right.day;

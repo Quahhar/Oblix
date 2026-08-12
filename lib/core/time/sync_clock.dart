@@ -1,4 +1,5 @@
 import '../db/meta_dao.dart';
+import '../native/oblix_core.dart';
 
 /// Wall clock corrected by the skew observed against the server at the last
 /// sync. Local mutations timestamp with this so a device with a wrong clock
@@ -16,9 +17,12 @@ class SyncClock {
   /// backwards between edits).
   Future<DateTime> nextAfter(DateTime? previous) async {
     final now = await nowUtc();
-    if (previous != null && !now.isAfter(previous)) {
-      return previous.add(const Duration(milliseconds: 1));
-    }
-    return now;
+    return DateTime.fromMicrosecondsSinceEpoch(
+      nextLogicalTimestampMicros(
+        nowMicrosUtc: now.microsecondsSinceEpoch,
+        previousMicrosUtc: previous?.toUtc().microsecondsSinceEpoch,
+      ),
+      isUtc: true,
+    );
   }
 }

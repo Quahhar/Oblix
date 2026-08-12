@@ -104,7 +104,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     return SafeArea(
       bottom: false,
       child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.only(bottom: 116),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -178,44 +178,40 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                 runSpacing: 8,
                 children: [
                   for (final tag in _tagList)
-                    Material(
+                    GlassPill(
                       color: Colors.transparent,
-                      shape: StadiumBorder(
-                        side: BorderSide(color: c.ink.withValues(alpha: 0.14)),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TagNotesScreen(tag: tag),
-                          ),
+                      borderColor: c.ink.withValues(alpha: 0.14),
+                      glassAlpha: 0.16,
+                      // A tag cloud can run to dozens of chips.
+                      blur: false,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TagNotesScreen(tag: tag),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 7,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 7,
+                      ),
+                      child: Text.rich(
+                        TextSpan(
+                          text: '#${tag.name} ',
+                          style: OblixType.ui(
+                            c,
+                            size: 12.5,
+                            color: c.avatarInk,
                           ),
-                          child: Text.rich(
+                          children: [
                             TextSpan(
-                              text: '#${tag.name} ',
+                              text: '${_tagCounts[tag.name] ?? 0}',
                               style: OblixType.ui(
                                 c,
                                 size: 12.5,
-                                color: c.avatarInk,
+                                color: c.inkFaint,
                               ),
-                              children: [
-                                TextSpan(
-                                  text: '${_tagCounts[tag.name] ?? 0}',
-                                  style: OblixType.ui(
-                                    c,
-                                    size: 12.5,
-                                    color: c.inkFaint,
-                                  ),
-                                ),
-                              ],
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ),

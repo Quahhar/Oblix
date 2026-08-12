@@ -56,6 +56,34 @@ def _parse_ts(value: Optional[str]) -> Optional[datetime]:
     return dt
 
 
+def _clean_labels(value) -> list[str]:
+    """Normalize an incoming label list.
+
+    Labels are denormalized names, exactly as notes denormalize their tags, so
+    an untrusted client list is bounded and de-duplicated here rather than
+    trusted into the row. Case is preserved — a label is shown to the user —
+    but duplicates that differ only in case are collapsed.
+    """
+    if not isinstance(value, list):
+        return []
+    seen: set[str] = set()
+    labels: list[str] = []
+    for entry in value:
+        if not isinstance(entry, str):
+            continue
+        name = entry.strip()[:64]
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        labels.append(name)
+        if len(labels) >= 32:
+            break
+    return labels
+
+
 def _client_ts(value: Optional[str], now: Optional[datetime] = None) -> Optional[datetime]:
     """Parse a client timestamp and cap unreasonable clock skew.
 
@@ -705,8 +733,37 @@ class SyncService:
         if "due_date" in fields:
             # null/garbage clears; a valid ISO timestamp sets.
             task.due_date = _parse_ts(client_data["due_date"])
+            # Carried by the due_date register, so it can never contradict it.
+            task.due_has_time = bool(client_data.get("due_has_time")) and task.due_date is not None
         if "note_id" in fields:
             task.note_id = await self._owned_note_id(db, user, client_data["note_id"])
+        if "priority" in fields:
+            try:
+                task.priority = max(0, min(3, int(client_data["priority"])))
+            except (ValueError, TypeError):
+                pass
+        if "labels" in fields:
+            task.labels = _clean_labels(client_data["labels"])
+        if "recurrence" in fields:
+            raw = client_data["recurrence"]
+            task.recurrence = str(raw)[:200] if raw else None
+        if "reminder_at" in fields:
+            task.reminder_at = _parse_ts(client_data["reminder_at"])
+        if "reminder_lead_minutes" in fields:
+            raw = client_data["reminder_lead_minutes"]
+            try:
+                # Four weeks of lead is far past anything a person means.
+                task.reminder_lead_minutes = (
+                    max(0, min(40_320, int(raw))) if raw is not None else None
+                )
+            except (ValueError, TypeError):
+                task.reminder_lead_minutes = None
+        if "notebook_id" in fields:
+            task.notebook_id = await self._owned_notebook_id(db, user, client_data["notebook_id"])
+        if "parent_id" in fields:
+            task.parent_id = await self._owned_parent_task_id(
+                db, user, task.id, client_data["parent_id"]
+            )
         if "is_deleted" in fields:
             task.is_deleted = bool(client_data["is_deleted"])
             task.deleted_at = (
@@ -761,6 +818,59 @@ class SyncService:
         return (await db.execute(
             select(Note.id).where(Note.id == n_id, Note.user_id == user.id)
         )).scalar_one_or_none()
+
+    @staticmethod
+    async def _owned_notebook_id(db: AsyncSession, user: User, raw) -> Optional[uuid.UUID]:
+        """The notebook a task is filed under, for task→notebook links.
+
+        An unknown or foreign id unfiles the task instead of raising: a sync
+        push is a batch, and one stale reference must not fail the batch.
+        """
+        if not raw:
+            return None
+        try:
+            nb_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            return None
+        return (await db.execute(
+            select(Notebook.id).where(Notebook.id == nb_id, Notebook.user_id == user.id)
+        )).scalar_one_or_none()
+
+    async def _owned_parent_task_id(
+        self, db: AsyncSession, user: User, task_id, raw
+    ) -> Optional[uuid.UUID]:
+        """The parent of a subtask.
+
+        Refuses a task's own id and any ancestor that would close a loop. A
+        cycle here is not a cosmetic problem: the client walks the tree to
+        render indentation and to roll progress up, and either walk would spin
+        forever. Depth is also capped, because a chain thousands deep costs a
+        query per level on every push.
+        """
+        if not raw:
+            return None
+        try:
+            parent_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            return None
+        if task_id is not None and parent_id == task_id:
+            return None
+
+        cursor: Optional[uuid.UUID] = parent_id
+        for _ in range(32):
+            if cursor is None:
+                # Walked off the top without meeting ourselves: the link is safe.
+                return parent_id
+            if task_id is not None and cursor == task_id:
+                return None
+            row = (await db.execute(
+                select(Task.parent_id).where(Task.id == cursor, Task.user_id == user.id)
+            )).one_or_none()
+            if row is None:
+                # Unknown or someone else's task: leave the subtask top-level.
+                return None
+            cursor = row[0]
+        return None
 
     async def _apply_file_change(self, db: AsyncSession, user: User, entity_id: str, change: SyncChangeItem) -> dict:
         # Files are created via the multipart upload endpoint, not via sync push
@@ -1031,6 +1141,14 @@ class SyncService:
             "is_completed": task.is_completed,
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             "due_date": task.due_date.isoformat() if task.due_date else None,
+            "due_has_time": task.due_has_time,
+            "priority": task.priority,
+            "labels": task.labels or [],
+            "recurrence": task.recurrence,
+            "reminder_at": task.reminder_at.isoformat() if task.reminder_at else None,
+            "reminder_lead_minutes": task.reminder_lead_minutes,
+            "notebook_id": str(task.notebook_id) if task.notebook_id else None,
+            "parent_id": str(task.parent_id) if task.parent_id else None,
             "sort_order": task.sort_order,
             "is_deleted": task.is_deleted,
             "created_at": task.created_at.isoformat(),

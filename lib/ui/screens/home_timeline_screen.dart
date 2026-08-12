@@ -4,9 +4,11 @@ import '../../core/app_bootstrap.dart';
 import '../../data/models/note.dart';
 import '../../data/repositories/note_repository.dart';
 import '../../data/repositories/notebook_repository.dart';
+import '../../core/native/oblix_core.dart';
 import '../sheets/note_actions_sheet.dart';
 import '../theme/oblix_theme.dart';
 import '../util/formats.dart';
+import '../widgets/note_timeline.dart';
 import '../widgets/paper.dart';
 import 'ask_screen.dart';
 import 'note_editor_screen.dart';
@@ -74,7 +76,6 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
     final pinned = _items.where((n) => n.isPinned).toList();
     final rest = _items.where((n) => !n.isPinned).toList();
 
@@ -82,132 +83,214 @@ class _HomeTimelineScreenState extends State<HomeTimelineScreen> {
       bottom: false,
       child: RefreshIndicator(
         onRefresh: _sync,
-        child: _loaded && _items.isEmpty
-            ? _EmptyState(onWrite: () => _openEditor())
-            : ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 24),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          Formats.dateEyebrow(DateTime.now()),
-                          style: OblixType.eyebrow(c),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.settings_outlined,
-                            size: 22,
-                            color: c.inkMuted,
-                          ),
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SettingsScreen(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+        child: ValueListenableBuilder<bool>(
+          valueListenable: AppBootstrap.scheduler.firstSyncSettled,
+          builder: (context, firstSyncSettled, _) {
+            // An empty local database only becomes news once this session's
+            // first sync has been and gone. Straight after a sign-in it is
+            // empty because the notes are still coming down, and showing "A
+            // clean page." for that half second makes a full account look
+            // brand new. Placeholders under the real header carry the wait
+            // instead, and the notes drop in beneath a header that never moved.
+            if (!_loaded || (_items.isEmpty && !firstSyncSettled)) {
+              return const _LoadingList();
+            }
+            if (_items.isEmpty) {
+              return _EmptyState(onWrite: () => _openEditor());
+            }
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 116),
+              children: [
+                const _TimelineHeader(),
+                if (pinned.isNotEmpty) ...[
+                  const SectionEyebrow(
+                    'Pinned',
+                    padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-                    child: Text('Notes', style: OblixType.pageTitle(c)),
+                  _PinnedGrid(
+                    notes: pinned,
+                    notebookNames: _notebookNames,
+                    onOpen: (n) => _openEditor(noteId: n.id),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                    child: Material(
-                      color: c.surface,
-                      shape: StadiumBorder(side: BorderSide(color: c.hairline)),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AskScreen()),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 11,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.search, size: 17, color: c.inkMuted),
-                              const SizedBox(width: 9),
-                              Expanded(
-                                child: Text(
-                                  'Search or ask your notes…',
-                                  style: OblixType.ui(
-                                    c,
-                                    size: 14,
-                                    color: c.inkMuted,
-                                  ),
-                                ),
-                              ),
-                              Icon(Icons.mic_none, size: 17, color: c.inkMuted),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (pinned.isNotEmpty) ...[
-                    const SectionEyebrow(
-                      'Pinned',
-                      padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
-                    ),
-                    _PinnedGrid(
-                      notes: pinned,
-                      notebookNames: _notebookNames,
-                      onOpen: (n) => _openEditor(noteId: n.id),
-                    ),
-                  ],
-                  for (final group in _groupByDay(rest)) ...[
-                    SectionEyebrow(
-                      group.label,
-                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-                    ),
-                    PaperCard(
-                      margin: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        children: [
-                          for (var i = 0; i < group.notes.length; i++) ...[
-                            if (i > 0) Divider(height: 1, color: c.hairline),
-                            _TimelineRow(
-                              note: group.notes[i],
-                              onTap: () =>
-                                  _openEditor(noteId: group.notes[i].id),
-                              onLongPress: () =>
-                                  showNoteActionsSheet(context, group.notes[i]),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+                ...buildGroupedSections(
+                  context,
+                  notes: rest,
+                  onOpen: (note) => _openEditor(noteId: note.id),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
+}
 
-  List<_DayGroup> _groupByDay(List<Note> notes) {
-    final groups = <String, _DayGroup>{};
-    for (final note in notes) {
-      final label = Formats.dayGroup(note.updatedAt);
-      groups.putIfAbsent(label, () => _DayGroup(label)).notes.add(note);
-    }
-    return groups.values.toList();
+/// Date eyebrow, settings gear, title, and the search-or-ask pill.
+///
+/// Shared by the loaded list and the loading placeholder so the two agree to
+/// the pixel and nothing jumps when the notes arrive.
+class _TimelineHeader extends StatelessWidget {
+  const _TimelineHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = OblixColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                Formats.dateEyebrow(DateTime.now()),
+                style: OblixType.eyebrow(c),
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.settings_outlined,
+                  size: 22,
+                  color: c.inkMuted,
+                ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+          child: Text('Notes', style: OblixType.pageTitle(c)),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          child: GlassPill(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AskScreen()),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.search, size: 17, color: c.inkMuted),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    'Search or ask your notes…',
+                    style: OblixType.ui(c, size: 14, color: c.inkMuted),
+                  ),
+                ),
+                Icon(Icons.mic_none, size: 17, color: c.inkMuted),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
-class _DayGroup {
-  final String label;
-  final List<Note> notes = [];
-  _DayGroup(this.label);
+/// The header plus a card of blank rows, shown while the first note load — and,
+/// on a fresh sign-in, the first sync — is still in flight.
+class _LoadingList extends StatelessWidget {
+  const _LoadingList();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 116),
+      children: [
+        const _TimelineHeader(),
+        const SectionEyebrow(
+          'Loading',
+          padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+        ),
+        _Pulse(
+          child: PaperCard(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                for (var i = 0; i < 4; i++) ...[
+                  if (i > 0)
+                    Divider(height: 1, color: OblixColors.of(context).hairline),
+                  const _SkeletonRow(),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One placeholder note row: a title bar and a shorter snippet bar, laid out to
+/// the same rhythm as [NoteTimelineRow].
+class _SkeletonRow extends StatelessWidget {
+  const _SkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = OblixColors.of(context);
+    Widget bar(double widthFactor, double height) => FractionallySizedBox(
+      alignment: AlignmentDirectional.centerStart,
+      widthFactor: widthFactor,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: c.surfaceAlt,
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [bar(0.52, 12), const SizedBox(height: 9), bar(0.78, 10)],
+      ),
+    );
+  }
+}
+
+/// Breathes its child's opacity so the placeholders read as "loading" rather
+/// than as content that failed to draw.
+class _Pulse extends StatefulWidget {
+  const _Pulse({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Pulse> createState() => _PulseState();
+}
+
+class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    duration: const Duration(milliseconds: 850),
+    vsync: this,
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 1).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+      ),
+      child: widget.child,
+    );
+  }
 }
 
 class _PinnedGrid extends StatelessWidget {
@@ -249,7 +332,7 @@ class _PinnedGrid extends StatelessWidget {
   }
 
   Widget _card(BuildContext context, OblixColors c, Note note) {
-    final snippet = note.content.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final snippet = noteSnippet(note.content);
     final book = notebookNames[note.notebookId];
     final meta = [?book, Formats.relative(note.updatedAt)].join(' · ');
     return PaperCard(
@@ -277,82 +360,6 @@ class _PinnedGrid extends StatelessWidget {
           const SizedBox(height: 9),
           Text(meta, style: OblixType.meta(c)),
         ],
-      ),
-    );
-  }
-}
-
-class _TimelineRow extends StatelessWidget {
-  final Note note;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  const _TimelineRow({
-    required this.note,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
-    final snippet = note.content.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    note.title.isEmpty ? 'Untitled' : note.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: OblixType.cardTitle(c),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(Formats.time(note.updatedAt), style: OblixType.meta(c)),
-              ],
-            ),
-            if (snippet.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                snippet,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: OblixType.snippet(c),
-              ),
-            ],
-            if (note.tagNames.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (final tag in note.tagNames.take(3))
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: c.accentSoft,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '#$tag',
-                        style: OblixType.ui(c, size: 11.5, color: c.accentDeep),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -464,34 +471,27 @@ class _EmptyState extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 22),
-                Material(
-                  color: c.surface,
-                  shape: StadiumBorder(side: BorderSide(color: c.hairline)),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: onWrite,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
+                GlassPill(
+                  onTap: onWrite,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 9,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.notes, size: 13, color: c.avatarInk),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Write',
+                        style: OblixType.ui(
+                          c,
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: c.avatarInk,
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.notes, size: 13, color: c.avatarInk),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Write',
-                            style: OblixType.ui(
-                              c,
-                              size: 13,
-                              weight: FontWeight.w600,
-                              color: c.avatarInk,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ],

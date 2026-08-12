@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../../../core/db/app_database.dart';
+import '../../../core/native/oblix_core.dart';
 import '../../models/tag.dart';
 
 /// Local SQLite access for tags (offline-first mirror). Deletions are
@@ -11,8 +12,12 @@ class TagLocalDataSource {
 
   Future<Tag?> getById(String id) async {
     final db = await _appDb.database;
-    final rows =
-        await db.query('tags', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'tags',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
@@ -53,10 +58,18 @@ class TagLocalDataSource {
         limit: 1,
       );
       if (rows.isNotEmpty) {
-        final localUpdated =
-            DateTime.tryParse(rows.first['updated_at'] as String? ?? '');
+        final localUpdated = DateTime.tryParse(
+          rows.first['updated_at'] as String? ?? '',
+        );
         if (localUpdated != null &&
-            server.updatedAt.toUtc().isBefore(localUpdated.toUtc())) {
+            !remoteTimestampWinsEqual(
+              localTimestampMicrosUtc: localUpdated
+                  .toUtc()
+                  .microsecondsSinceEpoch,
+              remoteTimestampMicrosUtc: server.updatedAt
+                  .toUtc()
+                  .microsecondsSinceEpoch,
+            )) {
           continue;
         }
       }
@@ -70,7 +83,8 @@ class TagLocalDataSource {
   Future<int> purgeDeletedBefore(DatabaseExecutor db, DateTime cutoffUtc) {
     return db.delete(
       'tags',
-      where: 'is_deleted = 1 AND updated_at < ? '
+      where:
+          'is_deleted = 1 AND updated_at < ? '
           'AND id NOT IN (SELECT entity_id FROM outbox)',
       whereArgs: [cutoffUtc.toIso8601String()],
     );

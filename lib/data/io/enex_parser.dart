@@ -1,4 +1,6 @@
 import 'package:xml/xml.dart';
+
+import '../../core/native/oblix_core.dart';
 import 'import_models.dart';
 
 /// Parses Evernote's `.enex` export format into an [ImportBundle].
@@ -12,6 +14,15 @@ class EnexParser {
   /// [notebookName] groups every note in the file under one notebook — ENEX
   /// carries no notebook name itself, so callers typically pass the file name.
   static ImportBundle parse(String xmlString, {String? notebookName}) {
+    if (isRustCoreReady) {
+      return ImportBundle.fromCore(
+        parseEnexCore(
+          xml: xmlString,
+          notebookName: notebookName,
+          nowMicrosUtc: DateTime.now().toUtc().microsecondsSinceEpoch,
+        ),
+      );
+    }
     final doc = XmlDocument.parse(xmlString);
     final notes = <ImportedNote>[];
 
@@ -31,7 +42,8 @@ class EnexParser {
           .toList();
 
       final attributes = noteEl.getElement('note-attributes');
-      final pinned = attributes
+      final pinned =
+          attributes
               ?.getElement('reminder-order')
               ?.innerText
               .trim()
@@ -40,17 +52,19 @@ class EnexParser {
 
       final resources = noteEl.findElements('resource').length;
 
-      notes.add(ImportedNote(
-        title: title.isEmpty ? 'Untitled' : title,
-        content: content,
-        contentType: 'plain',
-        tagNames: tags,
-        isPinned: pinned,
-        createdAt: created ?? DateTime.now().toUtc(),
-        updatedAt: updated ?? DateTime.now().toUtc(),
-        notebookName: notebookName,
-        skippedAttachments: resources,
-      ));
+      notes.add(
+        ImportedNote(
+          title: title.isEmpty ? 'Untitled' : title,
+          content: content,
+          contentType: 'plain',
+          tagNames: tags,
+          isPinned: pinned,
+          createdAt: created ?? DateTime.now().toUtc(),
+          updatedAt: updated ?? DateTime.now().toUtc(),
+          notebookName: notebookName,
+          skippedAttachments: resources,
+        ),
+      );
     }
 
     return ImportBundle(
@@ -75,16 +89,31 @@ class EnexParser {
       // Malformed ENML — strip tags as a last resort so import never fails.
       final stripped = enml
           .replaceAll(RegExp(r'<\s*br\s*/?>', caseSensitive: false), '\n')
-          .replaceAll(RegExp(r'</\s*(div|p|li|h[1-6]|tr)\s*>',
-              caseSensitive: false), '\n')
+          .replaceAll(
+            RegExp(r'</\s*(div|p|li|h[1-6]|tr)\s*>', caseSensitive: false),
+            '\n',
+          )
           .replaceAll(RegExp(r'<[^>]+>'), '');
       return _tidy(_unescape(stripped));
     }
   }
 
   static const _blockTags = {
-    'div', 'p', 'br', 'li', 'tr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'blockquote', 'ul', 'ol', 'table',
+    'div',
+    'p',
+    'br',
+    'li',
+    'tr',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'blockquote',
+    'ul',
+    'ol',
+    'table',
   };
 
   static void _walk(XmlNode node, StringBuffer buf) {
@@ -144,8 +173,9 @@ class EnexParser {
   /// Evernote timestamps look like `20200131T134501Z` (basic ISO-8601).
   static DateTime? _parseEnexTs(String? raw) {
     if (raw == null) return null;
-    final m = RegExp(r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$')
-        .firstMatch(raw.trim());
+    final m = RegExp(
+      r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$',
+    ).firstMatch(raw.trim());
     if (m == null) return null;
     return DateTime.utc(
       int.parse(m[1]!),

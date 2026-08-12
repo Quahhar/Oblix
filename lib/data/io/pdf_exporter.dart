@@ -9,7 +9,11 @@ class PdfFonts {
   final pw.Font bold;
   final pw.Font italic;
 
-  const PdfFonts({required this.regular, required this.bold, required this.italic});
+  const PdfFonts({
+    required this.regular,
+    required this.bold,
+    required this.italic,
+  });
 }
 
 /// Supplies the fonts a PDF is rendered with; returns null to fall back to
@@ -108,9 +112,9 @@ class PdfExporter {
   }
 
   static List<String> _paragraphs(String content) => [
-        for (final p in content.split(RegExp(r'\n\s*\n')))
-          if (p.trim().isNotEmpty) p.trim(),
-      ];
+    for (final p in content.split(RegExp(r'\n\s*\n')))
+      if (p.trim().isNotEmpty) p.trim(),
+  ];
 
   static String _date(DateTime t) => t.toIso8601String().split('T').first;
 }

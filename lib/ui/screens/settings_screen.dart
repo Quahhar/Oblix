@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/app_bootstrap.dart';
-import '../../core/auth/profile_cache.dart';
 import '../../data/models/note.dart';
 import '../../domain/services/import_export_service.dart';
 import '../theme/oblix_theme.dart';
@@ -16,10 +15,13 @@ import '../util/formats.dart';
 import '../widgets/paper.dart';
 import 'archive_screen.dart';
 import 'trash_screen.dart';
-import 'shared_with_me_screen.dart';
 
-/// Profile card, preferences (appearance), data (import/export/trash), sync
-/// status, and sign out.
+/// How the app behaves: appearance, your data (import/export/archive/trash),
+/// and sync.
+///
+/// Deliberately holds nothing about *who* is signed in — identity, sharing, and
+/// sign-out belong to the Profile tab. This screen is pushed as a route, so it
+/// covers the navigation dock; Profile does not.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -66,6 +68,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (choice != null) await ThemeController.instance.set(choice);
   }
 
+  Future<void> _pickThemeCollection() async {
+    final c = OblixColors.of(context);
+    final choice = await showModalBottomSheet<OblixThemeCollection>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SheetGrabHandle(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Theme collection', style: OblixType.cardTitle(c)),
+              ),
+            ),
+            for (final collection in OblixThemeCollection.values)
+              ListTile(
+                leading: _ThemeSwatch(collection: collection),
+                title: Text(collection.label, style: OblixType.ui(c, size: 15)),
+                subtitle: Text(
+                  collection.description,
+                  style: OblixType.ui(c, size: 12.5, color: c.inkMuted),
+                ),
+                trailing:
+                    ThemeController.instance.collection.value == collection
+                    ? Icon(Icons.check, color: c.accent, size: 20)
+                    : null,
+                onTap: () => Navigator.pop(context, collection),
+              ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (choice != null) {
+      await ThemeController.instance.setCollection(choice);
+    }
+  }
+
   // --- Import ---
 
   Future<void> _import() async {
@@ -108,9 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             case 'txt':
               // Apply each text file independently so one unread/malformed
               // selection cannot hide or roll back the files that succeeded.
-              fileResult = await _io.importMarkdownFiles([
-                (file.name, bytes),
-              ]);
+              fileResult = await _io.importMarkdownFiles([(file.name, bytes)]);
             case 'epub':
               fileResult = await _io.importEpub(bytes);
             default:
@@ -399,42 +439,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _signOut() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sign out?'),
-        content: const Text(
-          'Unsynced changes are pushed first if possible. Local data on this '
-          'device is then removed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out'),
-          ),
-        ],
-      ),
-    );
-    if (!(confirmed ?? false)) return;
-    setState(() => _busy = true);
-    try {
-      await AppBootstrap.signOut();
-    } catch (_) {
-      // Best-effort logout still flips AuthState to signedOut (the repository
-      // always calls markSignedOut), so the AuthGate will route away.  Even if
-      // local cleanup threw, the user is signed out.
-    } finally {
-      ProfileCache.instance.clear();
-      if (mounted) setState(() => _busy = false);
-    }
-    // AuthGate routes back to login on the state flip; nothing else to do.
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = OblixColors.of(context);
@@ -447,100 +451,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                  child: CircleIconButton(
-                    Icons.arrow_back_ios_new,
-                    size: 32,
-                    onTap: () => Navigator.pop(context),
+                  // A ListView hands its children a tight cross-axis width, so
+                  // the button's own SizedBox would stretch and centre the disc
+                  // mid-page. The Align pins it to the leading edge.
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: CircleIconButton(
+                      Icons.arrow_back_ios_new,
+                      size: 32,
+                      onTap: () => Navigator.pop(context),
+                    ),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
                   child: Text('Settings', style: OblixType.pageTitle(c)),
                 ),
-                // Profile
-                PaperCard(
-                  margin: const EdgeInsets.fromLTRB(22, 18, 22, 0),
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      ValueListenableBuilder<String?>(
-                        valueListenable: ProfileCache.instance.name,
-                        builder: (context, name, _) {
-                          final initial = (name?.trim().isNotEmpty ?? false)
-                              ? name!.trim()[0].toUpperCase()
-                              : 'O';
-                          return Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: c.accent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                initial,
-                                style: OblixType.ui(
-                                  c,
-                                  size: 21,
-                                  weight: FontWeight.w700,
-                                  color: c.onAccent,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ValueListenableBuilder<String?>(
-                              valueListenable: ProfileCache.instance.name,
-                              builder: (context, name, _) => Text(
-                                name ?? 'Your account',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: OblixType.ui(
-                                  c,
-                                  size: 16.5,
-                                  weight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            ValueListenableBuilder<String?>(
-                              valueListenable: ProfileCache.instance.email,
-                              builder: (context, email, _) => Text(
-                                email ?? '',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: OblixType.ui(
-                                  c,
-                                  size: 12.5,
-                                  color: c.inkMuted,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
                 const SectionEyebrow(
-                  'Preferences',
+                  'Appearance',
                   padding: EdgeInsets.fromLTRB(26, 20, 26, 0),
                 ),
                 PaperCard(
                   margin: const EdgeInsets.fromLTRB(22, 10, 22, 0),
-                  child: ValueListenableBuilder<ThemeMode>(
-                    valueListenable: ThemeController.instance.mode,
-                    builder: (context, mode, _) => _SettingsRow(
-                      icon: Icons.dark_mode_outlined,
-                      label: 'Appearance',
-                      value: ThemeController.label(mode),
-                      onTap: _pickAppearance,
-                    ),
+                  child: Column(
+                    children: [
+                      ValueListenableBuilder<OblixThemeCollection>(
+                        valueListenable: ThemeController.instance.collection,
+                        builder: (context, collection, _) => SettingsRow(
+                          icon: Icons.palette_outlined,
+                          label: 'Theme',
+                          value: collection.label,
+                          onTap: _pickThemeCollection,
+                        ),
+                      ),
+                      Divider(height: 1, color: c.hairline),
+                      ValueListenableBuilder<ThemeMode>(
+                        valueListenable: ThemeController.instance.mode,
+                        builder: (context, mode, _) => SettingsRow(
+                          icon: Icons.brightness_auto_outlined,
+                          label: 'Appearance',
+                          value: ThemeController.label(mode),
+                          onTap: _pickAppearance,
+                        ),
+                      ),
+                      Divider(height: 1, color: c.hairline),
+                      ValueListenableBuilder<bool>(
+                        valueListenable: ThemeController.instance.liquidGlass,
+                        builder: (context, enabled, _) => SettingsRow(
+                          icon: Icons.blur_on_outlined,
+                          label: 'Liquid Glass',
+                          value: enabled ? 'On' : 'Off',
+                          showChevron: false,
+                          onTap: () =>
+                              ThemeController.instance.setLiquidGlass(!enabled),
+                          trailing: IgnorePointer(
+                            child: Switch.adaptive(
+                              value: enabled,
+                              activeTrackColor: c.accent,
+                              activeThumbColor: c.onAccent,
+                              onChanged:
+                                  ThemeController.instance.setLiquidGlass,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SectionEyebrow(
@@ -551,33 +526,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   margin: const EdgeInsets.fromLTRB(22, 10, 22, 0),
                   child: Column(
                     children: [
-                      _SettingsRow(
-                        icon: Icons.group_outlined,
-                        label: 'Shared with me',
-                        value: 'Live collaboration',
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SharedWithMeScreen(),
-                          ),
-                        ),
-                      ),
-                      Divider(height: 1, color: c.hairline),
-                      _SettingsRow(
+                      SettingsRow(
                         icon: Icons.file_download_outlined,
                         label: 'Import notes',
                         value: '.enex · .oblix · .md · .txt · .epub',
                         onTap: _busy ? null : _import,
                       ),
                       Divider(height: 1, color: c.hairline),
-                      _SettingsRow(
+                      SettingsRow(
                         icon: Icons.file_upload_outlined,
                         label: 'Export notes',
                         value: '.oblix · .epub · .md · .txt',
                         onTap: _busy ? null : _export,
                       ),
                       Divider(height: 1, color: c.hairline),
-                      _SettingsRow(
+                      SettingsRow(
                         icon: Icons.archive_outlined,
                         label: 'Archive',
                         onTap: () => Navigator.push(
@@ -588,7 +551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       Divider(height: 1, color: c.hairline),
-                      _SettingsRow(
+                      SettingsRow(
                         icon: Icons.delete_outline,
                         label: 'Trash',
                         onTap: () => Navigator.push(
@@ -609,7 +572,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   margin: const EdgeInsets.fromLTRB(22, 10, 22, 0),
                   child: ValueListenableBuilder<DateTime?>(
                     valueListenable: AppBootstrap.scheduler.lastSyncedAt,
-                    builder: (context, at, _) => _SettingsRow(
+                    builder: (context, at, _) => SettingsRow(
                       icon: Icons.sync,
                       label: 'Sync now',
                       value: at == null ? 'Never' : Formats.relative(at),
@@ -623,21 +586,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               : 'Sync failed, changes are kept locally',
                         );
                       },
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(26, 22, 26, 0),
-                  child: GestureDetector(
-                    onTap: _busy ? null : _signOut,
-                    child: Text(
-                      'Sign out',
-                      style: OblixType.ui(
-                        c,
-                        size: 14,
-                        weight: FontWeight.w500,
-                        color: c.danger,
-                      ),
                     ),
                   ),
                 ),
@@ -657,44 +605,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-class _SettingsRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String? value;
-  final VoidCallback? onTap;
+class _ThemeSwatch extends StatelessWidget {
+  final OblixThemeCollection collection;
 
-  const _SettingsRow({
-    required this.icon,
-    required this.label,
-    this.value,
-    this.onTap,
-  });
+  const _ThemeSwatch({required this.collection});
 
   @override
   Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: c.surfaceAlt,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, size: 15, color: c.avatarInk),
-            ),
-            const SizedBox(width: 13),
-            Expanded(child: Text(label, style: OblixType.ui(c, size: 14.5))),
-            if (value != null)
-              Text(value!, style: OblixType.ui(c, size: 13, color: c.inkMuted)),
-            const SizedBox(width: 6),
-            Icon(Icons.chevron_right, size: 16, color: c.outline),
-          ],
+    final palette = collection == OblixThemeCollection.classic
+        ? OblixColors.classicLight
+        : OblixColors.paperLight;
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: palette.bg,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: palette.hairline),
+      ),
+      alignment: Alignment.center,
+      child: Container(
+        width: 16,
+        height: 16,
+        decoration: BoxDecoration(
+          color: palette.accent,
+          shape: BoxShape.circle,
         ),
       ),
     );

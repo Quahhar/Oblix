@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../screens/note_editor_screen.dart';
+import '../screens/scan_screen.dart';
 import '../theme/oblix_theme.dart';
 import '../widgets/paper.dart';
-import 'new_task_sheet.dart';
+import 'quick_add_task_sheet.dart';
 
 /// The center "+" sheet: a 2-column grid of capture options. New note and
 /// Task are live; Audio / Scan / Sketch / Web clip are designed features
@@ -25,10 +26,22 @@ class _CaptureSheet extends StatelessWidget {
   const _CaptureSheet();
 
   static const _options = <_CaptureOption>[
-    _CaptureOption(Icons.description_outlined, 'New note', 'Blank page, cursor ready'),
-    _CaptureOption(Icons.check_circle_outline, 'Task', 'With optional reminder'),
+    _CaptureOption(
+      Icons.description_outlined,
+      'New note',
+      'Blank page, cursor ready',
+    ),
+    _CaptureOption(
+      Icons.check_circle_outline,
+      'Task',
+      'With optional reminder',
+    ),
     _CaptureOption(Icons.mic_none, 'Audio', 'Records + transcribes'),
-    _CaptureOption(Icons.crop_free, 'Scan', 'Paper to searchable PDF'),
+    _CaptureOption(
+      Icons.document_scanner_outlined,
+      'Scan',
+      'Read a page into a note',
+    ),
     _CaptureOption(Icons.edit_outlined, 'Sketch', 'Pencil & paper canvas'),
     _CaptureOption(Icons.language, 'Web clip', 'Save a page or link'),
   ];
@@ -43,7 +56,12 @@ class _CaptureSheet extends StatelessWidget {
           MaterialPageRoute(builder: (_) => const NoteEditorScreen()),
         );
       case 1:
-        showNewTaskSheet(context);
+        showQuickAddTaskSheet(context);
+      case 3:
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ScanScreen()),
+        );
       default:
         showComingSoon(
           context,
@@ -73,10 +91,16 @@ class _CaptureSheet extends StatelessWidget {
               childAspectRatio: 1.72,
               children: [
                 for (var i = 0; i < _options.length; i++)
-                  Material(
+                  LiquidGlass(
                     color: c.bg,
-                    borderRadius: BorderRadius.circular(16),
-                    clipBehavior: Clip.antiAlias,
+                    // Sheet content sits on an opaque surface, and the shared
+                    // backdrop is captured behind the whole app — so a blur
+                    // here would sample the page under the sheet, not the
+                    // sheet. Tint and sheen carry the look instead.
+                    blur: false,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     child: InkWell(
                       onTap: () => _select(context, i),
                       child: Padding(
@@ -89,16 +113,22 @@ class _CaptureSheet extends StatelessWidget {
                             const SizedBox(height: 10),
                             Text(
                               _options[i].title,
-                              style: OblixType.ui(c,
-                                  size: 14, weight: FontWeight.w600),
+                              style: OblixType.ui(
+                                c,
+                                size: 14,
+                                weight: FontWeight.w600,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               _options[i].subtitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: OblixType.ui(c,
-                                  size: 11, color: c.inkMuted),
+                              style: OblixType.ui(
+                                c,
+                                size: 11,
+                                color: c.inkMuted,
+                              ),
                             ),
                           ],
                         ),
@@ -111,8 +141,12 @@ class _CaptureSheet extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               child: Text(
                 'Cancel',
-                style: OblixType.ui(c,
-                    size: 14, weight: FontWeight.w600, color: c.inkMuted),
+                style: OblixType.ui(
+                  c,
+                  size: 14,
+                  weight: FontWeight.w600,
+                  color: c.inkMuted,
+                ),
               ),
             ),
           ],

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme_controller.dart';
 
 /// The "Paper" design system: warm paper surfaces, terracotta accent, serif
 /// titles (Source Serif 4) with grotesk UI text (Familjen Grotesk).
@@ -49,7 +50,7 @@ class OblixColors extends ThemeExtension<OblixColors> {
     required this.scrim,
   });
 
-  static const light = OblixColors(
+  static const paperLight = OblixColors(
     bg: Color(0xFFF0EEE6),
     surface: Color(0xFFFAF9F5),
     surfaceAlt: Color(0xFFEDE9DD),
@@ -71,7 +72,7 @@ class OblixColors extends ThemeExtension<OblixColors> {
     scrim: Color(0x611F1E1B), // rgba(31,30,27,.38)
   );
 
-  static const dark = OblixColors(
+  static const paperDark = OblixColors(
     bg: Color(0xFF262624),
     surface: Color(0xFF30302E),
     surfaceAlt: Color(0xFF3A3935),
@@ -92,6 +93,58 @@ class OblixColors extends ThemeExtension<OblixColors> {
     avatarInk: Color(0xFFCFC9BA),
     scrim: Color(0x8A16150F),
   );
+
+  /// Clean, neutral collection inspired by the restraint of Apple Notes.
+  /// It intentionally uses platform-like whites and grays rather than Paper's
+  /// warm tint while retaining enough contrast on Android and desktop.
+  static const classicLight = OblixColors(
+    bg: Color(0xFFF7F7F5),
+    surface: Color(0xFFFFFFFF),
+    surfaceAlt: Color(0xFFF1F1EF),
+    chip: Color(0xFFE9E9E7),
+    ink: Color(0xFF1C1C1E),
+    body: Color(0xFF2C2C2E),
+    inkSecondary: Color(0xFF636366),
+    inkMuted: Color(0xFF8E8E93),
+    inkFaint: Color(0xFFAEAEB2),
+    outline: Color(0xFFC7C7CC),
+    hairline: Color(0x1F3C3C43),
+    accent: Color(0xFFE0AA12),
+    accentDeep: Color(0xFFB88600),
+    accentSoft: Color(0x24FFCC00),
+    onAccent: Color(0xFF1C1C1E),
+    danger: Color(0xFFFF3B30),
+    avatarBg: Color(0xFFFFE89A),
+    avatarInk: Color(0xFF6B5000),
+    scrim: Color(0x523C3C43),
+  );
+
+  static const classicDark = OblixColors(
+    bg: Color(0xFF1C1C1E),
+    surface: Color(0xFF2C2C2E),
+    surfaceAlt: Color(0xFF3A3A3C),
+    chip: Color(0xFF3A3A3C),
+    ink: Color(0xFFF2F2F7),
+    body: Color(0xFFE5E5EA),
+    inkSecondary: Color(0xFFAEAEB2),
+    inkMuted: Color(0xFF8E8E93),
+    inkFaint: Color(0xFF6C6C70),
+    outline: Color(0xFF545458),
+    hairline: Color(0x29545458),
+    accent: Color(0xFFFFD60A),
+    accentDeep: Color(0xFFFFE169),
+    accentSoft: Color(0x33FFD60A),
+    onAccent: Color(0xFF1C1C1E),
+    danger: Color(0xFFFF453A),
+    avatarBg: Color(0xFF665711),
+    avatarInk: Color(0xFFFFE169),
+    scrim: Color(0x8A000000),
+  );
+
+  // Compatibility aliases for widgets and tests that used the original
+  // palette names before collections were introduced.
+  static const light = paperLight;
+  static const dark = paperDark;
 
   static OblixColors of(BuildContext context) =>
       Theme.of(context).extension<OblixColors>()!;
@@ -134,76 +187,70 @@ abstract final class OblixType {
 
   /// Big page title ("Notes", "Tasks", "Settings").
   static TextStyle pageTitle(OblixColors c) => TextStyle(
-        fontFamily: serif,
-        fontSize: 32,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.5,
-        color: c.ink,
-        height: 1.15,
-      );
+    fontFamily: serif,
+    fontSize: 32,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.5,
+    color: c.ink,
+    height: 1.15,
+  );
 
   /// Note title inside the editor.
   static TextStyle editorTitle(OblixColors c) => TextStyle(
-        fontFamily: serif,
-        fontSize: 27,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.3,
-        color: c.ink,
-        height: 1.2,
-      );
+    fontFamily: serif,
+    fontSize: 27,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.3,
+    color: c.ink,
+    height: 1.2,
+  );
 
   /// Card / list-row note title.
   static TextStyle cardTitle(OblixColors c) => TextStyle(
-        fontFamily: serif,
-        fontSize: 15.5,
-        fontWeight: FontWeight.w600,
-        color: c.ink,
-        height: 1.3,
-      );
+    fontFamily: serif,
+    fontSize: 15.5,
+    fontWeight: FontWeight.w600,
+    color: c.ink,
+    height: 1.3,
+  );
 
   /// Long-form note body.
-  static TextStyle noteBody(OblixColors c) => TextStyle(
-        fontFamily: serif,
-        fontSize: 15,
-        color: c.body,
-        height: 1.72,
-      );
+  static TextStyle noteBody(OblixColors c) =>
+      TextStyle(fontFamily: serif, fontSize: 15, color: c.body, height: 1.72);
 
   /// UPPERCASE section eyebrow ("PINNED", "TODAY").
   static TextStyle eyebrow(OblixColors c, {Color? color}) => TextStyle(
-        fontFamily: sans,
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 1.3,
-        color: color ?? c.inkMuted,
-      );
+    fontFamily: sans,
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.3,
+    color: color ?? c.inkMuted,
+  );
 
   /// Card snippet / supporting copy.
   static TextStyle snippet(OblixColors c) => TextStyle(
-        fontFamily: sans,
-        fontSize: 12,
-        color: c.inkSecondary,
-        height: 1.5,
-      );
+    fontFamily: sans,
+    fontSize: 12,
+    color: c.inkSecondary,
+    height: 1.5,
+  );
 
   /// Timestamps, counts, faint metadata.
-  static TextStyle meta(OblixColors c) => TextStyle(
-        fontFamily: sans,
-        fontSize: 11,
-        color: c.inkFaint,
-      );
+  static TextStyle meta(OblixColors c) =>
+      TextStyle(fontFamily: sans, fontSize: 11, color: c.inkFaint);
 
   /// Standard UI text (list rows, buttons provide their own).
-  static TextStyle ui(OblixColors c,
-          {double size = 14.5,
-          FontWeight weight = FontWeight.w400,
-          Color? color}) =>
-      TextStyle(
-        fontFamily: sans,
-        fontSize: size,
-        fontWeight: weight,
-        color: color ?? c.ink,
-      );
+  static TextStyle ui(
+    OblixColors c, {
+    double size = 14.5,
+    FontWeight weight = FontWeight.w400,
+    Color? color,
+  }) => TextStyle(
+    fontFamily: sans,
+    fontSize: size,
+    fontWeight: weight,
+    color: color ?? c.ink,
+  );
 }
 
 abstract final class OblixTheme {
@@ -270,7 +317,28 @@ abstract final class OblixTheme {
     );
   }
 
+  static ThemeData forCollection(
+    OblixThemeCollection collection,
+    Brightness brightness,
+  ) {
+    final colors = switch ((collection, brightness)) {
+      (OblixThemeCollection.classic, Brightness.light) =>
+        OblixColors.classicLight,
+      (OblixThemeCollection.classic, Brightness.dark) =>
+        OblixColors.classicDark,
+      (OblixThemeCollection.paper, Brightness.light) => OblixColors.paperLight,
+      (OblixThemeCollection.paper, Brightness.dark) => OblixColors.paperDark,
+    };
+    return _base(colors, brightness);
+  }
+
   static ThemeData get lightTheme =>
-      _base(OblixColors.light, Brightness.light);
-  static ThemeData get darkTheme => _base(OblixColors.dark, Brightness.dark);
+      forCollection(OblixThemeCollection.classic, Brightness.light);
+  static ThemeData get darkTheme =>
+      forCollection(OblixThemeCollection.classic, Brightness.dark);
+
+  static ThemeData get paperLightTheme =>
+      forCollection(OblixThemeCollection.paper, Brightness.light);
+  static ThemeData get paperDarkTheme =>
+      forCollection(OblixThemeCollection.paper, Brightness.dark);
 }

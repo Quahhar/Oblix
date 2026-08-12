@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 import '../../core/db/app_database.dart';
 import '../../core/db/meta_dao.dart';
+import '../../core/native/oblix_core.dart';
 import '../../core/time/sync_clock.dart';
 import '../datasources/local/notebook_local_datasource.dart';
 import '../datasources/local/outbox_dao.dart';
@@ -50,19 +51,25 @@ class NotebookRepository {
     String? parentId,
     int sortOrder = 0,
   }) async {
+    final plan = planNotebookCreate(
+      name: name,
+      parentId: parentId,
+      sortOrder: sortOrder,
+    );
     final now = await _clock.nowUtc();
     final deviceId = await _meta.getOrCreateDeviceId();
     final notebook = Notebook(
       id: _uuid.v4(),
       userId: await _meta.getUserId() ?? '',
-      name: name,
-      parentId: parentId,
-      sortOrder: sortOrder,
+      name: plan.value.name,
+      parentId: plan.value.parentId,
+      sortOrder: plan.value.sortOrder,
+      isDeleted: plan.value.isDeleted,
       createdAt: now,
       updatedAt: now,
       fieldClocks: stampCrdtFields(
         const {},
-        Notebook.crdtFields,
+        plan.selection.changedFields.toSet(),
         now,
         deviceId,
       ),
@@ -78,19 +85,23 @@ class NotebookRepository {
     int? sortOrder,
   }) async {
     final existing = await _require(id);
-    final fields = <String>{
-      if (name != null) 'name',
-      if (parentId != null) 'parent_id',
-      if (sortOrder != null) 'sort_order',
-    };
+    final plan = planNotebookUpdate(
+      current: _notebookMutationState(existing),
+      name: name,
+      parentIdProvided: parentId != null,
+      parentId: parentId,
+      sortOrder: sortOrder,
+    );
+    final fields = plan.selection.changedFields.toSet();
     if (fields.isEmpty) return existing;
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
     final clocks = stampCrdtFields(existing.fieldClocks, fields, now, deviceId);
     final updated = existing.copyWith(
-      name: name,
-      parentId: parentId ?? existing.parentId,
-      sortOrder: sortOrder,
+      name: plan.value.name,
+      parentId: plan.value.parentId,
+      sortOrder: plan.value.sortOrder,
+      isDeleted: plan.value.isDeleted,
       updatedAt: now,
       fieldClocks: clocks,
     );
@@ -102,43 +113,53 @@ class NotebookRepository {
   /// [updateNotebook] because there a null means "unchanged".)
   Future<Notebook> moveNotebook(String id, String? parentId) async {
     final existing = await _require(id);
+    final plan = planNotebookUpdate(
+      current: _notebookMutationState(existing),
+      parentIdProvided: true,
+      parentId: parentId,
+    );
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
     final clocks = stampCrdtFields(
       existing.fieldClocks,
-      const {'parent_id'},
+      plan.selection.changedFields.toSet(),
       now,
       deviceId,
     );
     final moved = existing.copyWith(
-      parentId: parentId,
+      parentId: plan.value.parentId,
       updatedAt: now,
       fieldClocks: clocks,
     );
-    await _persist(moved, 'update', data: _patch(moved, const {'parent_id'}));
+    await _persist(
+      moved,
+      'update',
+      data: _patch(moved, plan.selection.changedFields.toSet()),
+    );
     return moved;
   }
 
   Future<void> deleteNotebook(String id) async {
     final existing = await _local.getById(id);
     if (existing == null) return;
+    final plan = planNotebookDelete(_notebookMutationState(existing));
     final now = await _clock.nextAfter(existing.updatedAt);
     final deviceId = await _meta.getOrCreateDeviceId();
     final clocks = stampCrdtFields(
       existing.fieldClocks,
-      const {'is_deleted'},
+      plan.selection.changedFields.toSet(),
       now,
       deviceId,
     );
     final deleted = existing.copyWith(
-      isDeleted: true,
+      isDeleted: plan.value.isDeleted,
       updatedAt: now,
       fieldClocks: clocks,
     );
     await _persist(
       deleted,
       'delete',
-      data: _patch(deleted, const {'is_deleted'}),
+      data: _patch(deleted, plan.selection.changedFields.toSet()),
     );
   }
 
@@ -182,3 +203,10 @@ class NotebookRepository {
     _appDb.notifyChanged();
   }
 }
+
+NotebookMutationStateValue _notebookMutationState(Notebook notebook) => (
+  name: notebook.name,
+  parentId: notebook.parentId,
+  sortOrder: notebook.sortOrder,
+  isDeleted: notebook.isDeleted,
+);

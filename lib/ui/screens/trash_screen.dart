@@ -94,10 +94,12 @@ class _TrashScreenState extends State<TrashScreen> {
                       onPressed: _empty,
                       child: Text(
                         'Empty',
-                        style: OblixType.ui(c,
-                            size: 13.5,
-                            weight: FontWeight.w600,
-                            color: c.danger),
+                        style: OblixType.ui(
+                          c,
+                          size: 13.5,
+                          weight: FontWeight.w600,
+                          color: c.danger,
+                        ),
                       ),
                     ),
                 ],
@@ -152,14 +154,16 @@ class _TrashScreenState extends State<TrashScreen> {
                                   color: c.chip,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: Icon(Icons.description_outlined,
-                                    size: 17, color: c.inkMuted),
+                                child: Icon(
+                                  Icons.description_outlined,
+                                  size: 17,
+                                  color: c.inkMuted,
+                                ),
                               ),
                               const SizedBox(width: 13),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       note.title.isEmpty
@@ -167,10 +171,12 @@ class _TrashScreenState extends State<TrashScreen> {
                                           : note.title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: OblixType.ui(c,
-                                          size: 15,
-                                          weight: FontWeight.w600,
-                                          color: c.avatarInk),
+                                      style: OblixType.ui(
+                                        c,
+                                        size: 15,
+                                        weight: FontWeight.w600,
+                                        color: c.avatarInk,
+                                      ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
@@ -182,16 +188,22 @@ class _TrashScreenState extends State<TrashScreen> {
                                 ),
                               ),
                               IconButton(
-                                icon: Icon(Icons.restore,
-                                    size: 18, color: c.accent),
+                                icon: Icon(
+                                  Icons.restore,
+                                  size: 18,
+                                  color: c.accent,
+                                ),
                                 tooltip: 'Restore',
                                 onPressed: () async {
                                   await _notes.restoreNote(note.id);
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context)
                                     ..hideCurrentSnackBar()
-                                    ..showSnackBar(const SnackBar(
-                                        content: Text('Note restored')));
+                                    ..showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Note restored'),
+                                      ),
+                                    );
                                 },
                               ),
                             ],

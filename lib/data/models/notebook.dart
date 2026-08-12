@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../core/native/oblix_core.dart';
 import 'crdt_clock.dart';
 
 class Notebook extends Equatable {
@@ -69,8 +70,14 @@ class Notebook extends Equatable {
       fieldClocks[field] ?? CrdtClock(timestamp: updatedAt, deviceId: '');
 
   Notebook mergeCrdt(Notebook remote) {
-    bool take(String field) =>
-        remote.clockFor(field).compareTo(clockFor(field)) > 0;
+    final remoteWinners = remoteWinningFields(
+      fields: crdtFields,
+      localClocks: _coreClocks(fieldClocks),
+      localFallback: _fallbackClock(updatedAt),
+      remoteClocks: _coreClocks(remote.fieldClocks),
+      remoteFallback: _fallbackClock(remote.updatedAt),
+    );
+    bool take(String field) => remoteWinners.contains(field);
     final clocks = <String, CrdtClock>{...fieldClocks};
     for (final field in crdtFields) {
       if (take(field)) clocks[field] = remote.clockFor(field);
@@ -133,3 +140,16 @@ class Notebook extends Equatable {
     fieldClocks,
   ];
 }
+
+Map<String, CrdtClockValue> _coreClocks(Map<String, CrdtClock> clocks) => {
+  for (final entry in clocks.entries)
+    entry.key: (
+      timestampMicrosUtc: entry.value.timestamp.toUtc().microsecondsSinceEpoch,
+      deviceId: entry.value.deviceId,
+    ),
+};
+
+CrdtClockValue _fallbackClock(DateTime timestamp) => (
+  timestampMicrosUtc: timestamp.toUtc().microsecondsSinceEpoch,
+  deviceId: '',
+);

@@ -11,8 +11,12 @@ class AttachmentLocalDataSource {
 
   Future<Attachment?> getById(String id) async {
     final db = await _appDb.database;
-    final rows = await db
-        .query('attachments', where: 'id = ?', whereArgs: [id], limit: 1);
+    final rows = await db.query(
+      'attachments',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
@@ -23,8 +27,9 @@ class AttachmentLocalDataSource {
     bool includeDeleted = false,
   }) async {
     final db = await _appDb.database;
-    final where =
-        includeDeleted ? 'note_id = ?' : 'note_id = ? AND is_deleted = 0';
+    final where = includeDeleted
+        ? 'note_id = ?'
+        : 'note_id = ? AND is_deleted = 0';
     final rows = await db.query(
       'attachments',
       where: where,
@@ -113,10 +118,7 @@ class AttachmentLocalDataSource {
     final db = await _appDb.database;
     await db.update(
       'attachments',
-      {
-        'is_deleted': 1,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      },
+      {'is_deleted': 1, 'updated_at': DateTime.now().toUtc().toIso8601String()},
       where: 'id = ?',
       whereArgs: [id],
     );

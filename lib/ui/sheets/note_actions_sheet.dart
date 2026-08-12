@@ -24,8 +24,12 @@ class _NoteActionsSheet extends StatelessWidget {
     final c = OblixColors.of(context);
     final notes = NoteRepository();
 
-    Widget row(IconData icon, String label,
-        {Color? color, required VoidCallback onTap}) {
+    Widget row(
+      IconData icon,
+      String label, {
+      Color? color,
+      required VoidCallback onTap,
+    }) {
       return InkWell(
         onTap: onTap,
         child: Padding(
@@ -34,9 +38,15 @@ class _NoteActionsSheet extends StatelessWidget {
             children: [
               Icon(icon, size: 20, color: color ?? c.inkSecondary),
               const SizedBox(width: 14),
-              Text(label,
-                  style: OblixType.ui(c,
-                      size: 15, weight: FontWeight.w500, color: color)),
+              Text(
+                label,
+                style: OblixType.ui(
+                  c,
+                  size: 15,
+                  weight: FontWeight.w500,
+                  color: color,
+                ),
+              ),
             ],
           ),
         ),
@@ -139,8 +149,10 @@ class _NoteActionsSheet extends StatelessWidget {
               ),
               for (final nb in notebooks)
                 ListTile(
-                  leading:
-                      Icon(Icons.menu_book_outlined, color: c.inkSecondary),
+                  leading: Icon(
+                    Icons.menu_book_outlined,
+                    color: c.inkSecondary,
+                  ),
                   title: Text(nb.name, style: OblixType.ui(c, size: 15)),
                   selected: nb.id == note.notebookId,
                   onTap: () async {

@@ -22,6 +22,15 @@ class Task(Base):
             "created_at",
             "id",
         ),
+        Index(
+            "ix_tasks_user_priority_list",
+            "user_id",
+            "is_deleted",
+            "is_completed",
+            "priority",
+            "due_date",
+            "sort_order",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -32,6 +41,33 @@ class Task(Base):
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    # Whether due_date carries a meaningful time of day. Part of the due_date
+    # register, never stamped on its own — see 0011_task_power_fields.
+    due_has_time: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    # 0 none, 1 low, 2 high, 3 urgent. An integer so ordering is arithmetic and
+    # an unknown future rank degrades to "no priority" instead of breaking.
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    # Label names, denormalized exactly as notes denormalize their tags.
+    labels: Mapped[list] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    # Serialized repetition rule, e.g. FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH.
+    # The client's Rust core owns the grammar; the server stores and syncs it.
+    recurrence: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Minutes before due_date the reminder was asked for. Kept alongside the
+    # absolute time so rescheduling the task can move the reminder with it.
+    reminder_lead_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A task's list. Notes and tasks share the notebook tree rather than the
+    # app growing a second, parallel hierarchy.
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notebooks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

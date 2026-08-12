@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/db/app_database.dart';
@@ -6,6 +5,7 @@ import '../../core/db/meta_dao.dart';
 import '../../core/storage/secure_storage.dart';
 import '../datasources/remote/auth_remote_datasource.dart';
 import '../models/user.dart';
+import '../../core/native/oblix_core.dart';
 
 class AuthRepository {
   final AuthRemoteDataSource _remote;
@@ -94,35 +94,33 @@ class AuthRepository {
       accessToken: accessToken,
       refreshToken: tokens['refresh_token'] as String,
     );
-    // Cache the user id so notes can be created offline with a real owner id.
-    final userId = _subFromJwt(accessToken);
-    if (userId != null) {
-      // A different account signed in on this install (e.g. after a session
-      // expiry kept the previous user's local data): never let one user see
-      // another's notes.
-      final cached = await _meta.getUserId();
-      if (cached != null && cached != userId) {
-        await _meta.clearUserScopedData();
+    // The session is valid from here on. Everything below is a local cache, so
+    // it must never be able to strand the UI on the login screen: the tokens
+    // are already on disk, and a throw before markSignedIn would leave the app
+    // signed in on the next launch but signed out right now.
+    try {
+      // Cache the user id so notes can be created offline with a real owner id.
+      final userId = _subFromJwt(accessToken);
+      if (userId != null) {
+        // A different account signed in on this install (e.g. after a session
+        // expiry kept the previous user's local data): never let one user see
+        // another's notes.
+        final cached = await _meta.getUserId();
+        if (cached != null && cached != userId) {
+          await _meta.clearUserScopedData();
+        }
+        await _meta.setUserId(userId);
       }
-      await _meta.setUserId(userId);
+    } catch (e) {
+      if (kDebugMode) debugPrint('caching the signed-in user id failed: $e');
+    } finally {
+      AuthState.instance.markSignedIn();
     }
-    AuthState.instance.markSignedIn();
   }
 
   /// Extract the `sub` (user id) claim from a JWT without verifying it — the
   /// server is the authority; this is only for local convenience.
   static String? _subFromJwt(String jwt) {
-    try {
-      final parts = jwt.split('.');
-      if (parts.length != 3) return null;
-      var payload = parts[1].replaceAll('-', '+').replaceAll('_', '/');
-      payload = payload.padRight((payload.length + 3) & ~3, '=');
-      final map =
-          jsonDecode(utf8.decode(base64.decode(payload)))
-              as Map<String, dynamic>;
-      return map['sub'] as String?;
-    } catch (_) {
-      return null;
-    }
+    return jwtSubject(jwt);
   }
 }
