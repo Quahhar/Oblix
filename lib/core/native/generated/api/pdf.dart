@@ -7,121 +7,151 @@ import '../frb_generated.dart';
 import 'ocr.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-
-            // These functions are ignored because they are not marked as `pub`: `merge_runs`
+// These functions are ignored because they are not marked as `pub`: `merge_runs`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
 
-
-            /// Decide whether a page can be read as it stands or has to be recognized.
-PdfPageAssessment  assessPdfPage({required PdfPageInput page }) => RustLib.instance.api.crateApiPdfAssessPdfPage(page: page);
+/// Decide whether a page can be read as it stands or has to be recognized.
+PdfPageAssessment assessPdfPage({required PdfPageInput page}) =>
+    RustLib.instance.api.crateApiPdfAssessPdfPage(page: page);
 
 /// Turn a PDF page's text runs into reconstruction input.
 ///
 /// `scale` converts points to the pixels of a rendered image of the same page,
 /// so the boxes line up with what the user sees; pass 1.0 to stay in points.
-OcrPageInput  pdfPageToOcrPage({required PdfPageInput page , required double scale }) => RustLib.instance.api.crateApiPdfPdfPageToOcrPage(page: page, scale: scale);
+OcrPageInput pdfPageToOcrPage({
+  required PdfPageInput page,
+  required double scale,
+}) =>
+    RustLib.instance.api.crateApiPdfPdfPageToOcrPage(page: page, scale: scale);
 
 /// Convert a whole document at once.
-List<OcrPageInput>  pdfPagesToOcrPages({required List<PdfPageInput> pages , required double scale }) => RustLib.instance.api.crateApiPdfPdfPagesToOcrPages(pages: pages, scale: scale);
+List<OcrPageInput> pdfPagesToOcrPages({
+  required List<PdfPageInput> pages,
+  required double scale,
+}) => RustLib.instance.api.crateApiPdfPdfPagesToOcrPages(
+  pages: pages,
+  scale: scale,
+);
 
-            /// The decision and why it was taken, so a caller can explain itself.
-class PdfPageAssessment  {
-                final PdfPagePlan plan;
-final String reason;
-/// Share of the page area covered by text boxes.
-final double coverage;
-final int characters;
-final int runs;
+/// The decision and why it was taken, so a caller can explain itself.
+class PdfPageAssessment {
+  final PdfPagePlan plan;
+  final String reason;
 
-                const PdfPageAssessment({required this.plan ,required this.reason ,required this.coverage ,required this.characters ,required this.runs ,});
+  /// Share of the page area covered by text boxes.
+  final double coverage;
+  final int characters;
+  final int runs;
 
+  const PdfPageAssessment({
+    required this.plan,
+    required this.reason,
+    required this.coverage,
+    required this.characters,
+    required this.runs,
+  });
 
+  @override
+  int get hashCode =>
+      plan.hashCode ^
+      reason.hashCode ^
+      coverage.hashCode ^
+      characters.hashCode ^
+      runs.hashCode;
 
-
-
-        @override
-        int get hashCode => plan.hashCode^reason.hashCode^coverage.hashCode^characters.hashCode^runs.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PdfPageAssessment &&
-                runtimeType == other.runtimeType
-                && plan == other.plan&& reason == other.reason&& coverage == other.coverage&& characters == other.characters&& runs == other.runs;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PdfPageAssessment &&
+          runtimeType == other.runtimeType &&
+          plan == other.plan &&
+          reason == other.reason &&
+          coverage == other.coverage &&
+          characters == other.characters &&
+          runs == other.runs;
+}
 
 /// One page of a PDF, as the platform managed to read it.
-class PdfPageInput  {
-                final List<PdfTextRun> runs;
-/// Page size in points.
-final double width;
-final double height;
-/// Whether the page draws an image over most of itself, which is what a
-/// scanned page looks like from the outside.
-final bool hasImage;
+class PdfPageInput {
+  final List<PdfTextRun> runs;
 
-                const PdfPageInput({required this.runs ,required this.width ,required this.height ,required this.hasImage ,});
+  /// Page size in points.
+  final double width;
+  final double height;
 
+  /// Whether the page draws an image over most of itself, which is what a
+  /// scanned page looks like from the outside.
+  final bool hasImage;
 
+  const PdfPageInput({
+    required this.runs,
+    required this.width,
+    required this.height,
+    required this.hasImage,
+  });
 
+  @override
+  int get hashCode =>
+      runs.hashCode ^ width.hashCode ^ height.hashCode ^ hasImage.hashCode;
 
-
-        @override
-        int get hashCode => runs.hashCode^width.hashCode^height.hashCode^hasImage.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PdfPageInput &&
-                runtimeType == other.runtimeType
-                && runs == other.runs&& width == other.width&& height == other.height&& hasImage == other.hasImage;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PdfPageInput &&
+          runtimeType == other.runtimeType &&
+          runs == other.runs &&
+          width == other.width &&
+          height == other.height &&
+          hasImage == other.hasImage;
+}
 
 /// What to do with a page.
 enum PdfPagePlan {
-                    /// The embedded text is good; recognizing it from pixels would only add
-/// mistakes.
-useText,
-/// There is no usable text. Render the page and recognize it.
-needsOcr,
-                    ;
-                    
-                }
+  /// The embedded text is good; recognizing it from pixels would only add
+  /// mistakes.
+  useText,
+
+  /// There is no usable text. Render the page and recognize it.
+  needsOcr,
+}
 
 /// One positioned piece of text lifted out of a PDF's content stream.
-class PdfTextRun  {
-                final String text;
-/// Left edge in PDF user space, points from the bottom-left of the page.
-final double x;
-/// **Bottom** edge in PDF user space — y grows upward in a PDF, which is
-/// the opposite of every other coordinate in this crate.
-final double y;
-final double width;
-final double height;
+class PdfTextRun {
+  final String text;
 
-                const PdfTextRun({required this.text ,required this.x ,required this.y ,required this.width ,required this.height ,});
+  /// Left edge in PDF user space, points from the bottom-left of the page.
+  final double x;
 
+  /// **Bottom** edge in PDF user space — y grows upward in a PDF, which is
+  /// the opposite of every other coordinate in this crate.
+  final double y;
+  final double width;
+  final double height;
 
+  const PdfTextRun({
+    required this.text,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
 
+  @override
+  int get hashCode =>
+      text.hashCode ^
+      x.hashCode ^
+      y.hashCode ^
+      width.hashCode ^
+      height.hashCode;
 
-
-        @override
-        int get hashCode => text.hashCode^x.hashCode^y.hashCode^width.hashCode^height.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PdfTextRun &&
-                runtimeType == other.runtimeType
-                && text == other.text&& x == other.x&& y == other.y&& width == other.width&& height == other.height;
-
-            }
-            
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PdfTextRun &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          x == other.x &&
+          y == other.y &&
+          width == other.width &&
+          height == other.height;
+}

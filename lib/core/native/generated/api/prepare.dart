@@ -7,24 +7,113 @@ import '../frb_generated.dart';
 import 'ocr.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-
-            // These functions are ignored because they are not marked as `pub`: `apply`, `describe_plan`, `invert`, `level_colour_matrix`, `looks_like_a_word`, `paper_level`, `percentile_level`, `skip`, `worthwhile_levels`, `worthwhile_rotation`, `worthwhile_scale`
+// These functions are ignored because they are not marked as `pub`: `apply`, `build_plan`, `describe_plan`, `invert`, `level_colour_matrix`, `levels_at`, `looks_like_a_word`, `mapped_bounds`, `measure`, `orientation_candidates`, `paper_level`, `percentile_level`, `skip`, `span_of`, `unevenly_lit`, `worthwhile_levels`, `worthwhile_rotation`, `worthwhile_scale`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BuildPlan`, `TileGrid`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
-
-            /// Read a page's tilt and print size off a first pass.
+/// Read a page's tilt and print size off a first pass.
 ///
 /// Delegates to [`crate::api::ocr`] rather than re-deriving anything, so the
 /// tilt a retry rotates out is the same number the reconstruction would have
 /// sheared the boxes by.
-PageMeasure  measurePage({required OcrPageInput page }) => RustLib.instance.api.crateApiPrepareMeasurePage(page: page);
+PageMeasure measurePage({required OcrPageInput page}) =>
+    RustLib.instance.api.crateApiPrepareMeasurePage(page: page);
 
 /// Decide whether a page is worth showing the recognizer again, and how.
+///
+/// The single best plan, for a caller that will only build one image. See
+/// [`plan_page_candidates`] for the full set, which is what a page whose
+/// first reading came out badly actually wants.
 ///
 /// `width` and `height` are the source bitmap's pixel size; zero for either
 /// means the platform could not read it, and no plan is made, because every
 /// output dimension would be a guess.
-PagePrepare  planPagePrepare({required PageMeasure measure , required PageLumaSample sample , required double width , required double height }) => RustLib.instance.api.crateApiPreparePlanPagePrepare(measure: measure, sample: sample, width: width, height: height);
+PagePrepare planPagePrepare({
+  required PageMeasure measure,
+  required PageLumaSample sample,
+  required double width,
+  required double height,
+}) => RustLib.instance.api.crateApiPreparePlanPagePrepare(
+  measure: measure,
+  sample: sample,
+  width: width,
+  height: height,
+);
+
+/// Every image worth building for a page, best first.
+///
+/// One fused plan is the wrong shape for a page that came out badly, because
+/// its three corrections do not stand or fall together. Rotating a page helps
+/// and stretching its contrast hurts, or the other way round, and a single
+/// image that does both can only be accepted or rejected as a unit — so a
+/// retry that was half right is thrown away whole. Offering the platform
+/// several images and letting [`choose_page_reading`] judge the *readings*
+/// means each correction is tested on its own evidence.
+///
+/// `reading` is how the first pass scored, which is the only thing that can
+/// speak for the corrections geometry cannot see. An upside-down page is the
+/// case that matters: its boxes are indistinguishable from an upright page's,
+/// and the sole clue is that the text came back as debris.
+///
+/// The list is capped at [MAX_CANDIDATES]; each entry costs the device a full
+/// recognition pass, so this is the ceiling on what one bad photograph is
+/// allowed to cost.
+List<PagePrepare> planPageCandidates({
+  required PageMeasure measure,
+  required PageLumaSample sample,
+  required double width,
+  required double height,
+  required PageReadingScore reading,
+}) => RustLib.instance.api.crateApiPreparePlanPageCandidates(
+  measure: measure,
+  sample: sample,
+  width: width,
+  height: height,
+  reading: reading,
+);
+
+/// Even out a page whose lighting varies across it, in place.
+///
+/// `pixels` is unpremultiplied RGBA, row-major, `width * height * 4` bytes; the
+/// same buffer comes back grey and re-levelled. Anything that does not describe
+/// a bitmap this could be is returned untouched, because the caller's fallback
+/// for "could not prepare" is the reading it already has.
+///
+/// ## Why a curve is not enough
+///
+/// [`level_colour_matrix`] maps one black point and one white point across the
+/// whole sheet. That is the right correction for a page that is uniformly dim,
+/// and no correction at all for the commonest bad phone capture: a page lit
+/// from one side, or with the photographer's own shadow across a corner. There
+/// the paper on one side is darker than the *ink* on the other, so every global
+/// choice of black point is wrong somewhere — set it for the bright side and
+/// the shadow goes solid, set it for the shadow and the bright side washes out.
+///
+/// ## What it does instead
+///
+/// The page is divided into tiles, each tile's own ink and paper levels are
+/// read off its histogram, and every pixel is mapped through the levels
+/// interpolated between the four tiles around it. Interpolating rather than
+/// applying each tile's levels to its own pixels is what keeps a tile edge from
+/// becoming a visible seam — a seam through a glyph is a stroke the recognizer
+/// has to read across.
+///
+/// Two guards matter more than the arithmetic. A tile with too little
+/// separation between its ink and its paper — blank margin, or the inside of a
+/// photograph — has nothing to say, and stretching it would turn paper grain
+/// into texture, so it borrows the page's global levels instead. And the result
+/// stays grey rather than being thresholded to black and white: binarizing
+/// throws away the antialiasing that tells a model where a thin stroke's edge
+/// is, which is the accuracy this is trying to buy.
+Uint8List normalizePageContrast({
+  required List<int> pixels,
+  required int width,
+  required int height,
+}) => RustLib.instance.api.crateApiPrepareNormalizePageContrast(
+  pixels: pixels,
+  width: width,
+  height: height,
+);
 
 /// Put a prepared page's boxes back into source-image pixels.
 ///
@@ -42,7 +131,13 @@ PagePrepare  planPagePrepare({required PageMeasure measure , required PageLumaSa
 /// measured from the boxes themselves, so a mapped-back page is corrected on
 /// exactly the same footing as one the recognizer read tilted in the first
 /// place.
-List<OcrLineInput>  mapPreparedLinesToSource({required List<OcrLineInput> lines , required PagePrepare prepare }) => RustLib.instance.api.crateApiPrepareMapPreparedLinesToSource(lines: lines, prepare: prepare);
+List<OcrLineInput> mapPreparedLinesToSource({
+  required List<OcrLineInput> lines,
+  required PagePrepare prepare,
+}) => RustLib.instance.api.crateApiPrepareMapPreparedLinesToSource(
+  lines: lines,
+  prepare: prepare,
+);
 
 /// Judge one reading of a page.
 ///
@@ -51,176 +146,257 @@ List<OcrLineInput>  mapPreparedLinesToSource({required List<OcrLineInput> lines 
 /// come from the same model, so what separates them is how much text was found
 /// and how much of it looks like language: a poor read of a page does not come
 /// back empty, it comes back with the right amount of debris.
-PageReadingScore  scorePageReading({required OcrPageInput page }) => RustLib.instance.api.crateApiPrepareScorePageReading(page: page);
+PageReadingScore scorePageReading({required OcrPageInput page}) =>
+    RustLib.instance.api.crateApiPrepareScorePageReading(page: page);
 
 /// Pick the best of several readings of one page.
 ///
 /// Index 0 is taken as the incumbent — the reading the user would have got
 /// without a retry — and keeps the page unless another beats it by
 /// [`RETRY_MARGIN`]. See the module comment.
-PageReadingChoice  choosePageReading({required List<OcrPageInput> readings }) => RustLib.instance.api.crateApiPrepareChoosePageReading(readings: readings);
+PageReadingChoice choosePageReading({required List<OcrPageInput> readings}) =>
+    RustLib.instance.api.crateApiPrepareChoosePageReading(readings: readings);
 
-            /// A page's brightness distribution, measured by the platform.
+/// A page's brightness distribution, measured by the platform.
 ///
 /// The histogram is expected to come from a heavily downscaled decode — the
 /// shape of a page's tonal range survives shrinking, and sampling it at full
 /// resolution would cost more than the recognition being decided about.
-class PageLumaSample  {
-                /// 256 buckets of pixel counts, index 0 black. A shorter or longer vector
-/// is treated as no sample at all rather than misread.
-final Uint32List histogram;
+class PageLumaSample {
+  /// 256 buckets of pixel counts, index 0 black. A shorter or longer vector
+  /// is treated as no sample at all rather than misread.
+  final Uint32List histogram;
 
-                const PageLumaSample({required this.histogram ,});
+  /// Mean luma of each tile of the same thumbnail, row-major from the top
+  /// left, 0..255. Empty when the platform did not sample them.
+  ///
+  /// The histogram says how much of the tonal range a page used but not
+  /// *where* it used it, and those are different questions. A page half in
+  /// shadow and a page evenly lit in two inks produce the same histogram;
+  /// only the tiles can tell them apart, and only one of them is fixable by
+  /// a curve. This is the cheapest sample that answers it — the same
+  /// thumbnail, summed into a grid.
+  final Uint32List tiles;
+  final int tileColumns;
+  final int tileRows;
 
+  const PageLumaSample({
+    required this.histogram,
+    required this.tiles,
+    required this.tileColumns,
+    required this.tileRows,
+  });
 
+  @override
+  int get hashCode =>
+      histogram.hashCode ^
+      tiles.hashCode ^
+      tileColumns.hashCode ^
+      tileRows.hashCode;
 
-
-
-        @override
-        int get hashCode => histogram.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PageLumaSample &&
-                runtimeType == other.runtimeType
-                && histogram == other.histogram;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PageLumaSample &&
+          runtimeType == other.runtimeType &&
+          histogram == other.histogram &&
+          tiles == other.tiles &&
+          tileColumns == other.tileColumns &&
+          tileRows == other.tileRows;
+}
 
 /// What a first reading revealed about a page, in source pixels.
-class PageMeasure  {
-                /// Tilt in degrees, negative leaning left, matching
-/// `ScannedNoteDraft::corrected_skew_degrees`.
-final double skewDegrees;
-/// Median printed line height, with the tilt's inflation taken back out.
-final double medianLineHeight;
-/// Lines that survived the noise filters.
-final int usableLines;
+class PageMeasure {
+  /// Tilt in degrees, negative leaning left, matching
+  /// `ScannedNoteDraft::corrected_skew_degrees`.
+  final double skewDegrees;
 
-                const PageMeasure({required this.skewDegrees ,required this.medianLineHeight ,required this.usableLines ,});
+  /// Median printed line height, with the tilt's inflation taken back out.
+  final double medianLineHeight;
 
+  /// Lines that survived the noise filters.
+  final int usableLines;
 
+  /// Share of those lines whose box is wider than it is tall — the signature
+  /// of a page that is the right way up rather than on its side.
+  final double uprightShare;
 
+  const PageMeasure({
+    required this.skewDegrees,
+    required this.medianLineHeight,
+    required this.usableLines,
+    required this.uprightShare,
+  });
 
+  @override
+  int get hashCode =>
+      skewDegrees.hashCode ^
+      medianLineHeight.hashCode ^
+      usableLines.hashCode ^
+      uprightShare.hashCode;
 
-        @override
-        int get hashCode => skewDegrees.hashCode^medianLineHeight.hashCode^usableLines.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PageMeasure &&
-                runtimeType == other.runtimeType
-                && skewDegrees == other.skewDegrees&& medianLineHeight == other.medianLineHeight&& usableLines == other.usableLines;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PageMeasure &&
+          runtimeType == other.runtimeType &&
+          skewDegrees == other.skewDegrees &&
+          medianLineHeight == other.medianLineHeight &&
+          usableLines == other.usableLines &&
+          uprightShare == other.uprightShare;
+}
 
 /// Everything the platform needs to build a better bitmap, and nothing it has
 /// to decide.
-class PagePrepare  {
-                /// When false, nothing about this page is worth a second pass. Every other
-/// field is meaningless and the first reading stands.
-final bool worthwhile;
-/// Size of the bitmap to produce, in pixels.
-final int outWidth;
-final int outHeight;
-/// Source-to-prepared affine, as `[a, b, c, d, tx, ty]`, mapping
-/// `x' = a*x + c*y + tx` and `y' = b*x + d*y + ty`. Column-major, which is
-/// the order a 2D graphics matrix is usually loaded in.
-final Float32List transform;
-/// 4x5 row-major colour matrix over unpremultiplied RGBA in 0..255, with
-/// the fifth column a constant offset — the layout `ColorFilter.matrix`
-/// takes. Converts to grey and stretches the tonal range in one pass.
-final Float32List colorMatrix;
-/// Degrees of tilt being taken out, for logging and for the UI.
-final double rotateDegrees;
-/// Enlargement being applied, 1.0 when none.
-final double scale;
-/// Human-readable account of why this page is being read again.
-final String reason;
+class PagePrepare {
+  /// When false, nothing about this page is worth a second pass. Every other
+  /// field is meaningless and the first reading stands.
+  final bool worthwhile;
 
-                const PagePrepare({required this.worthwhile ,required this.outWidth ,required this.outHeight ,required this.transform ,required this.colorMatrix ,required this.rotateDegrees ,required this.scale ,required this.reason ,});
+  /// Size of the bitmap to produce, in pixels.
+  final int outWidth;
+  final int outHeight;
 
+  /// Source-to-prepared affine, as `[a, b, c, d, tx, ty]`, mapping
+  /// `x' = a*x + c*y + tx` and `y' = b*x + d*y + ty`. Column-major, which is
+  /// the order a 2D graphics matrix is usually loaded in.
+  final Float32List transform;
 
+  /// 4x5 row-major colour matrix over unpremultiplied RGBA in 0..255, with
+  /// the fifth column a constant offset — the layout `ColorFilter.matrix`
+  /// takes. Converts to grey and stretches the tonal range in one pass.
+  ///
+  /// When [local_contrast] is set this only converts to grey: the tonal work
+  /// is done per-region by [`normalize_page_contrast`] instead, and applying
+  /// a global stretch first would flatten the very differences it reads.
+  final Float32List colorMatrix;
 
+  /// Whether the drawn bitmap should be passed through
+  /// [`normalize_page_contrast`] before the recognizer sees it.
+  final bool localContrast;
 
+  /// Degrees of tilt being taken out, for logging and for the UI. Does not
+  /// include [quarter_turns]; the transform carries both.
+  final double rotateDegrees;
 
-        @override
-        int get hashCode => worthwhile.hashCode^outWidth.hashCode^outHeight.hashCode^transform.hashCode^colorMatrix.hashCode^rotateDegrees.hashCode^scale.hashCode^reason.hashCode;
+  /// Whole 90° turns being taken out, 0..3, anticlockwise on screen. Zero on
+  /// every page whose orientation was not in doubt.
+  final int quarterTurns;
 
+  /// Enlargement being applied, 1.0 when none.
+  final double scale;
 
+  /// Human-readable account of why this page is being read again.
+  final String reason;
 
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PagePrepare &&
-                runtimeType == other.runtimeType
-                && worthwhile == other.worthwhile&& outWidth == other.outWidth&& outHeight == other.outHeight&& transform == other.transform&& colorMatrix == other.colorMatrix&& rotateDegrees == other.rotateDegrees&& scale == other.scale&& reason == other.reason;
+  const PagePrepare({
+    required this.worthwhile,
+    required this.outWidth,
+    required this.outHeight,
+    required this.transform,
+    required this.colorMatrix,
+    required this.localContrast,
+    required this.rotateDegrees,
+    required this.quarterTurns,
+    required this.scale,
+    required this.reason,
+  });
 
-            }
+  @override
+  int get hashCode =>
+      worthwhile.hashCode ^
+      outWidth.hashCode ^
+      outHeight.hashCode ^
+      transform.hashCode ^
+      colorMatrix.hashCode ^
+      localContrast.hashCode ^
+      rotateDegrees.hashCode ^
+      quarterTurns.hashCode ^
+      scale.hashCode ^
+      reason.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PagePrepare &&
+          runtimeType == other.runtimeType &&
+          worthwhile == other.worthwhile &&
+          outWidth == other.outWidth &&
+          outHeight == other.outHeight &&
+          transform == other.transform &&
+          colorMatrix == other.colorMatrix &&
+          localContrast == other.localContrast &&
+          rotateDegrees == other.rotateDegrees &&
+          quarterTurns == other.quarterTurns &&
+          scale == other.scale &&
+          reason == other.reason;
+}
 
 /// Which reading of a page won, and why.
-class PageReadingChoice  {
-                /// Index into the readings offered, or -1 when none held any text.
-final int chosen;
-final List<PageReadingScore> scores;
-final String reason;
+class PageReadingChoice {
+  /// Index into the readings offered, or -1 when none held any text.
+  final int chosen;
+  final List<PageReadingScore> scores;
+  final String reason;
 
-                const PageReadingChoice({required this.chosen ,required this.scores ,required this.reason ,});
+  const PageReadingChoice({
+    required this.chosen,
+    required this.scores,
+    required this.reason,
+  });
 
+  @override
+  int get hashCode => chosen.hashCode ^ scores.hashCode ^ reason.hashCode;
 
-
-
-
-        @override
-        int get hashCode => chosen.hashCode^scores.hashCode^reason.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PageReadingChoice &&
-                runtimeType == other.runtimeType
-                && chosen == other.chosen&& scores == other.scores&& reason == other.reason;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PageReadingChoice &&
+          runtimeType == other.runtimeType &&
+          chosen == other.chosen &&
+          scores == other.scores &&
+          reason == other.reason;
+}
 
 /// How well a reading of a page came out, comparable only against another
 /// reading of the same page.
-class PageReadingScore  {
-                /// Higher is better.
-final double score;
-final int characters;
-final double meanConfidence;
-/// Share of characters that are neither letters nor digits.
-final double junkShare;
-/// Share of whitespace-separated tokens that look like real words or
-/// numbers rather than debris.
-final double wordShare;
+class PageReadingScore {
+  /// Higher is better.
+  final double score;
+  final int characters;
+  final double meanConfidence;
 
-                const PageReadingScore({required this.score ,required this.characters ,required this.meanConfidence ,required this.junkShare ,required this.wordShare ,});
+  /// Share of characters that are neither letters nor digits.
+  final double junkShare;
 
+  /// Share of whitespace-separated tokens that look like real words or
+  /// numbers rather than debris.
+  final double wordShare;
 
+  const PageReadingScore({
+    required this.score,
+    required this.characters,
+    required this.meanConfidence,
+    required this.junkShare,
+    required this.wordShare,
+  });
 
+  @override
+  int get hashCode =>
+      score.hashCode ^
+      characters.hashCode ^
+      meanConfidence.hashCode ^
+      junkShare.hashCode ^
+      wordShare.hashCode;
 
-
-        @override
-        int get hashCode => score.hashCode^characters.hashCode^meanConfidence.hashCode^junkShare.hashCode^wordShare.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is PageReadingScore &&
-                runtimeType == other.runtimeType
-                && score == other.score&& characters == other.characters&& meanConfidence == other.meanConfidence&& junkShare == other.junkShare&& wordShare == other.wordShare;
-
-            }
-            
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PageReadingScore &&
+          runtimeType == other.runtimeType &&
+          score == other.score &&
+          characters == other.characters &&
+          meanConfidence == other.meanConfidence &&
+          junkShare == other.junkShare &&
+          wordShare == other.wordShare;
+}

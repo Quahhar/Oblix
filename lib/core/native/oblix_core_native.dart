@@ -647,6 +647,7 @@ ScannedNoteDraftValue shapeScannedText({
   bool detectTables = true,
   bool stripRunningHeads = true,
   bool healAcrossPages = true,
+  bool repairMisreads = true,
   ScanPresetValue preset = ScanPresetValue.auto,
 }) => shapeScannedPages(
   pages: [(lines: lines, width: 0, height: 0)],
@@ -657,6 +658,7 @@ ScannedNoteDraftValue shapeScannedText({
   detectTables: detectTables,
   stripRunningHeads: stripRunningHeads,
   healAcrossPages: healAcrossPages,
+  repairMisreads: repairMisreads,
   preset: preset,
 );
 
@@ -669,6 +671,7 @@ ScannedNoteDraftValue shapeScannedPages({
   bool detectTables = true,
   bool stripRunningHeads = true,
   bool healAcrossPages = true,
+  bool repairMisreads = true,
   ScanPresetValue preset = ScanPresetValue.auto,
 }) {
   if (!_isInitialized) {
@@ -681,6 +684,7 @@ ScannedNoteDraftValue shapeScannedPages({
       detectTables: detectTables,
       stripRunningHeads: stripRunningHeads,
       healAcrossPages: healAcrossPages,
+      repairMisreads: repairMisreads,
       preset: preset,
     );
   }
@@ -694,6 +698,7 @@ ScannedNoteDraftValue shapeScannedPages({
       detectTables: detectTables,
       stripRunningHeads: stripRunningHeads,
       healAcrossPages: healAcrossPages,
+      repairMisreads: repairMisreads,
       preset: rust_ocr.ScanPreset.values[preset.index],
     ),
   );
@@ -709,6 +714,7 @@ ScannedNoteDraftValue shapeScannedPages({
     tables: draft.tables,
     headings: draft.headings,
     strippedRunningHeads: draft.strippedRunningHeads,
+    repairedWords: draft.repairedWords,
     preset: draft.preset,
     quality: (
       verdict: QualityVerdictValue.values[draft.quality.verdict.index],
@@ -730,6 +736,17 @@ List<rust_ocr.OcrLineInput> _toRustLines(List<OcrLineValue> lines) => [
       bottom: line.bottom,
       blockIndex: line.blockIndex,
       confidence: line.confidence,
+      words: [
+        for (final word in line.words)
+          rust_ocr.OcrWordInput(
+            text: word.text,
+            left: word.left,
+            top: word.top,
+            right: word.right,
+            bottom: word.bottom,
+            confidence: word.confidence,
+          ),
+      ],
     ),
 ];
 
@@ -741,6 +758,17 @@ OcrLineValue _fromRustLine(rust_ocr.OcrLineInput line) => (
   bottom: line.bottom,
   blockIndex: line.blockIndex,
   confidence: line.confidence,
+  words: [
+    for (final word in line.words)
+      (
+        text: word.text,
+        left: word.left,
+        top: word.top,
+        right: word.right,
+        bottom: word.bottom,
+        confidence: word.confidence,
+      ),
+  ],
 );
 
 rust_ocr.OcrPageInput _toRustPage(OcrPageValue page) => rust_ocr.OcrPageInput(
@@ -773,6 +801,16 @@ rust_layer.TextLayer _toRustLayer(TextLayerValue layer) => rust_layer.TextLayer(
               right: line.right,
               bottom: line.bottom,
               confidence: line.confidence,
+              words: [
+                for (final word in line.words)
+                  rust_layer.TextLayerWord(
+                    text: word.text,
+                    left: word.left,
+                    top: word.top,
+                    right: word.right,
+                    bottom: word.bottom,
+                  ),
+              ],
             ),
         ],
       ),
@@ -795,6 +833,16 @@ TextLayerValue _fromRustLayer(rust_layer.TextLayer layer) => (
               right: line.right,
               bottom: line.bottom,
               confidence: line.confidence,
+              words: [
+                for (final word in line.words)
+                  (
+                    text: word.text,
+                    left: word.left,
+                    top: word.top,
+                    right: word.right,
+                    bottom: word.bottom,
+                  ),
+              ],
             ),
         ],
       ),
@@ -931,7 +979,8 @@ List<RedactionSpanValue> findRedactions({
         for (final span in rust_entities.findRedactions(
           layer: _toRustLayer(layer),
           kinds: [
-            for (final kind in kinds) rust_entities.EntityKind.values[kind.index],
+            for (final kind in kinds)
+              rust_entities.EntityKind.values[kind.index],
           ],
           options: rust_entities.EntityOptions(dayFirst: dayFirst),
         ))
@@ -973,21 +1022,22 @@ List<SuggestedActionValue> suggestActions({
 
 // --- PDF ---
 
-rust_pdf.PdfPageInput _toRustPdfPage(PdfPageValue page) => rust_pdf.PdfPageInput(
-  width: page.width,
-  height: page.height,
-  hasImage: page.hasImage,
-  runs: [
-    for (final run in page.runs)
-      rust_pdf.PdfTextRun(
-        text: run.text,
-        x: run.x,
-        y: run.y,
-        width: run.width,
-        height: run.height,
-      ),
-  ],
-);
+rust_pdf.PdfPageInput _toRustPdfPage(PdfPageValue page) =>
+    rust_pdf.PdfPageInput(
+      width: page.width,
+      height: page.height,
+      hasImage: page.hasImage,
+      runs: [
+        for (final run in page.runs)
+          rust_pdf.PdfTextRun(
+            text: run.text,
+            x: run.x,
+            y: run.y,
+            width: run.width,
+            height: run.height,
+          ),
+      ],
+    );
 
 PdfPageAssessmentValue assessPdfPage(PdfPageValue page) {
   if (!_isInitialized) return fallback.assessPdfPage(page);
@@ -1570,7 +1620,11 @@ CivilDateValue? nextOccurrence({
   required CivilDateValue notBefore,
 }) {
   if (!_isInitialized) {
-    return fallback.nextOccurrence(rule: rule, from: from, notBefore: notBefore);
+    return fallback.nextOccurrence(
+      rule: rule,
+      from: from,
+      notBefore: notBefore,
+    );
   }
   final next = rust_tasks.nextOccurrence(
     rule: _toRustRecurrence(rule),
@@ -1753,7 +1807,9 @@ QuickAddParseValue parseQuickAdd({
   required String text,
   required QuickAddContextValue context,
 }) {
-  if (!_isInitialized) return fallback.parseQuickAdd(text: text, context: context);
+  if (!_isInitialized) {
+    return fallback.parseQuickAdd(text: text, context: context);
+  }
   final parsed = rust_quickadd.parseQuickAdd(
     text: text,
     context: rust_quickadd.QuickAddContext(
@@ -1799,11 +1855,7 @@ QuickAddParseValue parseQuickAdd({
 }
 
 rust_tasks.CivilDate _toRustCivilDate(CivilDateValue value) =>
-    rust_tasks.CivilDate(
-      year: value.year,
-      month: value.month,
-      day: value.day,
-    );
+    rust_tasks.CivilDate(year: value.year, month: value.month, day: value.day);
 
 CivilDateValue _fromRustCivilDate(rust_tasks.CivilDate value) =>
     (year: value.year, month: value.month, day: value.day);
@@ -1929,8 +1981,7 @@ bool readingLooksWrong(ReadingScoreValue score) {
       meanConfidence: score.meanConfidence,
       coverage: score.coverage,
       junkShare: score.junkShare,
-      dominantScript:
-          rust_script.TextScript.values[score.dominantScript.index],
+      dominantScript: rust_script.TextScript.values[score.dominantScript.index],
     ),
   );
 }
@@ -1957,8 +2008,52 @@ PageMeasureValue measurePage(OcrPageValue page) {
     skewDegrees: measure.skewDegrees,
     medianLineHeight: measure.medianLineHeight,
     usableLines: measure.usableLines,
+    uprightShare: measure.uprightShare,
   );
 }
+
+rust_prepare.PageMeasure _toRustMeasure(PageMeasureValue measure) =>
+    rust_prepare.PageMeasure(
+      skewDegrees: measure.skewDegrees,
+      medianLineHeight: measure.medianLineHeight,
+      usableLines: measure.usableLines,
+      uprightShare: measure.uprightShare,
+    );
+
+rust_prepare.PageLumaSample _toRustLumaSample(PageLumaSampleValue sample) =>
+    rust_prepare.PageLumaSample(
+      histogram: sample.histogram,
+      tiles: sample.tiles,
+      tileColumns: sample.tileColumns,
+      tileRows: sample.tileRows,
+    );
+
+PagePrepareValue _fromRustPlan(rust_prepare.PagePrepare plan) => (
+  worthwhile: plan.worthwhile,
+  outWidth: plan.outWidth,
+  outHeight: plan.outHeight,
+  transform: plan.transform,
+  colorMatrix: plan.colorMatrix,
+  localContrast: plan.localContrast,
+  rotateDegrees: plan.rotateDegrees,
+  quarterTurns: plan.quarterTurns,
+  scale: plan.scale,
+  reason: plan.reason,
+);
+
+rust_prepare.PagePrepare _toRustPlan(PagePrepareValue plan) =>
+    rust_prepare.PagePrepare(
+      worthwhile: plan.worthwhile,
+      outWidth: plan.outWidth,
+      outHeight: plan.outHeight,
+      transform: plan.transform,
+      colorMatrix: plan.colorMatrix,
+      localContrast: plan.localContrast,
+      rotateDegrees: plan.rotateDegrees,
+      quarterTurns: plan.quarterTurns,
+      scale: plan.scale,
+      reason: plan.reason,
+    );
 
 PagePrepareValue planPagePrepare({
   required PageMeasureValue measure,
@@ -1974,25 +2069,64 @@ PagePrepareValue planPagePrepare({
       height: height,
     );
   }
-  final plan = rust_prepare.planPagePrepare(
-    measure: rust_prepare.PageMeasure(
-      skewDegrees: measure.skewDegrees,
-      medianLineHeight: measure.medianLineHeight,
-      usableLines: measure.usableLines,
+  return _fromRustPlan(
+    rust_prepare.planPagePrepare(
+      measure: _toRustMeasure(measure),
+      sample: _toRustLumaSample(sample),
+      width: width,
+      height: height,
     ),
-    sample: rust_prepare.PageLumaSample(histogram: sample.histogram),
+  );
+}
+
+List<PagePrepareValue> planPageCandidates({
+  required PageMeasureValue measure,
+  required PageLumaSampleValue sample,
+  required double width,
+  required double height,
+  required PageReadingScoreValue reading,
+}) {
+  if (!_isInitialized) {
+    return fallback.planPageCandidates(
+      measure: measure,
+      sample: sample,
+      width: width,
+      height: height,
+      reading: reading,
+    );
+  }
+  final plans = rust_prepare.planPageCandidates(
+    measure: _toRustMeasure(measure),
+    sample: _toRustLumaSample(sample),
     width: width,
     height: height,
+    reading: rust_prepare.PageReadingScore(
+      score: reading.score,
+      characters: reading.characters,
+      meanConfidence: reading.meanConfidence,
+      junkShare: reading.junkShare,
+      wordShare: reading.wordShare,
+    ),
   );
-  return (
-    worthwhile: plan.worthwhile,
-    outWidth: plan.outWidth,
-    outHeight: plan.outHeight,
-    transform: plan.transform,
-    colorMatrix: plan.colorMatrix,
-    rotateDegrees: plan.rotateDegrees,
-    scale: plan.scale,
-    reason: plan.reason,
+  return [for (final plan in plans) _fromRustPlan(plan)];
+}
+
+Uint8List normalizePageContrast({
+  required Uint8List pixels,
+  required int width,
+  required int height,
+}) {
+  if (!_isInitialized) {
+    return fallback.normalizePageContrast(
+      pixels: pixels,
+      width: width,
+      height: height,
+    );
+  }
+  return rust_prepare.normalizePageContrast(
+    pixels: pixels,
+    width: width,
+    height: height,
   );
 }
 
@@ -2005,18 +2139,21 @@ List<OcrLineValue> mapPreparedLinesToSource({
   }
   final mapped = rust_prepare.mapPreparedLinesToSource(
     lines: _toRustLines(lines),
-    prepare: rust_prepare.PagePrepare(
-      worthwhile: prepare.worthwhile,
-      outWidth: prepare.outWidth,
-      outHeight: prepare.outHeight,
-      transform: prepare.transform,
-      colorMatrix: prepare.colorMatrix,
-      rotateDegrees: prepare.rotateDegrees,
-      scale: prepare.scale,
-      reason: prepare.reason,
-    ),
+    prepare: _toRustPlan(prepare),
   );
   return [for (final line in mapped) _fromRustLine(line)];
+}
+
+PageReadingScoreValue scorePageReading({required OcrPageValue page}) {
+  if (!_isInitialized) return fallback.scorePageReading(page: page);
+  final score = rust_prepare.scorePageReading(page: _toRustPage(page));
+  return (
+    score: score.score,
+    characters: score.characters,
+    meanConfidence: score.meanConfidence,
+    junkShare: score.junkShare,
+    wordShare: score.wordShare,
+  );
 }
 
 PageReadingChoiceValue choosePageReading({

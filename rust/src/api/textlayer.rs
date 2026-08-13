@@ -23,7 +23,7 @@ use std::fmt;
 use flutter_rust_bridge::frb;
 use serde_json::{json, Value};
 
-use crate::api::ocr::{OcrLineInput, OcrPageInput};
+use crate::api::ocr::{OcrLineInput, OcrPageInput, OcrWordInput};
 use crate::dart_string::{dart_trim, is_dart_regexp_whitespace};
 
 /// Bumped only for a change that older readers could not understand. New
@@ -34,6 +34,9 @@ const FORMAT_VERSION: i64 = 1;
 /// storm. A 10-page dense scan is around 5000 lines.
 const MAX_PAGES: usize = 2_000;
 const MAX_LINES: usize = 500_000;
+/// Words on one line are bounded separately: [MAX_LINES] says nothing about
+/// how long a single line's word array claims to be.
+const MAX_WORDS_PER_LINE: usize = 512;
 
 /// Words of this length or shorter are ignored when fingerprinting, so that
 /// "the" and "of" do not dominate the comparison.
@@ -78,6 +81,16 @@ impl std::error::Error for TextLayerError {}
 /// generator resolves types by name and cannot see through a private alias.
 type LayerResult<T> = Result<T, TextLayerError>;
 
+/// One recognized word inside a line, where the recognizer reported them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextLayerWord {
+    pub text: String,
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+}
+
 /// One recognized line, exactly as the recognizer reported it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextLayerLine {
@@ -87,6 +100,10 @@ pub struct TextLayerLine {
     pub right: f32,
     pub bottom: f32,
     pub confidence: Option<f32>,
+    /// Word boxes, empty when the source did not break the line down. Stored
+    /// because a highlight interpolated along a line is only ever an estimate,
+    /// and these are the real thing.
+    pub words: Vec<TextLayerWord>,
 }
 
 /// One page of the capture.
@@ -144,6 +161,17 @@ pub fn build_text_layer(pages: Vec<OcrPageInput>, source: String) -> TextLayer {
                         right: line.right,
                         bottom: line.bottom,
                         confidence: line.confidence,
+                        words: line
+                            .words
+                            .into_iter()
+                            .map(|word| TextLayerWord {
+                                text: word.text,
+                                left: word.left,
+                                top: word.top,
+                                right: word.right,
+                                bottom: word.bottom,
+                            })
+                            .collect(),
                     })
                     .collect(),
             })
@@ -174,6 +202,21 @@ pub fn text_layer_to_pages(layer: TextLayer) -> Vec<OcrPageInput> {
                     // off geometry, and a stale grouping would only mislead.
                     block_index: 0,
                     confidence: line.confidence,
+                    words: line
+                        .words
+                        .into_iter()
+                        .map(|word| OcrWordInput {
+                            text: word.text,
+                            left: word.left,
+                            top: word.top,
+                            right: word.right,
+                            bottom: word.bottom,
+                            // Per-word confidence is not stored: it costs a
+                            // number per word to keep and nothing downstream
+                            // of a re-read consults it.
+                            confidence: None,
+                        })
+                        .collect(),
                 })
                 .collect(),
         })
@@ -192,14 +235,35 @@ pub fn encode_text_layer(layer: TextLayer) -> String {
                 .lines
                 .iter()
                 .map(|line| {
-                    json!([
-                        line.text,
-                        round(line.left),
-                        round(line.top),
-                        round(line.right),
-                        round(line.bottom),
-                        line.confidence.map(round2),
-                    ])
+                    // A seventh element, so a reader of the older six-element
+                    // shape ignores it and a reader of this one finds it —
+                    // which is what the format's rule about new trailing
+                    // fields is for. Words are omitted entirely when there are
+                    // none rather than written as an empty array, keeping a
+                    // layer from a source without them byte-identical to what
+                    // it encoded before.
+                    let mut fields = vec![
+                        json!(line.text),
+                        json!(round(line.left)),
+                        json!(round(line.top)),
+                        json!(round(line.right)),
+                        json!(round(line.bottom)),
+                        json!(line.confidence.map(round2)),
+                    ];
+                    if !line.words.is_empty() {
+                        fields.push(json!(line
+                            .words
+                            .iter()
+                            .map(|word| json!([
+                                word.text,
+                                round(word.left),
+                                round(word.top),
+                                round(word.right),
+                                round(word.bottom),
+                            ]))
+                            .collect::<Vec<Value>>()));
+                    }
+                    Value::Array(fields)
                 })
                 .collect();
             json!({ "w": round(page.width), "h": round(page.height), "l": lines })
@@ -290,6 +354,33 @@ fn decode_line(raw: &Value) -> LayerResult<TextLayerLine> {
             .get(5)
             .and_then(Value::as_f64)
             .map(|value| value as f32),
+        // Absent in a layer written before words were stored, and in one whose
+        // source never reported them. Both are ordinary, so a missing or
+        // malformed seventh field means "no words", never an error.
+        words: fields
+            .get(6)
+            .and_then(Value::as_array)
+            .map(|raw| {
+                raw.iter()
+                    .take(MAX_WORDS_PER_LINE)
+                    .filter_map(decode_word)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
+}
+
+fn decode_word(raw: &Value) -> Option<TextLayerWord> {
+    let fields = raw.as_array()?;
+    if fields.len() < 5 {
+        return None;
+    }
+    Some(TextLayerWord {
+        text: fields[0].as_str().unwrap_or_default().to_owned(),
+        left: number(fields.get(1)),
+        top: number(fields.get(2)),
+        right: number(fields.get(3)),
+        bottom: number(fields.get(4)),
     })
 }
 
@@ -322,11 +413,13 @@ pub fn text_layer_search_text(layer: TextLayer) -> String {
 /// Find a query in the layer and say where on the page it sat.
 ///
 /// Matching ignores case and treats any run of whitespace as one space, which
-/// is what makes a phrase findable when the recognizer padded it out. The
-/// returned box is narrowed to the matched words by interpolating along the
-/// line's own box: recognizers report a box per line, not per word, so this is
-/// an estimate — accurate for even-width text, and close enough elsewhere to
-/// put a highlight on the right words rather than the whole line.
+/// is what makes a phrase findable when the recognizer padded it out.
+///
+/// The returned box is narrowed to the matched words. Where the layer carries
+/// word boxes the narrowing is exact — the hit is the union of the words it
+/// actually covers. Where it does not, the box is interpolated along the line's
+/// own extent, which is accurate for even-width text and close enough elsewhere
+/// to put a highlight on the right words rather than on the whole line.
 #[frb(sync)]
 pub fn find_in_text_layer(layer: TextLayer, query: String) -> Vec<TextLayerHit> {
     let needle = normalize(&query);
@@ -340,26 +433,94 @@ pub fn find_in_text_layer(layer: TextLayer, query: String) -> Vec<TextLayerHit> 
             let Some(offset) = haystack.find(&needle) else {
                 continue;
             };
-            let units = haystack.chars().count().max(1) as f32;
-            let start = haystack[..offset].chars().count() as f32 / units;
-            let end = (offset + needle.len() > haystack.len())
-                .then_some(1.0)
-                .unwrap_or_else(|| {
-                    haystack[..offset + needle.len()].chars().count() as f32 / units
-                });
-            let width = line.right - line.left;
+            let start = haystack[..offset].chars().count();
+            let end = start + needle.chars().count();
+            let (left, top, right, bottom) = hit_box(line, &haystack, start, end);
             hits.push(TextLayerHit {
                 page: page_index as i32,
                 line: line_index as i32,
                 text: line.text.clone(),
-                left: line.left + width * start,
-                top: line.top,
-                right: line.left + width * end,
-                bottom: line.bottom,
+                left,
+                top,
+                right,
+                bottom,
             });
         }
     }
     hits
+}
+
+/// The box around the matched characters `start..end` of a line.
+///
+/// Prefers the union of the word boxes the match actually covers, and falls
+/// back to interpolating along the line when the layer has no words — or when
+/// they do not spell the line, in which case the character offsets found in
+/// the line's text do not address them and snapping would highlight the wrong
+/// span with false precision.
+fn hit_box(line: &TextLayerLine, haystack: &str, start: usize, end: usize) -> (f32, f32, f32, f32) {
+    if let Some(exact) = word_box(line, haystack, start, end) {
+        return exact;
+    }
+    let units = haystack.chars().count().max(1) as f32;
+    let width = line.right - line.left;
+    let from = (start as f32 / units).clamp(0.0, 1.0);
+    let to = (end as f32 / units).clamp(from, 1.0);
+    (
+        line.left + width * from,
+        line.top,
+        line.left + width * to,
+        line.bottom,
+    )
+}
+
+fn word_box(
+    line: &TextLayerLine,
+    haystack: &str,
+    start: usize,
+    end: usize,
+) -> Option<(f32, f32, f32, f32)> {
+    if line.words.is_empty() {
+        return None;
+    }
+    let mut spans: Vec<(usize, usize, &TextLayerWord)> = Vec::with_capacity(line.words.len());
+    let mut rebuilt = String::with_capacity(line.text.len());
+    let mut cursor = 0usize;
+    for word in &line.words {
+        let text = normalize(&word.text);
+        if text.is_empty() {
+            continue;
+        }
+        if cursor > 0 {
+            rebuilt.push(' ');
+            cursor += 1;
+        }
+        let from = cursor;
+        cursor += text.chars().count();
+        rebuilt.push_str(&text);
+        spans.push((from, cursor, word));
+    }
+    if rebuilt != haystack {
+        return None;
+    }
+
+    let mut bounds: Option<(f32, f32, f32, f32)> = None;
+    for (from, to, word) in spans {
+        // Half-open overlap, so a match ending exactly where a word begins does
+        // not drag that word into the highlight.
+        if from >= end || to <= start {
+            continue;
+        }
+        bounds = Some(match bounds {
+            None => (word.left, word.top, word.right, word.bottom),
+            Some((left, top, right, bottom)) => (
+                left.min(word.left),
+                top.min(word.top),
+                right.max(word.right),
+                bottom.max(word.bottom),
+            ),
+        });
+    }
+    bounds
 }
 
 /// Lower-case, whitespace-collapsed text for matching.
@@ -505,6 +666,35 @@ mod tests {
             right,
             bottom,
             confidence: None,
+            words: Vec::new(),
+        }
+    }
+
+    /// The same line with a box per word, laid out evenly across its extent.
+    fn worded(line: TextLayerLine) -> TextLayerLine {
+        let words: Vec<&str> = line.text.split(' ').filter(|w| !w.is_empty()).collect();
+        let units: usize =
+            words.iter().map(|word| word.chars().count()).sum::<usize>() + words.len() - 1;
+        let per_unit = (line.right - line.left) / units as f32;
+        let mut cursor = line.left;
+        let boxes = words
+            .iter()
+            .map(|word| {
+                let width = word.chars().count() as f32 * per_unit;
+                let left = cursor;
+                cursor += width + per_unit;
+                TextLayerWord {
+                    text: (*word).to_owned(),
+                    left,
+                    top: line.top,
+                    right: left + width,
+                    bottom: line.bottom,
+                }
+            })
+            .collect();
+        TextLayerLine {
+            words: boxes,
+            ..line
         }
     }
 
@@ -535,6 +725,13 @@ mod tests {
                             right: 300.25,
                             bottom: 44.0,
                             confidence: Some(0.93),
+                            words: vec![TextLayerWord {
+                                text: "first".to_owned(),
+                                left: 10.5,
+                                top: 20.0,
+                                right: 140.0,
+                                bottom: 44.0,
+                            }],
                         },
                         line("second line", 10.0, 50.0, 280.0, 74.0),
                     ],
@@ -661,6 +858,101 @@ mod tests {
         assert!((found[0].right - 300.0).abs() < 1.0);
         assert_eq!(found[0].top, 0.0);
         assert_eq!(found[0].bottom, 20.0);
+    }
+
+    #[test]
+    fn a_hit_lands_on_the_word_boxes_rather_than_an_interpolation() {
+        // Proportional spacing is what the interpolation cannot know about: a
+        // line of narrow letters followed by wide ones does not divide by
+        // character count. Here "iiii" occupies the first 40 pixels of a 300
+        // pixel line rather than its first third, and only the word boxes say
+        // so.
+        let mut narrow = line("iiii wwww", 0.0, 0.0, 300.0, 20.0);
+        narrow.words = vec![
+            TextLayerWord {
+                text: "iiii".to_owned(),
+                left: 0.0,
+                top: 0.0,
+                right: 40.0,
+                bottom: 20.0,
+            },
+            TextLayerWord {
+                text: "wwww".to_owned(),
+                left: 60.0,
+                top: 0.0,
+                right: 300.0,
+                bottom: 20.0,
+            },
+        ];
+        let found = find_in_text_layer(layer(vec![narrow]), "iiii".to_owned());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].left, 0.0);
+        assert_eq!(found[0].right, 40.0);
+    }
+
+    #[test]
+    fn a_hit_spanning_words_covers_all_of_them_and_no_more() {
+        let found = find_in_text_layer(
+            layer(vec![worded(line(
+                "alpha beta gamma delta",
+                0.0,
+                0.0,
+                400.0,
+                20.0,
+            ))]),
+            "beta gamma".to_owned(),
+        );
+        assert_eq!(found.len(), 1);
+        // Starts where "beta" starts and ends where "gamma" ends: "alpha" is
+        // to its left and "delta" to its right, neither included.
+        let whole = worded(line("alpha beta gamma delta", 0.0, 0.0, 400.0, 20.0));
+        assert_eq!(found[0].left, whole.words[1].left);
+        assert_eq!(found[0].right, whole.words[2].right);
+    }
+
+    #[test]
+    fn words_that_do_not_spell_their_line_fall_back_to_interpolating() {
+        // A source that reported words inconsistent with the line text cannot
+        // be addressed by the offsets found in that text, so snapping to them
+        // would highlight a confidently wrong span.
+        let mut mismatched = line("aaaa bbbb cccc", 0.0, 0.0, 300.0, 20.0);
+        mismatched.words = vec![TextLayerWord {
+            text: "something else entirely".to_owned(),
+            left: 0.0,
+            top: 0.0,
+            right: 10.0,
+            bottom: 20.0,
+        }];
+        let found = find_in_text_layer(layer(vec![mismatched]), "cccc".to_owned());
+        assert_eq!(found.len(), 1);
+        assert!(found[0].left > 150.0, "left was {}", found[0].left);
+    }
+
+    #[test]
+    fn a_layer_without_words_encodes_exactly_as_it_did_before_they_existed() {
+        // The six-element line shape is what every already-stored layer is
+        // written in. Adding a field must not rewrite them, or every scan on
+        // the device is re-encoded to say the same thing.
+        let encoded = encode_text_layer(layer(vec![line("plain", 1.0, 2.0, 3.0, 4.0)]));
+        assert!(
+            encoded.contains(r#"["plain",1.0,2.0,3.0,4.0,null]"#),
+            "encoded as {encoded}"
+        );
+    }
+
+    #[test]
+    fn word_boxes_survive_a_round_trip() {
+        let original = layer(vec![worded(line("alpha beta", 0.0, 0.0, 200.0, 20.0))]);
+        let decoded = decode_text_layer(encode_text_layer(original.clone())).expect("decodes");
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn a_layer_stored_before_words_existed_still_decodes() {
+        let old = r#"{"v":1,"src":"camera","p":[{"w":100.0,"h":200.0,"l":[["old line",0.0,0.0,50.0,10.0,null]]}]}"#;
+        let decoded = decode_text_layer(old.to_owned()).expect("an older layer still reads");
+        assert_eq!(decoded.pages[0].lines[0].text, "old line");
+        assert!(decoded.pages[0].lines[0].words.is_empty());
     }
 
     #[test]

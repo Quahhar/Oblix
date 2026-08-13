@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0-beta.5";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -434397337;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1686558019;
 
 // Section: executor
 
@@ -1072,6 +1072,40 @@ fn wire__crate__api__policy__normalize_note_title_impl(
         },
     )
 }
+fn wire__crate__api__prepare__normalize_page_contrast_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "normalize_page_contrast",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_pixels = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_width = <i32>::sse_decode(&mut deserializer);
+            let api_height = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::prepare::normalize_page_contrast(
+                    api_pixels, api_width, api_height,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__policy__normalize_task_title_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -1978,6 +2012,47 @@ fn wire__crate__api__mutations__plan_notebook_update_impl(
                 let output_ok = Result::<_, ()>::Ok(crate::api::mutations::plan_notebook_update(
                     api_current,
                     api_update,
+                ))?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__prepare__plan_page_candidates_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "plan_page_candidates",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_measure = <crate::api::prepare::PageMeasure>::sse_decode(&mut deserializer);
+            let api_sample = <crate::api::prepare::PageLumaSample>::sse_decode(&mut deserializer);
+            let api_width = <f32>::sse_decode(&mut deserializer);
+            let api_height = <f32>::sse_decode(&mut deserializer);
+            let api_reading =
+                <crate::api::prepare::PageReadingScore>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok(crate::api::prepare::plan_page_candidates(
+                    api_measure,
+                    api_sample,
+                    api_width,
+                    api_height,
+                    api_reading,
                 ))?;
                 Ok(output_ok)
             })())
@@ -3908,6 +3983,30 @@ impl SseDecode for Vec<crate::api::ocr::OcrPageInput> {
     }
 }
 
+impl SseDecode for Vec<crate::api::ocr::OcrWordInput> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::ocr::OcrWordInput>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::prepare::PagePrepare> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::prepare::PagePrepare>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::prepare::PageReadingScore> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4213,6 +4312,20 @@ impl SseDecode for Vec<crate::api::textlayer::TextLayerPage> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::textlayer::TextLayerPage>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::textlayer::TextLayerWord> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::textlayer::TextLayerWord>::sse_decode(
                 deserializer,
             ));
         }
@@ -4622,6 +4735,7 @@ impl SseDecode for crate::api::ocr::OcrLineInput {
         let mut var_bottom = <f32>::sse_decode(deserializer);
         let mut var_blockIndex = <i32>::sse_decode(deserializer);
         let mut var_confidence = <Option<f32>>::sse_decode(deserializer);
+        let mut var_words = <Vec<crate::api::ocr::OcrWordInput>>::sse_decode(deserializer);
         return crate::api::ocr::OcrLineInput {
             text: var_text,
             left: var_left,
@@ -4630,6 +4744,7 @@ impl SseDecode for crate::api::ocr::OcrLineInput {
             bottom: var_bottom,
             block_index: var_blockIndex,
             confidence: var_confidence,
+            words: var_words,
         };
     }
 }
@@ -4658,6 +4773,7 @@ impl SseDecode for crate::api::ocr::OcrShapeOptions {
         let mut var_detectTables = <bool>::sse_decode(deserializer);
         let mut var_stripRunningHeads = <bool>::sse_decode(deserializer);
         let mut var_healAcrossPages = <bool>::sse_decode(deserializer);
+        let mut var_repairMisreads = <bool>::sse_decode(deserializer);
         let mut var_preset = <crate::api::ocr::ScanPreset>::sse_decode(deserializer);
         return crate::api::ocr::OcrShapeOptions {
             min_confidence: var_minConfidence,
@@ -4667,7 +4783,28 @@ impl SseDecode for crate::api::ocr::OcrShapeOptions {
             detect_tables: var_detectTables,
             strip_running_heads: var_stripRunningHeads,
             heal_across_pages: var_healAcrossPages,
+            repair_misreads: var_repairMisreads,
             preset: var_preset,
+        };
+    }
+}
+
+impl SseDecode for crate::api::ocr::OcrWordInput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_left = <f32>::sse_decode(deserializer);
+        let mut var_top = <f32>::sse_decode(deserializer);
+        let mut var_right = <f32>::sse_decode(deserializer);
+        let mut var_bottom = <f32>::sse_decode(deserializer);
+        let mut var_confidence = <Option<f32>>::sse_decode(deserializer);
+        return crate::api::ocr::OcrWordInput {
+            text: var_text,
+            left: var_left,
+            top: var_top,
+            right: var_right,
+            bottom: var_bottom,
+            confidence: var_confidence,
         };
     }
 }
@@ -4817,8 +4954,14 @@ impl SseDecode for crate::api::prepare::PageLumaSample {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_histogram = <Vec<u32>>::sse_decode(deserializer);
+        let mut var_tiles = <Vec<u32>>::sse_decode(deserializer);
+        let mut var_tileColumns = <i32>::sse_decode(deserializer);
+        let mut var_tileRows = <i32>::sse_decode(deserializer);
         return crate::api::prepare::PageLumaSample {
             histogram: var_histogram,
+            tiles: var_tiles,
+            tile_columns: var_tileColumns,
+            tile_rows: var_tileRows,
         };
     }
 }
@@ -4829,10 +4972,12 @@ impl SseDecode for crate::api::prepare::PageMeasure {
         let mut var_skewDegrees = <f32>::sse_decode(deserializer);
         let mut var_medianLineHeight = <f32>::sse_decode(deserializer);
         let mut var_usableLines = <i32>::sse_decode(deserializer);
+        let mut var_uprightShare = <f32>::sse_decode(deserializer);
         return crate::api::prepare::PageMeasure {
             skew_degrees: var_skewDegrees,
             median_line_height: var_medianLineHeight,
             usable_lines: var_usableLines,
+            upright_share: var_uprightShare,
         };
     }
 }
@@ -4845,7 +4990,9 @@ impl SseDecode for crate::api::prepare::PagePrepare {
         let mut var_outHeight = <i32>::sse_decode(deserializer);
         let mut var_transform = <Vec<f32>>::sse_decode(deserializer);
         let mut var_colorMatrix = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_localContrast = <bool>::sse_decode(deserializer);
         let mut var_rotateDegrees = <f32>::sse_decode(deserializer);
+        let mut var_quarterTurns = <i32>::sse_decode(deserializer);
         let mut var_scale = <f32>::sse_decode(deserializer);
         let mut var_reason = <String>::sse_decode(deserializer);
         return crate::api::prepare::PagePrepare {
@@ -4854,7 +5001,9 @@ impl SseDecode for crate::api::prepare::PagePrepare {
             out_height: var_outHeight,
             transform: var_transform,
             color_matrix: var_colorMatrix,
+            local_contrast: var_localContrast,
             rotate_degrees: var_rotateDegrees,
+            quarter_turns: var_quarterTurns,
             scale: var_scale,
             reason: var_reason,
         };
@@ -5227,6 +5376,7 @@ impl SseDecode for crate::api::ocr::ScannedNoteDraft {
         let mut var_tables = <i32>::sse_decode(deserializer);
         let mut var_headings = <i32>::sse_decode(deserializer);
         let mut var_strippedRunningHeads = <i32>::sse_decode(deserializer);
+        let mut var_repairedWords = <i32>::sse_decode(deserializer);
         let mut var_preset = <String>::sse_decode(deserializer);
         let mut var_quality = <crate::api::ocr::CaptureQuality>::sse_decode(deserializer);
         return crate::api::ocr::ScannedNoteDraft {
@@ -5241,6 +5391,7 @@ impl SseDecode for crate::api::ocr::ScannedNoteDraft {
             tables: var_tables,
             headings: var_headings,
             stripped_running_heads: var_strippedRunningHeads,
+            repaired_words: var_repairedWords,
             preset: var_preset,
             quality: var_quality,
         };
@@ -5697,6 +5848,7 @@ impl SseDecode for crate::api::textlayer::TextLayerLine {
         let mut var_right = <f32>::sse_decode(deserializer);
         let mut var_bottom = <f32>::sse_decode(deserializer);
         let mut var_confidence = <Option<f32>>::sse_decode(deserializer);
+        let mut var_words = <Vec<crate::api::textlayer::TextLayerWord>>::sse_decode(deserializer);
         return crate::api::textlayer::TextLayerLine {
             text: var_text,
             left: var_left,
@@ -5704,6 +5856,7 @@ impl SseDecode for crate::api::textlayer::TextLayerLine {
             right: var_right,
             bottom: var_bottom,
             confidence: var_confidence,
+            words: var_words,
         };
     }
 }
@@ -5718,6 +5871,24 @@ impl SseDecode for crate::api::textlayer::TextLayerPage {
             width: var_width,
             height: var_height,
             lines: var_lines,
+        };
+    }
+}
+
+impl SseDecode for crate::api::textlayer::TextLayerWord {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_left = <f32>::sse_decode(deserializer);
+        let mut var_top = <f32>::sse_decode(deserializer);
+        let mut var_right = <f32>::sse_decode(deserializer);
+        let mut var_bottom = <f32>::sse_decode(deserializer);
+        return crate::api::textlayer::TextLayerWord {
+            text: var_text,
+            left: var_left,
+            top: var_top,
+            right: var_right,
+            bottom: var_bottom,
         };
     }
 }
@@ -5790,46 +5961,46 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         24 => wire__crate__api__crdt__init_app_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__mutations__note_update_input_default_impl(
+        39 => wire__crate__api__mutations__note_update_input_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__mutations__notebook_update_input_default_impl(
+        41 => wire__crate__api__mutations__notebook_update_input_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        41 => wire__crate__api__mutations__nullable_int_mutation_default_impl(
+        42 => wire__crate__api__mutations__nullable_int_mutation_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        42 => wire__crate__api__mutations__nullable_string_mutation_default_impl(
+        43 => wire__crate__api__mutations__nullable_string_mutation_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        43 => wire__crate__api__mutations__nullable_timestamp_mutation_default_impl(
+        44 => wire__crate__api__mutations__nullable_timestamp_mutation_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        44 => {
+        45 => {
             wire__crate__api__ocr__ocr_shape_options_default_impl(port, ptr, rust_vec_len, data_len)
         }
-        89 => wire__crate__api__mutations__task_create_input_default_impl(
+        91 => wire__crate__api__mutations__task_create_input_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        90 => wire__crate__api__mutations__task_update_input_default_impl(
+        92 => wire__crate__api__mutations__task_update_input_default_impl(
             port,
             ptr,
             rust_vec_len,
@@ -5892,78 +6063,80 @@ fn pde_ffi_dispatcher_sync_impl(
         ),
         30 => wire__crate__api__tasks__next_occurrence_impl(ptr, rust_vec_len, data_len),
         31 => wire__crate__api__policy__normalize_note_title_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__policy__normalize_task_title_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__policy__note_draft_is_empty_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__policy__note_share_text_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__view__note_snippet_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__formats__note_to_markdown_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__formats__note_to_text_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__policy__notebook_path_key_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__codecs__parse_enex_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__formats__parse_markdown_text_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__quickadd__parse_quick_add_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__tasks__parse_recurrence_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__policy__parse_tag_names_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__pdf__pdf_page_to_ocr_page_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__pdf__pdf_pages_to_ocr_pages_impl(ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__text__plain_text_diff_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__mutations__plan_note_create_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__mutations__plan_note_delete_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__mutations__plan_note_restore_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__mutations__plan_note_update_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__mutations__plan_notebook_create_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__mutations__plan_notebook_delete_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__mutations__plan_notebook_update_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__prepare__plan_page_prepare_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__tasks__plan_reorder_impl(ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__policy__plan_sync_settlement_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__mutations__plan_task_completion_impl(ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__mutations__plan_task_create_impl(ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__mutations__plan_task_delete_impl(ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__mutations__plan_task_rollover_impl(ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__mutations__plan_task_update_impl(ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__tasks__plan_task_view_impl(ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__script__reading_looks_wrong_impl(ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__text__rebase_plain_text_impl(ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__tasks__reminder_time_impl(ptr, rust_vec_len, data_len),
-        72 => {
+        32 => wire__crate__api__prepare__normalize_page_contrast_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__policy__normalize_task_title_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__policy__note_draft_is_empty_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__policy__note_share_text_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__view__note_snippet_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__formats__note_to_markdown_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__formats__note_to_text_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__policy__notebook_path_key_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__codecs__parse_enex_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__formats__parse_markdown_text_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__quickadd__parse_quick_add_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__tasks__parse_recurrence_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__policy__parse_tag_names_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__pdf__pdf_page_to_ocr_page_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__pdf__pdf_pages_to_ocr_pages_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__text__plain_text_diff_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__mutations__plan_note_create_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__mutations__plan_note_delete_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__mutations__plan_note_restore_impl(ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__mutations__plan_note_update_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__mutations__plan_notebook_create_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__mutations__plan_notebook_delete_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__mutations__plan_notebook_update_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__prepare__plan_page_candidates_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__prepare__plan_page_prepare_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__tasks__plan_reorder_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__policy__plan_sync_settlement_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__mutations__plan_task_completion_impl(ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__mutations__plan_task_create_impl(ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__mutations__plan_task_delete_impl(ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__mutations__plan_task_rollover_impl(ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__mutations__plan_task_update_impl(ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__tasks__plan_task_view_impl(ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__script__reading_looks_wrong_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__text__rebase_plain_text_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__tasks__reminder_time_impl(ptr, rust_vec_len, data_len),
+        74 => {
             wire__crate__api__policy__remote_timestamp_wins_equal_impl(ptr, rust_vec_len, data_len)
         }
-        73 => wire__crate__api__crdt__remote_winning_fields_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__formats__render_markdown_files_impl(ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__formats__render_text_files_impl(ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__policy__resolve_notebook_paths_impl(ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__policy__retire_acknowledged_outbox_field_impl(
+        75 => wire__crate__api__crdt__remote_winning_fields_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__formats__render_markdown_files_impl(ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__formats__render_text_files_impl(ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__policy__resolve_notebook_paths_impl(ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__policy__retire_acknowledged_outbox_field_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        78 => {
+        80 => {
             wire__crate__api__policy__sanitize_single_export_stem_impl(ptr, rust_vec_len, data_len)
         }
-        79 => wire__crate__api__prepare__score_page_reading_impl(ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__script__score_script_reading_impl(ptr, rust_vec_len, data_len),
-        81 => {
+        81 => wire__crate__api__prepare__score_page_reading_impl(ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__script__score_script_reading_impl(ptr, rust_vec_len, data_len),
+        83 => {
             wire__crate__api__policy__select_export_notebook_ids_impl(ptr, rust_vec_len, data_len)
         }
-        82 => wire__crate__api__tasks__serialize_recurrence_impl(ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__ocr__shape_scanned_pages_impl(ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__ocr__shape_scanned_text_impl(ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__crdt__stamp_crdt_fields_impl(ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__entities__suggest_actions_impl(ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__policy__summarize_pending_outbox_impl(ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__policy__sync_backoff_millis_impl(ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__textlayer__text_layer_fingerprint_impl(ptr, rust_vec_len, data_len),
-        92 => wire__crate__api__textlayer__text_layer_looks_duplicate_impl(
+        84 => wire__crate__api__tasks__serialize_recurrence_impl(ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__ocr__shape_scanned_pages_impl(ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__ocr__shape_scanned_text_impl(ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__crdt__stamp_crdt_fields_impl(ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__entities__suggest_actions_impl(ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__policy__summarize_pending_outbox_impl(ptr, rust_vec_len, data_len),
+        90 => wire__crate__api__policy__sync_backoff_millis_impl(ptr, rust_vec_len, data_len),
+        93 => wire__crate__api__textlayer__text_layer_fingerprint_impl(ptr, rust_vec_len, data_len),
+        94 => wire__crate__api__textlayer__text_layer_looks_duplicate_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        93 => wire__crate__api__textlayer__text_layer_region_impl(ptr, rust_vec_len, data_len),
-        94 => wire__crate__api__textlayer__text_layer_search_text_impl(ptr, rust_vec_len, data_len),
-        95 => wire__crate__api__textlayer__text_layer_to_pages_impl(ptr, rust_vec_len, data_len),
-        96 => wire__crate__api__policy__token_needs_refresh_impl(ptr, rust_vec_len, data_len),
-        97 => wire__crate__api__text__transform_text_positions_impl(ptr, rust_vec_len, data_len),
+        95 => wire__crate__api__textlayer__text_layer_region_impl(ptr, rust_vec_len, data_len),
+        96 => wire__crate__api__textlayer__text_layer_search_text_impl(ptr, rust_vec_len, data_len),
+        97 => wire__crate__api__textlayer__text_layer_to_pages_impl(ptr, rust_vec_len, data_len),
+        98 => wire__crate__api__policy__token_needs_refresh_impl(ptr, rust_vec_len, data_len),
+        99 => wire__crate__api__text__transform_text_positions_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6981,6 +7154,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ocr::OcrLineInput {
             self.bottom.into_into_dart().into_dart(),
             self.block_index.into_into_dart().into_dart(),
             self.confidence.into_into_dart().into_dart(),
+            self.words.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7023,6 +7197,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ocr::OcrShapeOptions {
             self.detect_tables.into_into_dart().into_dart(),
             self.strip_running_heads.into_into_dart().into_dart(),
             self.heal_across_pages.into_into_dart().into_dart(),
+            self.repair_misreads.into_into_dart().into_dart(),
             self.preset.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -7036,6 +7211,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::ocr::OcrShapeOptions>
     for crate::api::ocr::OcrShapeOptions
 {
     fn into_into_dart(self) -> crate::api::ocr::OcrShapeOptions {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::ocr::OcrWordInput {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.text.into_into_dart().into_dart(),
+            self.left.into_into_dart().into_dart(),
+            self.top.into_into_dart().into_dart(),
+            self.right.into_into_dart().into_dart(),
+            self.bottom.into_into_dart().into_dart(),
+            self.confidence.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::ocr::OcrWordInput {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::ocr::OcrWordInput>
+    for crate::api::ocr::OcrWordInput
+{
+    fn into_into_dart(self) -> crate::api::ocr::OcrWordInput {
         self
     }
 }
@@ -7064,7 +7261,13 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::policy::OutboxRetirementOutpu
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::prepare::PageLumaSample {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [self.histogram.into_into_dart().into_dart()].into_dart()
+        [
+            self.histogram.into_into_dart().into_dart(),
+            self.tiles.into_into_dart().into_dart(),
+            self.tile_columns.into_into_dart().into_dart(),
+            self.tile_rows.into_into_dart().into_dart(),
+        ]
+        .into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
@@ -7085,6 +7288,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::prepare::PageMeasure {
             self.skew_degrees.into_into_dart().into_dart(),
             self.median_line_height.into_into_dart().into_dart(),
             self.usable_lines.into_into_dart().into_dart(),
+            self.upright_share.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7109,7 +7313,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::prepare::PagePrepare {
             self.out_height.into_into_dart().into_dart(),
             self.transform.into_into_dart().into_dart(),
             self.color_matrix.into_into_dart().into_dart(),
+            self.local_contrast.into_into_dart().into_dart(),
             self.rotate_degrees.into_into_dart().into_dart(),
+            self.quarter_turns.into_into_dart().into_dart(),
             self.scale.into_into_dart().into_dart(),
             self.reason.into_into_dart().into_dart(),
         ]
@@ -7643,6 +7849,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::ocr::ScannedNoteDraft {
             self.tables.into_into_dart().into_dart(),
             self.headings.into_into_dart().into_dart(),
             self.stripped_running_heads.into_into_dart().into_dart(),
+            self.repaired_words.into_into_dart().into_dart(),
             self.preset.into_into_dart().into_dart(),
             self.quality.into_into_dart().into_dart(),
         ]
@@ -8224,6 +8431,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::textlayer::TextLayerLine {
             self.right.into_into_dart().into_dart(),
             self.bottom.into_into_dart().into_dart(),
             self.confidence.into_into_dart().into_dart(),
+            self.words.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -8258,6 +8466,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::textlayer::TextLayerPage>
     for crate::api::textlayer::TextLayerPage
 {
     fn into_into_dart(self) -> crate::api::textlayer::TextLayerPage {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::textlayer::TextLayerWord {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.text.into_into_dart().into_dart(),
+            self.left.into_into_dart().into_dart(),
+            self.top.into_into_dart().into_dart(),
+            self.right.into_into_dart().into_dart(),
+            self.bottom.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::textlayer::TextLayerWord
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::textlayer::TextLayerWord>
+    for crate::api::textlayer::TextLayerWord
+{
+    fn into_into_dart(self) -> crate::api::textlayer::TextLayerWord {
         self
     }
 }
@@ -8789,6 +9021,26 @@ impl SseEncode for Vec<crate::api::ocr::OcrPageInput> {
     }
 }
 
+impl SseEncode for Vec<crate::api::ocr::OcrWordInput> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::ocr::OcrWordInput>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::prepare::PagePrepare> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::prepare::PagePrepare>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::prepare::PageReadingScore> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -9025,6 +9277,16 @@ impl SseEncode for Vec<crate::api::textlayer::TextLayerPage> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::textlayer::TextLayerPage>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::textlayer::TextLayerWord> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::textlayer::TextLayerWord>::sse_encode(item, serializer);
         }
     }
 }
@@ -9296,6 +9558,7 @@ impl SseEncode for crate::api::ocr::OcrLineInput {
         <f32>::sse_encode(self.bottom, serializer);
         <i32>::sse_encode(self.block_index, serializer);
         <Option<f32>>::sse_encode(self.confidence, serializer);
+        <Vec<crate::api::ocr::OcrWordInput>>::sse_encode(self.words, serializer);
     }
 }
 
@@ -9318,7 +9581,20 @@ impl SseEncode for crate::api::ocr::OcrShapeOptions {
         <bool>::sse_encode(self.detect_tables, serializer);
         <bool>::sse_encode(self.strip_running_heads, serializer);
         <bool>::sse_encode(self.heal_across_pages, serializer);
+        <bool>::sse_encode(self.repair_misreads, serializer);
         <crate::api::ocr::ScanPreset>::sse_encode(self.preset, serializer);
+    }
+}
+
+impl SseEncode for crate::api::ocr::OcrWordInput {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.text, serializer);
+        <f32>::sse_encode(self.left, serializer);
+        <f32>::sse_encode(self.top, serializer);
+        <f32>::sse_encode(self.right, serializer);
+        <f32>::sse_encode(self.bottom, serializer);
+        <Option<f32>>::sse_encode(self.confidence, serializer);
     }
 }
 
@@ -9445,6 +9721,9 @@ impl SseEncode for crate::api::prepare::PageLumaSample {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<u32>>::sse_encode(self.histogram, serializer);
+        <Vec<u32>>::sse_encode(self.tiles, serializer);
+        <i32>::sse_encode(self.tile_columns, serializer);
+        <i32>::sse_encode(self.tile_rows, serializer);
     }
 }
 
@@ -9454,6 +9733,7 @@ impl SseEncode for crate::api::prepare::PageMeasure {
         <f32>::sse_encode(self.skew_degrees, serializer);
         <f32>::sse_encode(self.median_line_height, serializer);
         <i32>::sse_encode(self.usable_lines, serializer);
+        <f32>::sse_encode(self.upright_share, serializer);
     }
 }
 
@@ -9465,7 +9745,9 @@ impl SseEncode for crate::api::prepare::PagePrepare {
         <i32>::sse_encode(self.out_height, serializer);
         <Vec<f32>>::sse_encode(self.transform, serializer);
         <Vec<f32>>::sse_encode(self.color_matrix, serializer);
+        <bool>::sse_encode(self.local_contrast, serializer);
         <f32>::sse_encode(self.rotate_degrees, serializer);
+        <i32>::sse_encode(self.quarter_turns, serializer);
         <f32>::sse_encode(self.scale, serializer);
         <String>::sse_encode(self.reason, serializer);
     }
@@ -9763,6 +10045,7 @@ impl SseEncode for crate::api::ocr::ScannedNoteDraft {
         <i32>::sse_encode(self.tables, serializer);
         <i32>::sse_encode(self.headings, serializer);
         <i32>::sse_encode(self.stripped_running_heads, serializer);
+        <i32>::sse_encode(self.repaired_words, serializer);
         <String>::sse_encode(self.preset, serializer);
         <crate::api::ocr::CaptureQuality>::sse_encode(self.quality, serializer);
     }
@@ -10073,6 +10356,7 @@ impl SseEncode for crate::api::textlayer::TextLayerLine {
         <f32>::sse_encode(self.right, serializer);
         <f32>::sse_encode(self.bottom, serializer);
         <Option<f32>>::sse_encode(self.confidence, serializer);
+        <Vec<crate::api::textlayer::TextLayerWord>>::sse_encode(self.words, serializer);
     }
 }
 
@@ -10082,6 +10366,17 @@ impl SseEncode for crate::api::textlayer::TextLayerPage {
         <f32>::sse_encode(self.width, serializer);
         <f32>::sse_encode(self.height, serializer);
         <Vec<crate::api::textlayer::TextLayerLine>>::sse_encode(self.lines, serializer);
+    }
+}
+
+impl SseEncode for crate::api::textlayer::TextLayerWord {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.text, serializer);
+        <f32>::sse_encode(self.left, serializer);
+        <f32>::sse_encode(self.top, serializer);
+        <f32>::sse_encode(self.right, serializer);
+        <f32>::sse_encode(self.bottom, serializer);
     }
 }
 

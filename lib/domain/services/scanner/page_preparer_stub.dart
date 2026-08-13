@@ -10,5 +10,11 @@ Future<PreparedPage?> preparePageForRecognition({
   required OcrPageValue page,
 }) async => null;
 
+Future<List<PreparedPage>> prepareCandidatesForRecognition({
+  required String path,
+  required OcrPageValue page,
+  required PageReadingScoreValue reading,
+}) async => const [];
+
 Future<PageLumaSampleValue> samplePageLuma(String path) async =>
     emptyLumaSample;

@@ -1005,6 +1005,7 @@ mod tests {
                         right: 400.0,
                         bottom: index as f32 * 30.0 + 20.0,
                         confidence: None,
+                        words: Vec::new(),
                     })
                     .collect(),
             }],

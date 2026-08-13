@@ -24,4 +24,9 @@ class PreparedPage {
 /// fabricated distribution would have it stretch against invented levels.
 typedef LumaSampler = Future<PageLumaSampleValue> Function(String path);
 
-PageLumaSampleValue get emptyLumaSample => (histogram: Uint32List(0));
+PageLumaSampleValue get emptyLumaSample => (
+  histogram: Uint32List(0),
+  tiles: Uint32List(0),
+  tileColumns: 0,
+  tileRows: 0,
+);

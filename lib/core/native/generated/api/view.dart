@@ -6,18 +6,17 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-
-            // These functions are ignored because they are not marked as `pub`: `calendar_label`, `day_group_label`
+// These functions are ignored because they are not marked as `pub`: `calendar_label`, `day_group_label`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
 
-
-            /// Collapse a note body into its one-line list preview.
+/// Collapse a note body into its one-line list preview.
 ///
 /// Ports `content.replaceAll(RegExp(r'\s+'), ' ').trim()`. The two whitespace
 /// sets genuinely differ — U+0085 is not in Dart's regexp `\s` but is in
 /// `String.trim`'s set — so an interior NEXT LINE survives collapsing while a
 /// leading or trailing one is still trimmed.
-String  noteSnippet({required String content }) => RustLib.instance.api.crateApiViewNoteSnippet(content: content);
+String noteSnippet({required String content}) =>
+    RustLib.instance.api.crateApiViewNoteSnippet(content: content);
 
 /// Group notes under TODAY / YESTERDAY / PREVIOUS 7 DAYS / PREVIOUS 30 DAYS /
 /// month / year headings, keeping the caller's order both within and across
@@ -34,58 +33,66 @@ String  noteSnippet({required String content }) => RustLib.instance.api.crateApi
 /// lands in the same section. Labels are distinct across years by construction:
 /// a month name is only used for the current year, and older years are labelled
 /// by the year itself.
-List<NoteDayGroup>  groupNotesByDay({required List<NoteDayInput> notes , required int todayYear , required int todayMonth , required int todayDay }) => RustLib.instance.api.crateApiViewGroupNotesByDay(notes: notes, todayYear: todayYear, todayMonth: todayMonth, todayDay: todayDay);
+List<NoteDayGroup> groupNotesByDay({
+  required List<NoteDayInput> notes,
+  required int todayYear,
+  required int todayMonth,
+  required int todayDay,
+}) => RustLib.instance.api.crateApiViewGroupNotesByDay(
+  notes: notes,
+  todayYear: todayYear,
+  todayMonth: todayMonth,
+  todayDay: todayDay,
+);
 
-            /// Notes that share a heading, in the order the caller supplied them.
-class NoteDayGroup  {
-                final String label;
-final List<String> noteIds;
+/// Notes that share a heading, in the order the caller supplied them.
+class NoteDayGroup {
+  final String label;
+  final List<String> noteIds;
 
-                const NoteDayGroup({required this.label ,required this.noteIds ,});
+  const NoteDayGroup({required this.label, required this.noteIds});
 
+  @override
+  int get hashCode => label.hashCode ^ noteIds.hashCode;
 
-
-
-
-        @override
-        int get hashCode => label.hashCode^noteIds.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is NoteDayGroup &&
-                runtimeType == other.runtimeType
-                && label == other.label&& noteIds == other.noteIds;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NoteDayGroup &&
+          runtimeType == other.runtimeType &&
+          label == other.label &&
+          noteIds == other.noteIds;
+}
 
 /// One note reduced to what day-grouping needs. The `local_*` fields are the
 /// civil date Dart read off `updatedAt.toLocal()`.
-class NoteDayInput  {
-                final String id;
-final int localYear;
-final int localMonth;
-final int localDay;
+class NoteDayInput {
+  final String id;
+  final int localYear;
+  final int localMonth;
+  final int localDay;
 
-                const NoteDayInput({required this.id ,required this.localYear ,required this.localMonth ,required this.localDay ,});
+  const NoteDayInput({
+    required this.id,
+    required this.localYear,
+    required this.localMonth,
+    required this.localDay,
+  });
 
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      localYear.hashCode ^
+      localMonth.hashCode ^
+      localDay.hashCode;
 
-
-
-
-        @override
-        int get hashCode => id.hashCode^localYear.hashCode^localMonth.hashCode^localDay.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is NoteDayInput &&
-                runtimeType == other.runtimeType
-                && id == other.id&& localYear == other.localYear&& localMonth == other.localMonth&& localDay == other.localDay;
-
-            }
-            
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NoteDayInput &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          localYear == other.localYear &&
+          localMonth == other.localMonth &&
+          localDay == other.localDay;
+}

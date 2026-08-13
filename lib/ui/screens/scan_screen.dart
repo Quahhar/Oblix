@@ -117,6 +117,10 @@ class _ScanScreenState extends State<ScanScreen> {
         'straightened ${draft.correctedSkewDegrees.abs().toStringAsFixed(0)}°',
       if (draft.strippedRunningHeads > 0)
         '${draft.strippedRunningHeads} running heads removed',
+      // Said out loud because it is the one step that changed what the page
+      // says rather than where it sits, and the reader should know to look.
+      if (draft.repairedWords > 0)
+        '${draft.repairedWords} ${draft.repairedWords == 1 ? 'word' : 'words'} repaired',
       if (draft.droppedLines > 0) '${draft.droppedLines} skipped',
     ];
     return parts.join(' · ');

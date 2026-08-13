@@ -799,6 +799,7 @@ mod tests {
             bottom: top + height,
             block_index: 0,
             confidence: None,
+            words: Vec::new(),
         }
     }
 

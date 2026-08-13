@@ -22,7 +22,8 @@ network requests, file access, notifications, and UI updates.
 | `api/quickadd.rs` | One-line task grammar: dates, times, priorities, labels, lists, repeats, reminder leads, plus UTF-16 highlight spans | `ui/widgets/quick_add_field.dart`, via `task_repository.dart` |
 | `api/codecs.rs` | ENEX parsing, EPUB import/export, and Oblix v1/v2 archive import/export including attachments | `enex_parser.dart`, `epub_importer.dart`, `epub_exporter.dart`, `oblix_archive.dart`, orchestrated by `import_export_service.dart` |
 | `api/view.rs` | Note-list presentation: one-line snippets and the widening time-window headings (today, yesterday, previous 7/30 days, month, year) over caller-localized civil dates | `ui/widgets/note_timeline.dart`, used by the Notes, notebook, and tag lists |
-| `api/prepare.rs` | Improving the image *before* the recognizer reads it: measuring a page's tilt and print size from a first reading, planning a deskew/upscale/contrast-stretch retry as an affine plus a colour matrix, mapping the retry's boxes back to source pixels, and scoring the two readings so the better one wins | `domain/services/scanner/page_preparer.dart`, applied in `document_scanner_mlkit.dart` |
+| `api/prepare.rs` | Improving the image *before* the recognizer reads it: measuring a page's tilt, print size and orientation from a first reading, planning several candidate retries — deskew, upscale, contrast stretch, whole-page turn, per-region relighting — each as an affine plus a colour matrix, applying the per-region levels to the pixels, mapping each retry's boxes back to source pixels, and scoring the readings so the best one wins | `domain/services/scanner/page_preparer.dart`, applied in `document_scanner_mlkit.dart` |
+| `misread.rs` | Putting back characters the recognizer read as the wrong glyph, where the capture's own confidently-read vocabulary or a short common-word list supports the correction and the recognizer was unsure | Internal to `api/ocr.rs`; reaches Dart as `ScannedNoteDraft::repaired_words` |
 | `api/ocr.rs` | Scanned-page reconstruction: projection-profile deskew, column and band detection, reading order, visual-row merging, running-head stripping, cross-page paragraph healing, page classification into presets, capture-quality scoring, title extraction | `ui/screens/scan_screen.dart`, over boxes from `domain/services/scanner/` |
 | `api/doc.rs` | Turning reconstructed rows into a document: heading, list, block-quote and code detection, and table detection drawn as Markdown pipe tables with left/right column anchoring | Internal to `api/ocr.rs`; reaches Dart as the shaped body and its `content_type` |
 | `api/textlayer.rs` | The recognizer's output kept beside the image: versioned encoding, flattened search text, query hits narrowed to the matched words, region extraction, and simhash fingerprints for duplicate detection | `data/repositories/text_layer_repository.dart` and `domain/services/scanner/scan_backfill_service.dart` |
@@ -125,9 +126,60 @@ retry can never disagree with reconstruction about how crooked a page is.
 
 The retry is a candidate, never a replacement. Preprocessing can also make a
 page worse — an over-stretched histogram eats thin strokes and a rotation
-resamples every glyph — so `choose_page_reading` scores both readings and the
+resamples every glyph — so `choose_page_reading` scores the readings and the
 original holds a tie, exactly as Latin is the incumbent above. The worst case is
 time spent, not text lost.
+
+There is more than one candidate, because the corrections do not stand or fall
+together: a page helped by being turned and hurt by having its contrast
+stretched cannot be judged from a single image that does both.
+`plan_page_candidates` therefore offers up to three, and each is read and scored
+on its own. Two of them exist for cases the earlier measurements could not see:
+
+- **Orientation.** A page photographed on its side says so in its geometry —
+  the recognizer reports columns of glyphs, taller than they are wide, where an
+  upright page reports lines — so `PageMeasure::upright_share` catches it
+  without reading anything. A page photographed upside down leaves no geometric
+  trace at all, so the half turn is offered on the first reading's quality
+  alone, and only when it came back as debris rather than as language.
+- **Uneven lighting.** A colour matrix is one curve over the whole sheet, which
+  is the right correction for a uniformly dim page and no correction at all for
+  the commonest bad capture: a page lit from one side, where the paper in shadow
+  is darker than the ink in the light. `PageLumaSample::tiles` — the same
+  thumbnail, summed into a grid — is what distinguishes the two, since a
+  histogram cannot say *where* a page used its range. When the lighting is
+  uneven, `normalize_page_contrast` re-levels the drawn bitmap per region,
+  interpolating between tiles so no tile edge becomes a seam through a glyph,
+  and leaving the result grey rather than thresholded so a thin stroke keeps the
+  antialiasing that says where its edge is.
+
+The platform's share of that is unchanged in kind: it decodes, draws and
+encodes, and hands the core a pixel buffer for the one correction that cannot be
+expressed as a matrix. Each page is also under a wall-clock budget in
+`document_scanner_mlkit.dart`, checked between passes so a page never abandons a
+recognition it has already paid for.
+
+### Word boxes
+
+A recognizer that breaks its lines into words is asked for them, and
+`OcrLineInput::words` carries them through. They are extra evidence, never the
+model — a PDF's text runs are not words and several recognizers report none, so
+every use degrades to the line boxes. Three things depend on them:
+
+- `tilt_direction` can only vote on boxes that share a printed line. On a page
+  reported as one box per row it has nothing to say, and the deskew correctly
+  gives up rather than guess a direction. Every line of words is a row of
+  row-mates, which turns the page that could not be straightened at all into the
+  ordinary case.
+- ML Kit on Android frequently reports no line confidence while reporting one
+  per element. `OcrLineInput::effective_confidence` averages the words, which
+  recovers the capture-quality verdict, the low-confidence filter, and the retry
+  comparison on pages that would otherwise be scored "no opinion".
+- A search highlight can sit on the words it matched rather than on an
+  interpolation along the line, which proportional spacing makes an estimate at
+  best. The layer stores them as a trailing element per line, so a layer written
+  before they existed still decodes and a source without them still encodes
+  exactly as it did.
 
 ### Where scanned pages live
 

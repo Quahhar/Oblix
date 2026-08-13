@@ -7,44 +7,74 @@ import '../frb_generated.dart';
 import 'ocr.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `decode_line`, `decode_word`, `fnv1a`, `hit_box`, `new`, `normalize`, `number`, `round2`, `round`, `word_box`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
-            // These functions are ignored because they are not marked as `pub`: `decode_line`, `fnv1a`, `new`, `normalize`, `number`, `round2`, `round`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
-
-
-            /// Capture the recognizer's output as a layer, before any reconstruction.
-TextLayer  buildTextLayer({required List<OcrPageInput> pages , required String source }) => RustLib.instance.api.crateApiTextlayerBuildTextLayer(pages: pages, source: source);
+/// Capture the recognizer's output as a layer, before any reconstruction.
+TextLayer buildTextLayer({
+  required List<OcrPageInput> pages,
+  required String source,
+}) => RustLib.instance.api.crateApiTextlayerBuildTextLayer(
+  pages: pages,
+  source: source,
+);
 
 /// Feed a stored layer back into reconstruction, so a page can be re-read with
 /// different options without the original image.
-List<OcrPageInput>  textLayerToPages({required TextLayer layer }) => RustLib.instance.api.crateApiTextlayerTextLayerToPages(layer: layer);
+List<OcrPageInput> textLayerToPages({required TextLayer layer}) =>
+    RustLib.instance.api.crateApiTextlayerTextLayerToPages(layer: layer);
 
-String  encodeTextLayer({required TextLayer layer }) => RustLib.instance.api.crateApiTextlayerEncodeTextLayer(layer: layer);
+String encodeTextLayer({required TextLayer layer}) =>
+    RustLib.instance.api.crateApiTextlayerEncodeTextLayer(layer: layer);
 
-TextLayer  decodeTextLayer({required String encoded }) => RustLib.instance.api.crateApiTextlayerDecodeTextLayer(encoded: encoded);
+TextLayer decodeTextLayer({required String encoded}) =>
+    RustLib.instance.api.crateApiTextlayerDecodeTextLayer(encoded: encoded);
 
 /// Everything the layer read, as one string, for the note search index.
 ///
 /// Pages are separated by a blank line so a phrase cannot appear to run across
 /// a page boundary that it never crossed.
-String  textLayerSearchText({required TextLayer layer }) => RustLib.instance.api.crateApiTextlayerTextLayerSearchText(layer: layer);
+String textLayerSearchText({required TextLayer layer}) =>
+    RustLib.instance.api.crateApiTextlayerTextLayerSearchText(layer: layer);
 
 /// Find a query in the layer and say where on the page it sat.
 ///
 /// Matching ignores case and treats any run of whitespace as one space, which
-/// is what makes a phrase findable when the recognizer padded it out. The
-/// returned box is narrowed to the matched words by interpolating along the
-/// line's own box: recognizers report a box per line, not per word, so this is
-/// an estimate — accurate for even-width text, and close enough elsewhere to
-/// put a highlight on the right words rather than the whole line.
-List<TextLayerHit>  findInTextLayer({required TextLayer layer , required String query }) => RustLib.instance.api.crateApiTextlayerFindInTextLayer(layer: layer, query: query);
+/// is what makes a phrase findable when the recognizer padded it out.
+///
+/// The returned box is narrowed to the matched words. Where the layer carries
+/// word boxes the narrowing is exact — the hit is the union of the words it
+/// actually covers. Where it does not, the box is interpolated along the line's
+/// own extent, which is accurate for even-width text and close enough elsewhere
+/// to put a highlight on the right words rather than on the whole line.
+List<TextLayerHit> findInTextLayer({
+  required TextLayer layer,
+  required String query,
+}) => RustLib.instance.api.crateApiTextlayerFindInTextLayer(
+  layer: layer,
+  query: query,
+);
 
 /// The text inside a rectangle on one page, in reading order.
 ///
 /// Used for copying part of a scan — a single column of a form, one paragraph
 /// of a page. A line counts as inside when its centre is, so a box that clips
 /// a line's tail does not drag the whole line in.
-String  textLayerRegion({required TextLayer layer , required int page , required double left , required double top , required double right , required double bottom }) => RustLib.instance.api.crateApiTextlayerTextLayerRegion(layer: layer, page: page, left: left, top: top, right: right, bottom: bottom);
+String textLayerRegion({
+  required TextLayer layer,
+  required int page,
+  required double left,
+  required double top,
+  required double right,
+  required double bottom,
+}) => RustLib.instance.api.crateApiTextlayerTextLayerRegion(
+  layer: layer,
+  page: page,
+  left: left,
+  top: top,
+  right: right,
+  bottom: bottom,
+);
 
 /// A 64-bit simhash of the layer's words, as hex.
 ///
@@ -53,160 +83,225 @@ String  textLayerRegion({required TextLayer layer , required int page , required
 /// edge drops out. A plain hash of the text would call those two different
 /// documents; a simhash puts them a few bits apart, which
 /// [`text_layer_looks_duplicate`] can then act on.
-String  textLayerFingerprint({required TextLayer layer }) => RustLib.instance.api.crateApiTextlayerTextLayerFingerprint(layer: layer);
+String textLayerFingerprint({required TextLayer layer}) =>
+    RustLib.instance.api.crateApiTextlayerTextLayerFingerprint(layer: layer);
 
 /// Differing bits between two fingerprints, or -1 if either is unreadable.
-int  fingerprintDistance({required String left , required String right }) => RustLib.instance.api.crateApiTextlayerFingerprintDistance(left: left, right: right);
+int fingerprintDistance({required String left, required String right}) =>
+    RustLib.instance.api.crateApiTextlayerFingerprintDistance(
+      left: left,
+      right: right,
+    );
 
 /// Whether two captures are near enough to be the same document.
-bool  textLayerLooksDuplicate({required String left , required String right }) => RustLib.instance.api.crateApiTextlayerTextLayerLooksDuplicate(left: left, right: right);
+bool textLayerLooksDuplicate({required String left, required String right}) =>
+    RustLib.instance.api.crateApiTextlayerTextLayerLooksDuplicate(
+      left: left,
+      right: right,
+    );
 
-            /// Everything recognized in one capture.
-class TextLayer  {
-                /// Where the pages came from: `camera`, `document`, `gallery`, `pdf`.
-/// Free-form, recorded so a later re-read knows what it is dealing with.
-final String source;
-final List<TextLayerPage> pages;
+/// Everything recognized in one capture.
+class TextLayer {
+  /// Where the pages came from: `camera`, `document`, `gallery`, `pdf`.
+  /// Free-form, recorded so a later re-read knows what it is dealing with.
+  final String source;
+  final List<TextLayerPage> pages;
 
-                const TextLayer({required this.source ,required this.pages ,});
+  const TextLayer({required this.source, required this.pages});
 
+  @override
+  int get hashCode => source.hashCode ^ pages.hashCode;
 
-
-
-
-        @override
-        int get hashCode => source.hashCode^pages.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is TextLayer &&
-                runtimeType == other.runtimeType
-                && source == other.source&& pages == other.pages;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextLayer &&
+          runtimeType == other.runtimeType &&
+          source == other.source &&
+          pages == other.pages;
+}
 
 class TextLayerError implements FrbException {
-                final TextLayerErrorKind kind;
-final String message;
+  final TextLayerErrorKind kind;
+  final String message;
 
-                const TextLayerError({required this.kind ,required this.message ,});
+  const TextLayerError({required this.kind, required this.message});
 
+  @override
+  int get hashCode => kind.hashCode ^ message.hashCode;
 
-
-
-
-        @override
-        int get hashCode => kind.hashCode^message.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is TextLayerError &&
-                runtimeType == other.runtimeType
-                && kind == other.kind&& message == other.message;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextLayerError &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          message == other.message;
+}
 
 enum TextLayerErrorKind {
-                    invalidJson,
-unsupportedVersion,
-invalidShape,
-limitExceeded,
-                    ;
-                    
-                }
+  invalidJson,
+  unsupportedVersion,
+  invalidShape,
+  limitExceeded,
+}
 
 /// One place a query matched.
-class TextLayerHit  {
-                final int page;
-/// Index of the line within its page.
-final int line;
-/// The whole line, for showing context around the hit.
-final String text;
-/// Box around the matched words, narrowed from the line's own box.
-final double left;
-final double top;
-final double right;
-final double bottom;
+class TextLayerHit {
+  final int page;
 
-                const TextLayerHit({required this.page ,required this.line ,required this.text ,required this.left ,required this.top ,required this.right ,required this.bottom ,});
+  /// Index of the line within its page.
+  final int line;
 
+  /// The whole line, for showing context around the hit.
+  final String text;
 
+  /// Box around the matched words, narrowed from the line's own box.
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
 
+  const TextLayerHit({
+    required this.page,
+    required this.line,
+    required this.text,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
 
+  @override
+  int get hashCode =>
+      page.hashCode ^
+      line.hashCode ^
+      text.hashCode ^
+      left.hashCode ^
+      top.hashCode ^
+      right.hashCode ^
+      bottom.hashCode;
 
-        @override
-        int get hashCode => page.hashCode^line.hashCode^text.hashCode^left.hashCode^top.hashCode^right.hashCode^bottom.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is TextLayerHit &&
-                runtimeType == other.runtimeType
-                && page == other.page&& line == other.line&& text == other.text&& left == other.left&& top == other.top&& right == other.right&& bottom == other.bottom;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextLayerHit &&
+          runtimeType == other.runtimeType &&
+          page == other.page &&
+          line == other.line &&
+          text == other.text &&
+          left == other.left &&
+          top == other.top &&
+          right == other.right &&
+          bottom == other.bottom;
+}
 
 /// One recognized line, exactly as the recognizer reported it.
-class TextLayerLine  {
-                final String text;
-final double left;
-final double top;
-final double right;
-final double bottom;
-final double? confidence;
+class TextLayerLine {
+  final String text;
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+  final double? confidence;
 
-                const TextLayerLine({required this.text ,required this.left ,required this.top ,required this.right ,required this.bottom ,this.confidence ,});
+  /// Word boxes, empty when the source did not break the line down. Stored
+  /// because a highlight interpolated along a line is only ever an estimate,
+  /// and these are the real thing.
+  final List<TextLayerWord> words;
 
+  const TextLayerLine({
+    required this.text,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+    this.confidence,
+    required this.words,
+  });
 
+  @override
+  int get hashCode =>
+      text.hashCode ^
+      left.hashCode ^
+      top.hashCode ^
+      right.hashCode ^
+      bottom.hashCode ^
+      confidence.hashCode ^
+      words.hashCode;
 
-
-
-        @override
-        int get hashCode => text.hashCode^left.hashCode^top.hashCode^right.hashCode^bottom.hashCode^confidence.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is TextLayerLine &&
-                runtimeType == other.runtimeType
-                && text == other.text&& left == other.left&& top == other.top&& right == other.right&& bottom == other.bottom&& confidence == other.confidence;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextLayerLine &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          left == other.left &&
+          top == other.top &&
+          right == other.right &&
+          bottom == other.bottom &&
+          confidence == other.confidence &&
+          words == other.words;
+}
 
 /// One page of the capture.
-class TextLayerPage  {
-                /// Source pixel size, needed to map a box onto the image as displayed.
-final double width;
-final double height;
-final List<TextLayerLine> lines;
+class TextLayerPage {
+  /// Source pixel size, needed to map a box onto the image as displayed.
+  final double width;
+  final double height;
+  final List<TextLayerLine> lines;
 
-                const TextLayerPage({required this.width ,required this.height ,required this.lines ,});
+  const TextLayerPage({
+    required this.width,
+    required this.height,
+    required this.lines,
+  });
 
+  @override
+  int get hashCode => width.hashCode ^ height.hashCode ^ lines.hashCode;
 
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextLayerPage &&
+          runtimeType == other.runtimeType &&
+          width == other.width &&
+          height == other.height &&
+          lines == other.lines;
+}
 
+/// One recognized word inside a line, where the recognizer reported them.
+class TextLayerWord {
+  final String text;
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
 
+  const TextLayerWord({
+    required this.text,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
 
-        @override
-        int get hashCode => width.hashCode^height.hashCode^lines.hashCode;
+  @override
+  int get hashCode =>
+      text.hashCode ^
+      left.hashCode ^
+      top.hashCode ^
+      right.hashCode ^
+      bottom.hashCode;
 
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is TextLayerPage &&
-                runtimeType == other.runtimeType
-                && width == other.width&& height == other.height&& lines == other.lines;
-
-            }
-            
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TextLayerWord &&
+          runtimeType == other.runtimeType &&
+          text == other.text &&
+          left == other.left &&
+          top == other.top &&
+          right == other.right &&
+          bottom == other.bottom;
+}

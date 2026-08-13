@@ -1,5 +1,6 @@
 import 'crdt_types.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dart_quill_delta/dart_quill_delta.dart';
 
@@ -448,6 +449,7 @@ ScannedNoteDraftValue shapeScannedText({
   bool detectTables = true,
   bool stripRunningHeads = true,
   bool healAcrossPages = true,
+  bool repairMisreads = true,
   ScanPresetValue preset = ScanPresetValue.auto,
 }) => throw _scanningIsNativeOnly();
 
@@ -460,6 +462,7 @@ ScannedNoteDraftValue shapeScannedPages({
   bool detectTables = true,
   bool stripRunningHeads = true,
   bool healAcrossPages = true,
+  bool repairMisreads = true,
   ScanPresetValue preset = ScanPresetValue.auto,
 }) => throw _scanningIsNativeOnly();
 
@@ -886,9 +889,7 @@ TaskMutationPlanValue planTaskUpdate({
       parentId: parentIdProvided ? parentId : current.parentId,
       dueDateMicrosUtc: nextDue,
       dueHasTime: (dueHasTime ?? current.dueHasTime) && nextDue != null,
-      priority: changed.contains('priority')
-          ? nextPriority!
-          : current.priority,
+      priority: changed.contains('priority') ? nextPriority! : current.priority,
       labels: changed.contains('labels') ? nextLabels! : current.labels,
       recurrence: recurrenceProvided
           ? _normalizeRecurrence(recurrence)
@@ -965,8 +966,7 @@ TaskMutationPlanValue planTaskRollover({
       selection: _mutationSelection(CoreMutationAction.noop, const []),
     );
   }
-  final reminderMoved =
-      current.reminderAtMicrosUtc != nextReminderMicrosUtc;
+  final reminderMoved = current.reminderAtMicrosUtc != nextReminderMicrosUtc;
   final changed = <String>[
     'due_date',
     if (reminderMoved) 'reminder_at',
@@ -1115,10 +1115,27 @@ PagePrepareValue planPagePrepare({
   required double height,
 }) => throw _scanningIsNativeOnly();
 
+List<PagePrepareValue> planPageCandidates({
+  required PageMeasureValue measure,
+  required PageLumaSampleValue sample,
+  required double width,
+  required double height,
+  required PageReadingScoreValue reading,
+}) => throw _scanningIsNativeOnly();
+
+Uint8List normalizePageContrast({
+  required Uint8List pixels,
+  required int width,
+  required int height,
+}) => throw _scanningIsNativeOnly();
+
 List<OcrLineValue> mapPreparedLinesToSource({
   required List<OcrLineValue> lines,
   required PagePrepareValue prepare,
 }) => throw _scanningIsNativeOnly();
+
+PageReadingScoreValue scorePageReading({required OcrPageValue page}) =>
+    throw _scanningIsNativeOnly();
 
 PageReadingChoiceValue choosePageReading({
   required List<OcrPageValue> readings,

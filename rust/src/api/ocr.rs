@@ -133,6 +133,24 @@ const LOW_CONFIDENCE: f32 = 0.55;
 const POOR_CONFIDENCE_SHARE: f32 = 0.35;
 const FAIR_CONFIDENCE_SHARE: f32 = 0.15;
 
+/// One recognized word and where it sat, when the recognizer breaks a line
+/// down that far.
+///
+/// Not every source supplies these — a PDF's text runs are not words, and some
+/// recognizers report lines only — so everything here treats them as extra
+/// evidence rather than as the model. A page that has them reconstructs
+/// better; a page that does not reconstructs exactly as it did before.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OcrWordInput {
+    pub text: String,
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    /// 0..1 where the recognizer reports it. Absent means "no opinion".
+    pub confidence: Option<f32>,
+}
+
 /// One recognized line and where it sat on the page.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OcrLineInput {
@@ -147,6 +165,34 @@ pub struct OcrLineInput {
     pub block_index: i32,
     /// 0..1 where the recognizer reports it. Absent means "no opinion".
     pub confidence: Option<f32>,
+    /// The words this line was made of, empty when the source does not say.
+    pub words: Vec<OcrWordInput>,
+}
+
+impl OcrLineInput {
+    /// What the recognizer thought of this line, falling back to what it
+    /// thought of the words in it.
+    ///
+    /// Line-level confidence is frequently absent where word-level confidence
+    /// is not — ML Kit on Android is the case that matters — and a page whose
+    /// lines all report `None` is scored as "no opinion" by everything
+    /// downstream: the capture quality reads `Unknown`, the retry comparison
+    /// falls back to a neutral constant, and the low-confidence filter has
+    /// nothing to filter on. Averaging the words recovers all three.
+    pub(crate) fn effective_confidence(&self) -> Option<f32> {
+        if let Some(score) = self.confidence {
+            return Some(score);
+        }
+        let scored: Vec<f32> = self
+            .words
+            .iter()
+            .filter_map(|word| word.confidence)
+            .collect();
+        if scored.is_empty() {
+            return None;
+        }
+        Some(scored.iter().sum::<f32>() / scored.len() as f32)
+    }
 }
 
 /// One page's worth of recognized lines.
@@ -245,6 +291,11 @@ pub struct OcrShapeOptions {
     pub strip_running_heads: bool,
     /// Rejoin a paragraph that was cut in half by a page break.
     pub heal_across_pages: bool,
+    /// Put back characters the recognizer read as the wrong glyph, where the
+    /// capture's own vocabulary or a common word says what was meant. Only
+    /// ever acts on lines the recognizer was unsure of. See
+    /// [`crate::misread`].
+    pub repair_misreads: bool,
     /// How to read the page. [`ScanPreset::Auto`] classifies it, and the
     /// chosen preset then overrides the flags above that it has an opinion on.
     pub preset: ScanPreset,
@@ -260,6 +311,7 @@ impl Default for OcrShapeOptions {
             detect_tables: true,
             strip_running_heads: true,
             heal_across_pages: true,
+            repair_misreads: true,
             preset: ScanPreset::Auto,
         }
     }
@@ -289,6 +341,8 @@ pub struct ScannedNoteDraft {
     pub headings: i32,
     /// Lines removed as running heads, feet, or page numbers.
     pub stripped_running_heads: i32,
+    /// Characters put back by [`crate::misread`], counted in tokens changed.
+    pub repaired_words: i32,
     /// The preset actually used, never `auto`.
     pub preset: String,
     pub quality: CaptureQuality,
@@ -397,6 +451,18 @@ pub fn shape_scanned_text(lines: Vec<OcrLineInput>, options: OcrShapeOptions) ->
 #[frb(sync)]
 pub fn shape_scanned_pages(pages: Vec<OcrPageInput>, options: OcrShapeOptions) -> ScannedNoteDraft {
     let scored = confidence_stats(&pages);
+    // Repair runs before reconstruction, on the recognizer's own lines, so
+    // that everything after it — classification, table detection, the title —
+    // reads the repaired text rather than deciding what kind of page this is
+    // from characters that were never on it. The stored text layer is built by
+    // the caller from these same pages *before* shaping, so it keeps saying
+    // what the recognizer actually reported.
+    let mut pages = pages;
+    let repaired = if options.repair_misreads {
+        crate::misread::repair_pages(&mut pages)
+    } else {
+        0
+    };
     let Some(mut reconstruction) = reconstruct(pages, &options) else {
         return empty_draft(0, scored);
     };
@@ -442,6 +508,7 @@ pub fn shape_scanned_pages(pages: Vec<OcrPageInput>, options: OcrShapeOptions) -
         tables: count(rendered.tables),
         headings: count(rendered.headings),
         stripped_running_heads: count(reconstruction.stripped),
+        repaired_words: count(repaired),
         preset: preset.label().to_owned(),
         quality: scored,
     }
@@ -464,6 +531,7 @@ fn empty_draft(dropped: usize, quality: CaptureQuality) -> ScannedNoteDraft {
         tables: 0,
         headings: 0,
         stripped_running_heads: 0,
+        repaired_words: 0,
         preset: ScanPreset::Prose.label().to_owned(),
         quality,
     }
@@ -565,14 +633,14 @@ fn reconstruct(pages: Vec<OcrPageInput>, options: &OcrShapeOptions) -> Option<Re
         // the stretch is what destroys the evidence — and spend it twice: once
         // to un-stretch them, once to tell the deskew below which way the page
         // leans.
-        let tilt = estimate_tilt_tangent(&usable);
-        let usable = undo_tilt_inflation(usable);
+        let tilt = estimate_tilt_tangent(&tilt_boxes(&usable));
+        let usable = undo_tilt_inflation(usable, tilt);
         let median_height = median(usable.iter().map(|line| line.bottom - line.top));
         heights.extend(usable.iter().map(|line| line.bottom - line.top));
 
         // Now that the heights are honest the estimator bins by half a real
         // line rather than half an inflated one, which is a finer sieve.
-        let slope = estimate_skew(&usable, median_height, tilt);
+        let slope = estimate_skew(&tilt_boxes(&usable), median_height, tilt);
         if slope.abs() > worst_skew.abs() {
             worst_skew = slope;
         }
@@ -628,6 +696,15 @@ pub(crate) struct PageGeometry {
     pub median_line_height: f32,
     /// Lines that survived the noise filters.
     pub usable_lines: usize,
+    /// Share of those lines whose box is wider than it is tall.
+    ///
+    /// A line of text is many times wider than it is tall, so on a page the
+    /// right way up this is essentially 1. It collapses towards 0 when the
+    /// *page* is sideways, because the recognizer then reports each column of
+    /// glyphs as a tall, narrow box — which is the one page orientation the
+    /// geometry can identify without reading the page again. See
+    /// [`crate::api::prepare`].
+    pub upright_share: f32,
 }
 
 /// Measure one page the way [`reconstruct`] does, without reconstructing it.
@@ -647,6 +724,7 @@ pub(crate) fn measure_page_geometry(page: &OcrPageInput) -> PageGeometry {
         skew_slope: 0.0,
         median_line_height: 0.0,
         usable_lines: 0,
+        upright_share: 0.0,
     };
 
     let usable = filter_lines(page.lines.clone(), 0.0);
@@ -658,13 +736,18 @@ pub(crate) fn measure_page_geometry(page: &OcrPageInput) -> PageGeometry {
     if usable.is_empty() {
         return empty;
     }
-    let tilt = estimate_tilt_tangent(&usable);
-    let usable = undo_tilt_inflation(usable);
+    let tilt = estimate_tilt_tangent(&tilt_boxes(&usable));
+    let usable = undo_tilt_inflation(usable, tilt);
     let median_height = median(usable.iter().map(|line| line.bottom - line.top));
+    let upright = usable
+        .iter()
+        .filter(|line| (line.right - line.left) > (line.bottom - line.top))
+        .count();
     PageGeometry {
-        skew_slope: estimate_skew(&usable, median_height, tilt),
+        skew_slope: estimate_skew(&tilt_boxes(&usable), median_height, tilt),
         median_line_height: median_height,
         usable_lines: usable.len(),
+        upright_share: upright as f32 / usable.len() as f32,
     }
 }
 
@@ -693,7 +776,8 @@ fn filter_lines(lines: Vec<OcrLineInput>, min_confidence: f32) -> Vec<OcrLineInp
         .filter(|line| {
             // A line with no reported confidence is kept: several recognizers
             // never populate it, and dropping those would empty the page.
-            line.confidence.is_none_or(|score| score >= min_confidence)
+            line.effective_confidence()
+                .is_none_or(|score| score >= min_confidence)
         })
         .filter(|line| !tidy(&line.text).is_empty())
         .filter(|line| line.bottom > line.top && line.right > line.left)
@@ -779,31 +863,140 @@ fn drop_specks(lines: Vec<OcrLineInput>, median_height: f32) -> Vec<OcrLineInput
 /// Only heights are restored. Widths are left as measured: their error is
 /// `height * sin(theta)`, negligible for a line of text, and column detection
 /// reads more steadily off the edges the recognizer actually reported.
-fn undo_tilt_inflation(lines: Vec<OcrLineInput>) -> Vec<OcrLineInput> {
-    let Some(tan) = estimate_tilt_tangent(&lines) else {
+fn undo_tilt_inflation(lines: Vec<OcrLineInput>, tan: Option<f32>) -> Vec<OcrLineInput> {
+    let Some(tan) = tan else {
         return lines;
     };
     let scale = (1.0 + tan * tan).sqrt() / (1.0 - tan * tan);
+    /// One box, un-stretched in place. Returns the original extent when the
+    /// correction does not apply, so the caller can use it on any box.
+    fn unstretch(top: f32, bottom: f32, left: f32, right: f32, tan: f32, scale: f32) -> (f32, f32) {
+        let box_height = bottom - top;
+        let height = (box_height - (right - left) * tan) * scale;
+        // Tilt only ever adds height, so a correction that would grow a box is
+        // not one. That also covers the box lying at its own angle to the rest
+        // of the page, which a whole-page fit cannot speak for.
+        if !height.is_finite() || height <= 0.0 || height >= box_height {
+            return (top, bottom);
+        }
+        // Rotation leaves a box's centre where it was, so the true line sits
+        // centred inside the inflated one.
+        let centre = (top + bottom) / 2.0;
+        (centre - height / 2.0, centre + height / 2.0)
+    }
     lines
         .into_iter()
         .map(|line| {
-            let box_height = line.bottom - line.top;
-            let height = (box_height - (line.right - line.left) * tan) * scale;
-            // Tilt only ever adds height, so a correction that would grow a box
-            // is not one. That also covers the box lying at its own angle to the
-            // rest of the page, which a whole-page fit cannot speak for.
-            if !height.is_finite() || height <= 0.0 || height >= box_height {
-                return line;
-            }
-            // Rotation leaves a box's centre where it was, so the true line
-            // sits centred inside the inflated one.
-            let centre = input_centre_y(&line);
+            let (top, bottom) = unstretch(line.top, line.bottom, line.left, line.right, tan, scale);
+            // Word boxes are inflated by exactly the same rotation and are read
+            // back out as highlight geometry, so they are corrected too rather
+            // than left describing a taller box than the line containing them.
+            let words = line
+                .words
+                .into_iter()
+                .map(|word| {
+                    let (top, bottom) =
+                        unstretch(word.top, word.bottom, word.left, word.right, tan, scale);
+                    OcrWordInput {
+                        top,
+                        bottom,
+                        ..word
+                    }
+                })
+                .collect();
             OcrLineInput {
-                top: centre - height / 2.0,
-                bottom: centre + height / 2.0,
+                top,
+                bottom,
+                words,
                 ..line
             }
         })
+        .collect()
+}
+
+/// A rectangle the geometry passes reason about, wherever it came from.
+///
+/// The tilt and skew estimators care only about where boxes sit and how big
+/// they are, never about what they say, so they work off these rather than off
+/// [`OcrLineInput`] — which is what lets the same code read a page's lean off
+/// word boxes when the recognizer supplied them and off line boxes when it did
+/// not.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Box2 {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl Box2 {
+    fn width(&self) -> f32 {
+        self.right - self.left
+    }
+
+    fn height(&self) -> f32 {
+        self.bottom - self.top
+    }
+
+    fn centre_x(&self) -> f32 {
+        (self.left + self.right) / 2.0
+    }
+
+    fn centre_y(&self) -> f32 {
+        (self.top + self.bottom) / 2.0
+    }
+}
+
+/// Most boxes the direction vote will look at. It compares every pair, so an
+/// unbounded input makes a dense page quadratic in its word count; past this
+/// the boxes are sampled evenly across the page instead, which keeps the
+/// evidence spread over the whole sheet rather than over its first rows.
+const MAX_DIRECTION_BOXES: usize = 320;
+
+/// The boxes to read a page's geometry from: its words when the recognizer
+/// broke the lines down, otherwise the lines themselves.
+///
+/// Words are strictly better evidence and it is worth saying why. The tilt fit
+/// needs a spread of box widths, and words vary far more than lines do. More
+/// importantly, [`tilt_direction`] can only vote on boxes that share a printed
+/// line — so on a page reported as one box per row it has nothing to say, and
+/// [`estimate_skew`] gives up and leaves the page uncorrected. Every line of
+/// words is a row of row-mates, which turns the page that could not be
+/// straightened at all into the ordinary case.
+fn tilt_boxes(lines: &[OcrLineInput]) -> Vec<Box2> {
+    let words: Vec<Box2> = lines
+        .iter()
+        .flat_map(|line| line.words.iter())
+        .filter(|word| word.bottom > word.top && word.right > word.left)
+        .map(|word| Box2 {
+            left: word.left,
+            top: word.top,
+            right: word.right,
+            bottom: word.bottom,
+        })
+        .collect();
+    if words.len() > lines.len() && words.len() >= MIN_LINES_FOR_TILT_FIT {
+        return words;
+    }
+    lines
+        .iter()
+        .map(|line| Box2 {
+            left: line.left,
+            top: line.top,
+            right: line.right,
+            bottom: line.bottom,
+        })
+        .collect()
+}
+
+/// Thin `boxes` to at most [MAX_DIRECTION_BOXES], keeping them spread evenly.
+fn sampled(boxes: &[Box2]) -> Vec<Box2> {
+    if boxes.len() <= MAX_DIRECTION_BOXES {
+        return boxes.to_vec();
+    }
+    let stride = boxes.len() as f32 / MAX_DIRECTION_BOXES as f32;
+    (0..MAX_DIRECTION_BOXES)
+        .map(|index| boxes[((index as f32 * stride) as usize).min(boxes.len() - 1)])
         .collect()
 }
 
@@ -812,16 +1005,16 @@ fn undo_tilt_inflation(lines: Vec<OcrLineInput>) -> Vec<OcrLineInput> {
 /// the page leans, so this is a magnitude and [`tilt_direction`] supplies the
 /// sign. [`None`] when the page cannot answer the question — see
 /// [`undo_tilt_inflation`].
-fn estimate_tilt_tangent(lines: &[OcrLineInput]) -> Option<f32> {
-    if lines.len() < MIN_LINES_FOR_TILT_FIT {
+fn estimate_tilt_tangent(boxes: &[Box2]) -> Option<f32> {
+    if boxes.len() < MIN_LINES_FOR_TILT_FIT {
         return None;
     }
-    let count = lines.len() as f32;
-    let widths = || lines.iter().map(|line| line.right - line.left);
+    let count = boxes.len() as f32;
+    let widths = || boxes.iter().map(Box2::width);
     let mean_width = widths().sum::<f32>() / count;
-    let mean_height = lines.iter().map(|line| line.bottom - line.top).sum::<f32>() / count;
+    let mean_height = boxes.iter().map(Box2::height).sum::<f32>() / count;
 
-    // Lines all cut to one width carry no evidence either way: every box is
+    // Boxes all cut to one width carry no evidence either way: every one is
     // inflated by the same amount, so nothing in the spread reveals it.
     let narrowest = widths().fold(f32::MAX, f32::min);
     let widest = widths().fold(f32::MIN, f32::max);
@@ -831,9 +1024,9 @@ fn estimate_tilt_tangent(lines: &[OcrLineInput]) -> Option<f32> {
 
     let mut covariance = 0.0f32;
     let mut variance = 0.0f32;
-    for line in lines {
-        let width_offset = (line.right - line.left) - mean_width;
-        covariance += width_offset * ((line.bottom - line.top) - mean_height);
+    for item in boxes {
+        let width_offset = item.width() - mean_width;
+        covariance += width_offset * (item.height() - mean_height);
         variance += width_offset * width_offset;
     }
     if variance <= f32::EPSILON {
@@ -875,8 +1068,11 @@ fn estimate_tilt_tangent(lines: &[OcrLineInput]) -> Option<f32> {
 /// A page of single-box rows has no row-mates and so no vote, which is the
 /// honest answer: with every line starting at the same margin and only its
 /// width to vary its centre, nothing in the geometry distinguishes a page
-/// leaning left from the same page leaning right.
-fn tilt_direction(lines: &[OcrLineInput], magnitude: f32, median_height: f32) -> f32 {
+/// leaning left from the same page leaning right. Word boxes, where the
+/// recognizer reports them, turn every row into row-mates and remove that case
+/// — see [`tilt_boxes`].
+fn tilt_direction(boxes: &[Box2], magnitude: f32, median_height: f32) -> f32 {
+    let boxes = &sampled(boxes);
     let tolerance = median_height * DIRECTION_TOLERANCE_RATIO;
     // Leaning left, leaning right. A pair supports a lean when its height
     // difference is what that lean would produce across the gap between the
@@ -886,10 +1082,10 @@ fn tilt_direction(lines: &[OcrLineInput], magnitude: f32, median_height: f32) ->
     // row-mate matches one sign and misses the other by twice the tilt.
     let mut support = [0.0f32; 2];
     let mut counted = [0usize; 2];
-    for (index, first) in lines.iter().enumerate() {
-        for second in &lines[index + 1..] {
-            let across = input_centre_x(second) - input_centre_x(first);
-            let down = input_centre_y(second) - input_centre_y(first);
+    for (index, first) in boxes.iter().enumerate() {
+        for second in &boxes[index + 1..] {
+            let across = second.centre_x() - first.centre_x();
+            let down = second.centre_y() - first.centre_y();
             // Boxes stacked nearly on top of each other give no leverage: a
             // sliver of horizontal separation turns any noise into a landslide.
             if across.abs() < median_height {
@@ -934,10 +1130,6 @@ fn input_centre_x(line: &OcrLineInput) -> f32 {
     (line.left + line.right) / 2.0
 }
 
-fn input_centre_y(line: &OcrLineInput) -> f32 {
-    (line.top + line.bottom) / 2.0
-}
-
 /// Estimate how far the page is tilted, as a slope.
 ///
 /// Measured by projection profile, the standard approach: shear the page by a
@@ -951,8 +1143,8 @@ fn input_centre_y(line: &OcrLineInput) -> f32 {
 /// share a line is exactly what the skew is needed for, and on a steeply
 /// tilted page the true row-mates are further apart vertically than lines from
 /// neighbouring rows. Scoring whole-page alignment sidesteps that.
-fn estimate_skew(lines: &[OcrLineInput], median_height: f32, tilt_tangent: Option<f32>) -> f32 {
-    if lines.len() < 3 || median_height <= 0.0 {
+fn estimate_skew(boxes: &[Box2], median_height: f32, tilt_tangent: Option<f32>) -> f32 {
+    if boxes.len() < 3 || median_height <= 0.0 {
         return 0.0;
     }
     let bin = (median_height * 0.5).max(1.0);
@@ -976,7 +1168,7 @@ fn estimate_skew(lines: &[OcrLineInput], median_height: f32, tilt_tangent: Optio
     // nothing there to find even when it is not actively misleading.
     if let Some(tangent) = tilt_tangent {
         let magnitude = tangent.abs().min(MAX_SKEW_SLOPE);
-        let direction = tilt_direction(lines, magnitude, median_height);
+        let direction = tilt_direction(boxes, magnitude, median_height);
         // No row-mates, no sign — and a page whose rows hold one box each has
         // nothing to gain from being sheared anyway, since there is nothing to
         // join up. Leaving it as measured beats guessing and getting it
@@ -1004,7 +1196,7 @@ fn estimate_skew(lines: &[OcrLineInput], median_height: f32, tilt_tangent: Optio
     }) {
         let lean = step as f32 / SKEW_STEPS as f32;
         let slope = MAX_SKEW_SLOPE * lean;
-        let score = alignment_score(lines, slope, bin) * (1.0 - SKEW_PRIOR * lean * lean);
+        let score = alignment_score(boxes, slope, bin) * (1.0 - SKEW_PRIOR * lean * lean);
         if score > best_score {
             best_score = score;
             best_slope = slope;
@@ -1018,12 +1210,12 @@ fn estimate_skew(lines: &[OcrLineInput], median_height: f32, tilt_tangent: Optio
 /// Bins are weighted by box width rather than counted, so a full text line
 /// carries more evidence than a stray page number, and squared so that one
 /// crowded bin beats two half-full ones.
-fn alignment_score(lines: &[OcrLineInput], slope: f32, bin: f32) -> f32 {
+fn alignment_score(boxes: &[Box2], slope: f32, bin: f32) -> f32 {
     let mut bins: std::collections::HashMap<i64, f32> = std::collections::HashMap::new();
-    for line in lines {
-        let deskewed = input_centre_y(line) - slope * input_centre_x(line);
+    for item in boxes {
+        let deskewed = item.centre_y() - slope * item.centre_x();
         let key = (deskewed / bin).round() as i64;
-        *bins.entry(key).or_insert(0.0) += line.right - line.left;
+        *bins.entry(key).or_insert(0.0) += item.width();
     }
     bins.values().map(|weight| weight * weight).sum()
 }
@@ -1493,7 +1685,7 @@ fn confidence_stats(pages: &[OcrPageInput]) -> CaptureQuality {
     let scores: Vec<f32> = pages
         .iter()
         .flat_map(|page| page.lines.iter())
-        .filter_map(|line| line.confidence)
+        .filter_map(|line| line.effective_confidence())
         .collect();
     if scores.is_empty() {
         return CaptureQuality {
@@ -1595,7 +1787,53 @@ mod tests {
             bottom: top + height,
             block_index: 0,
             confidence: None,
+            words: Vec::new(),
         }
+    }
+
+    /// The same line, broken into evenly spaced word boxes — what a recognizer
+    /// that reports word detail hands back.
+    pub(super) fn with_words(line: OcrLineInput) -> OcrLineInput {
+        let words: Vec<&str> = line.text.split(' ').filter(|w| !w.is_empty()).collect();
+        if words.is_empty() {
+            return line;
+        }
+        let units: usize =
+            words.iter().map(|word| word.chars().count()).sum::<usize>() + words.len() - 1;
+        let per_unit = (line.right - line.left) / units as f32;
+        let mut cursor = line.left;
+        let boxes = words
+            .iter()
+            .map(|word| {
+                let width = word.chars().count() as f32 * per_unit;
+                let left = cursor;
+                cursor += width + per_unit;
+                OcrWordInput {
+                    text: (*word).to_owned(),
+                    left,
+                    top: line.top,
+                    right: left + width,
+                    bottom: line.bottom,
+                    confidence: None,
+                }
+            })
+            .collect();
+        OcrLineInput {
+            words: boxes,
+            ..line
+        }
+    }
+
+    /// The tilt the geometry pass would fit, off whichever boxes it would use.
+    fn fitted(lines: &[OcrLineInput]) -> Option<f32> {
+        estimate_tilt_tangent(&tilt_boxes(lines))
+    }
+
+    /// Un-stretch a page exactly as `reconstruct` does: fit first, correct
+    /// with what was fitted.
+    fn straighten(lines: Vec<OcrLineInput>) -> Vec<OcrLineInput> {
+        let tilt = fitted(&lines);
+        undo_tilt_inflation(lines, tilt)
     }
 
     /// Plain reading, with structure detection off — the behaviour every
@@ -1635,21 +1873,71 @@ mod tests {
     fn photographed(lines: Vec<OcrLineInput>, degrees: f32) -> Vec<OcrLineInput> {
         let theta = degrees.to_radians();
         let (sin, cos) = (theta.sin().abs(), theta.cos());
+        /// One box as the recognizer would report it once the page is turned.
+        fn turned(
+            left: f32,
+            top: f32,
+            right: f32,
+            bottom: f32,
+            theta: f32,
+            sin: f32,
+            cos: f32,
+        ) -> (f32, f32, f32, f32) {
+            let (cx, cy) = ((left + right) / 2.0, (top + bottom) / 2.0);
+            let (width, height) = (right - left, bottom - top);
+            let box_width = width * cos + height * sin;
+            let box_height = height * cos + width * sin;
+            // Rotating the page about the origin moves the centre too.
+            let shift = theta.tan() * cx;
+            (
+                cx - box_width / 2.0,
+                cy - box_height / 2.0 + shift,
+                cx + box_width / 2.0,
+                cy + box_height / 2.0 + shift,
+            )
+        }
         lines
             .into_iter()
             .map(|line| {
-                let (cx, cy) = (input_centre_x(&line), input_centre_y(&line));
-                let width = line.right - line.left;
-                let height = line.bottom - line.top;
-                let box_width = width * cos + height * sin;
-                let box_height = height * cos + width * sin;
-                // Rotating the page about the origin moves the centre too.
-                let shift = theta.tan() * cx;
+                let (left, top, right, bottom) = turned(
+                    line.left,
+                    line.top,
+                    line.right,
+                    line.bottom,
+                    theta,
+                    sin,
+                    cos,
+                );
+                // A page turns as one sheet: every word box on it is rotated
+                // and re-bounded by the same angle its line was.
+                let words = line
+                    .words
+                    .into_iter()
+                    .map(|word| {
+                        let (left, top, right, bottom) = turned(
+                            word.left,
+                            word.top,
+                            word.right,
+                            word.bottom,
+                            theta,
+                            sin,
+                            cos,
+                        );
+                        OcrWordInput {
+                            left,
+                            top,
+                            right,
+                            bottom,
+                            ..word
+                        }
+                    })
+                    .collect();
                 OcrLineInput {
-                    left: cx - box_width / 2.0,
-                    right: cx + box_width / 2.0,
-                    top: cy - box_height / 2.0 + shift,
-                    bottom: cy + box_height / 2.0 + shift,
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    words,
                     ..line
                 }
             })
@@ -1743,10 +2031,10 @@ mod tests {
     fn a_page_split_into_boxes_per_row_is_straightened_both_ways() {
         for degrees in [-10.0f32, -7.0, -4.0, 4.0, 7.0, 10.0] {
             let raw = photographed(split_page(), degrees);
-            let tangent = estimate_tilt_tangent(&raw).expect("a ragged page fits a tilt");
-            let straightened = undo_tilt_inflation(raw);
+            let tangent = fitted(&raw).expect("a ragged page fits a tilt");
+            let straightened = straighten(raw);
             let height = median(straightened.iter().map(|l| l.bottom - l.top));
-            let slope = estimate_skew(&straightened, height, Some(tangent));
+            let slope = estimate_skew(&tilt_boxes(&straightened), height, Some(tangent));
 
             // The lean is read off the boxes, so it has to come back with the
             // sign the page was actually tilted — the failure this guards is a
@@ -1769,6 +2057,67 @@ mod tests {
     }
 
     #[test]
+    fn word_boxes_straighten_the_page_whole_line_boxes_could_not() {
+        // The same page as the test below, which has to give up because whole
+        // line boxes cannot say which way a page leans. Every line here is
+        // reported as its words, so each printed row has row-mates and the
+        // direction vote has something to count — the page that was left
+        // uncorrected now comes back with the sign it was photographed at.
+        for degrees in [-10.0f32, -7.0, -4.0, 4.0, 7.0, 10.0] {
+            let worded: Vec<OcrLineInput> = body_page().into_iter().map(with_words).collect();
+            let raw = photographed(worded, degrees);
+            let tangent = fitted(&raw).expect("word boxes fit a tilt");
+            let straightened = straighten(raw);
+            let height = median(straightened.iter().map(|l| l.bottom - l.top));
+            let slope = estimate_skew(&tilt_boxes(&straightened), height, Some(tangent));
+
+            let expected = degrees.to_radians().tan();
+            assert!(
+                (slope - expected).abs() < 0.02,
+                "{degrees} degrees read as slope {slope}, expected {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn word_boxes_do_not_disturb_a_page_that_was_already_read_correctly() {
+        // Adding word detail must not change what a page says. The level page
+        // reads the same either way, which is what makes the extra evidence
+        // safe to take whenever a recognizer offers it.
+        let plain_read = shape_scanned_text(body_page(), OcrShapeOptions::default());
+        let worded: Vec<OcrLineInput> = body_page().into_iter().map(with_words).collect();
+        let worded_read = shape_scanned_text(worded, OcrShapeOptions::default());
+        assert_eq!(plain_read.body, worded_read.body);
+    }
+
+    #[test]
+    fn a_line_without_a_score_borrows_the_confidence_of_its_words() {
+        // ML Kit on Android routinely reports no line confidence while
+        // reporting one per word. Read literally that is a page nobody has an
+        // opinion about, and the capture quality says so; averaged, it is an
+        // ordinary poor page that can be advised about.
+        let mut line = with_words(sized("the quick brown fox", 0.0, 0.0, 20.0, 200.0));
+        for word in &mut line.words {
+            word.confidence = Some(0.3);
+        }
+        let draft = shape_scanned_text(vec![line], OcrShapeOptions::default());
+        assert_eq!(draft.quality.verdict, QualityVerdict::Poor);
+        assert!((draft.quality.mean_confidence - 0.3).abs() < 0.001);
+        assert!(!draft.quality.advice.is_empty());
+    }
+
+    #[test]
+    fn a_line_that_scores_itself_is_not_overridden_by_its_words() {
+        let mut line = with_words(sized("the quick brown fox", 0.0, 0.0, 20.0, 200.0));
+        line.confidence = Some(0.95);
+        for word in &mut line.words {
+            word.confidence = Some(0.1);
+        }
+        let draft = shape_scanned_text(vec![line], OcrShapeOptions::default());
+        assert_eq!(draft.quality.verdict, QualityVerdict::Good);
+    }
+
+    #[test]
     fn a_page_of_whole_line_boxes_is_left_alone_rather_than_guessed_at() {
         // Nothing on a single-column page of whole-line boxes distinguishes a
         // left lean from a right one: every line starts at the same margin, so
@@ -1777,10 +2126,13 @@ mod tests {
         // are still un-inflated, which is what kept the rows apart.
         for degrees in [-10.0f32, -4.0, 4.0, 10.0] {
             let raw = photographed(body_page(), degrees);
-            let tangent = estimate_tilt_tangent(&raw);
-            let straightened = undo_tilt_inflation(raw);
+            let tangent = fitted(&raw);
+            let straightened = straighten(raw);
             let height = median(straightened.iter().map(|l| l.bottom - l.top));
-            assert_eq!(estimate_skew(&straightened, height, tangent), 0.0);
+            assert_eq!(
+                estimate_skew(&tilt_boxes(&straightened), height, tangent),
+                0.0
+            );
         }
     }
 
@@ -1820,7 +2172,7 @@ mod tests {
         // Boxes that were never inflated must come back untouched rather than
         // merely close: the fit has to find no tilt, not a small one.
         let lines = body_page();
-        assert_eq!(undo_tilt_inflation(lines.clone()), lines);
+        assert_eq!(straighten(lines.clone()), lines);
     }
 
     #[test]
@@ -1830,21 +2182,18 @@ mod tests {
         let lines: Vec<OcrLineInput> = (0..8)
             .map(|index| sized("uniform", 24.0 * index as f32, 0.0, 20.0, 300.0))
             .collect();
-        assert_eq!(
-            undo_tilt_inflation(photographed(lines.clone(), 6.0)).len(),
-            8
-        );
-        assert_eq!(undo_tilt_inflation(lines.clone()), lines);
+        assert_eq!(straighten(photographed(lines.clone(), 6.0)).len(), 8);
+        assert_eq!(straighten(lines.clone()), lines);
     }
 
     #[test]
     fn the_fitted_tilt_matches_the_angle_the_page_was_photographed_at() {
         for degrees in [2.0f32, 4.0, 7.0, 12.0] {
-            let fitted = estimate_tilt_tangent(&photographed(body_page(), degrees))
+            let tangent = fitted(&photographed(body_page(), degrees))
                 .expect("a ragged-right page can be fitted");
             assert!(
-                (fitted - degrees.to_radians().sin()).abs() < 0.01,
-                "fitted {fitted} for a page photographed at {degrees} degrees"
+                (tangent - degrees.to_radians().sin()).abs() < 0.01,
+                "fitted {tangent} for a page photographed at {degrees} degrees"
             );
         }
     }

@@ -163,6 +163,11 @@ pub fn pdf_page_to_ocr_page(page: PdfPageInput, scale: f32) -> OcrPageInput {
                 block_index: 0,
                 // A PDF's own text is exact; there is nothing to doubt.
                 confidence: None,
+                // Left empty deliberately. A text run is not a word — it is
+                // whatever span the producer happened to emit, often half of
+                // one — so passing runs off as word boxes would put highlights
+                // on fragments and claim a precision the file does not have.
+                words: Vec::new(),
             }
         })
         .collect();

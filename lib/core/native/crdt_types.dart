@@ -45,6 +45,18 @@ typedef NoteDayValue = ({
 /// One rendered day heading and the note ids beneath it, in order.
 typedef NoteDayGroupValue = ({String label, List<String> noteIds});
 
+/// One word inside a recognized line, where the recognizer reports that
+/// detail. Sources that do not are represented by an empty list, never by
+/// invented boxes.
+typedef OcrWordValue = ({
+  String text,
+  double left,
+  double top,
+  double right,
+  double bottom,
+  double? confidence,
+});
+
 /// One line the OCR engine recognized, with its box in image pixels.
 typedef OcrLineValue = ({
   String text,
@@ -54,6 +66,7 @@ typedef OcrLineValue = ({
   double bottom,
   int blockIndex,
   double? confidence,
+  List<OcrWordValue> words,
 });
 
 typedef PendingOutboxSummaryValue = ({
@@ -235,6 +248,7 @@ typedef CaptureQualityValue = ({
 typedef ScannedNoteDraftValue = ({
   String title,
   String body,
+
   /// `plain` or `markdown`, matching the note content types.
   String contentType,
   int keptLines,
@@ -245,9 +259,24 @@ typedef ScannedNoteDraftValue = ({
   int tables,
   int headings,
   int strippedRunningHeads,
+
+  /// Tokens whose misread characters were put back from the capture's own
+  /// vocabulary or a common word.
+  int repairedWords,
+
   /// The preset actually used, never `auto`.
   String preset,
   CaptureQualityValue quality,
+});
+
+/// One word box inside a stored line, so a highlight can sit on the words
+/// rather than on an interpolation along the line.
+typedef TextLayerWordValue = ({
+  String text,
+  double left,
+  double top,
+  double right,
+  double bottom,
 });
 
 /// One recognized line as the recognizer reported it, kept so a scan can be
@@ -259,6 +288,7 @@ typedef TextLayerLineValue = ({
   double right,
   double bottom,
   double? confidence,
+  List<TextLayerWordValue> words,
 });
 
 typedef TextLayerPageValue = ({
@@ -297,6 +327,7 @@ enum EntityKindValue {
 typedef EntityValue = ({
   EntityKindValue kind,
   String text,
+
   /// UTF-16 offsets, so they index the same string Dart holds.
   int start,
   int end,
@@ -327,6 +358,7 @@ typedef SuggestedActionValue = ({
   int? day,
   int? hour,
   int? minute,
+
   /// Money in minor units, so nothing is lost to rounding.
   int? amountMinor,
   String currency,
@@ -383,6 +415,7 @@ typedef ScriptReportValue = ({
   ScriptValue script,
   double confidence,
   int letters,
+
   /// Whether an on-device recognizer exists for this script.
   bool recognizable,
 });
@@ -397,6 +430,7 @@ typedef ReadingScoreValue = ({
   double meanConfidence,
   double coverage,
   double junkShare,
+
   /// The script the text turned out to be in, which is not always the one the
   /// model was looking for.
   ScriptValue dominantScript,
@@ -417,12 +451,26 @@ typedef PageMeasureValue = ({
   double skewDegrees,
   double medianLineHeight,
   int usableLines,
+
+  /// Share of the lines whose box is wider than tall — near 1 on a page the
+  /// right way up, near 0 on one photographed on its side.
+  double uprightShare,
 });
 
 /// A page's brightness distribution: 256 buckets of pixel counts, index 0
 /// black. Sampled from a downscaled decode — the shape of a page's tonal range
 /// survives shrinking.
-typedef PageLumaSampleValue = ({Uint32List histogram});
+///
+/// [tiles] holds the mean luma of each cell of a grid over the same thumbnail,
+/// row-major from the top left. The histogram says how much of the tonal range
+/// a page used; only the tiles say *where*, which is what separates a page that
+/// is uniformly dim from one lit from a single side.
+typedef PageLumaSampleValue = ({
+  Uint32List histogram,
+  Uint32List tiles,
+  int tileColumns,
+  int tileRows,
+});
 
 /// Everything the platform needs to build a better bitmap for a second reading,
 /// and nothing it has to decide. When [worthwhile] is false every other field is
@@ -437,9 +485,18 @@ typedef PagePrepareValue = ({
   Float32List transform,
 
   /// 4x5 row-major colour matrix over unpremultiplied RGBA in 0..255, the
-  /// layout `ColorFilter.matrix` takes.
+  /// layout `ColorFilter.matrix` takes. Converts to grey only when
+  /// [localContrast] is set; the tones are then the pixel pass's business.
   Float32List colorMatrix,
+
+  /// Whether the drawn bitmap should be passed through `normalizePageContrast`
+  /// before the recognizer sees it.
+  bool localContrast,
   double rotateDegrees,
+
+  /// Whole 90° turns being taken out, 0..3. Zero unless the page's orientation
+  /// was in doubt.
+  int quarterTurns,
   double scale,
   String reason,
 });
@@ -449,6 +506,7 @@ typedef PageReadingScoreValue = ({
   int characters,
   double meanConfidence,
   double junkShare,
+
   /// Share of tokens that look like words rather than debris.
   double wordShare,
 });

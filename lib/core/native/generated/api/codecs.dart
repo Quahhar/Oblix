@@ -6,370 +6,439 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-
-            // These functions are ignored because they are not marked as `pub`: `attachment_blob_ref`, `attachment_extension`, `bool_or`, `dart_string_list`, `dart_value_to_string`, `datetime_to_micros`, `direct_child`, `dirname`, `enforce_text_budget`, `enml_to_text`, `ensure_newline`, `epub_book_title`, `epub_chapter`, `epub_container_xml`, `epub_nav`, `epub_opf_path`, `epub_opf`, `epub_spine_hrefs`, `escape_xml`, `format_dart_iso_utc`, `get`, `new`, `node_inner_text`, `notebook_path`, `object`, `optional_array`, `optional_string`, `parse_enex_timestamp`, `parse_epub_chapter`, `parse_fixed_decimal`, `read_utf8_entry`, `read_zip`, `sanitize_xhtml`, `string_or`, `strip_xml_doctypes`, `tidy_flattened_text`, `utc_datetime_from_micros`, `utf16_len`, `validate_archive_id_segment`, `validate_archive_path`, `value_string_array`, `value_string`, `walk_text`, `write_zip`
+// These functions are ignored because they are not marked as `pub`: `attachment_blob_ref`, `attachment_extension`, `bool_or`, `dart_string_list`, `dart_value_to_string`, `datetime_to_micros`, `direct_child`, `dirname`, `enforce_text_budget`, `enml_to_text`, `ensure_newline`, `epub_book_title`, `epub_chapter`, `epub_container_xml`, `epub_nav`, `epub_opf_path`, `epub_opf`, `epub_spine_hrefs`, `escape_xml`, `format_dart_iso_utc`, `get`, `new`, `node_inner_text`, `notebook_path`, `object`, `optional_array`, `optional_string`, `parse_enex_timestamp`, `parse_epub_chapter`, `parse_fixed_decimal`, `read_utf8_entry`, `read_zip`, `sanitize_xhtml`, `string_or`, `strip_xml_doctypes`, `tidy_flattened_text`, `utc_datetime_from_micros`, `utf16_len`, `validate_archive_id_segment`, `validate_archive_path`, `value_string_array`, `value_string`, `walk_text`, `write_zip`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ReadZipEntry`, `ReadZip`, `WriteZipEntry`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
-
-            /// Parse Evernote ENEX into the same plain-text import DTO used by Dart.
+/// Parse Evernote ENEX into the same plain-text import DTO used by Dart.
 /// `now_micros_utc` replaces every missing/invalid source timestamp.
-ImportBundleDto  parseEnex({required String xml , String? notebookName , required PlatformInt64 nowMicrosUtc }) => RustLib.instance.api.crateApiCodecsParseEnex(xml: xml, notebookName: notebookName, nowMicrosUtc: nowMicrosUtc);
+ImportBundleDto parseEnex({
+  required String xml,
+  String? notebookName,
+  required PlatformInt64 nowMicrosUtc,
+}) => RustLib.instance.api.crateApiCodecsParseEnex(
+  xml: xml,
+  notebookName: notebookName,
+  nowMicrosUtc: nowMicrosUtc,
+);
 
 /// Create an EPUB 3 file. The caller supplies both timestamp and UUID so the
 /// output shape is deterministic. ZIP metadata uses a stable default timestamp.
-Uint8List  exportEpub({required EpubExportRequestDto request }) => RustLib.instance.api.crateApiCodecsExportEpub(request: request);
+Uint8List exportEpub({required EpubExportRequestDto request}) =>
+    RustLib.instance.api.crateApiCodecsExportEpub(request: request);
 
 /// Parse an EPUB ZIP into one plain-text note per readable spine chapter.
-ImportBundleDto  importEpub({required List<int> bytes , required PlatformInt64 nowMicrosUtc }) => RustLib.instance.api.crateApiCodecsImportEpub(bytes: bytes, nowMicrosUtc: nowMicrosUtc);
+ImportBundleDto importEpub({
+  required List<int> bytes,
+  required PlatformInt64 nowMicrosUtc,
+}) => RustLib.instance.api.crateApiCodecsImportEpub(
+  bytes: bytes,
+  nowMicrosUtc: nowMicrosUtc,
+);
 
 /// Encode the v2 native Oblix archive. Input ordering is retained. Broken or
 /// cyclic notebook parent links truncate exactly like the Dart path walker.
-Uint8List  encodeOblixArchive({required OblixEncodeRequestDto request }) => RustLib.instance.api.crateApiCodecsEncodeOblixArchive(request: request);
+Uint8List encodeOblixArchive({required OblixEncodeRequestDto request}) =>
+    RustLib.instance.api.crateApiCodecsEncodeOblixArchive(request: request);
 
 /// Decode v1 or v2 native Oblix archives. Note timestamps remain raw for Dart
 /// to parse with `DateTime.tryParse`; missing attachment blobs increment
 /// `skipped_attachments`, while malformed metadata and unsafe ZIPs return typed
 /// errors.
-ImportBundleDto  decodeOblixArchive({required OblixDecodeRequestDto request }) => RustLib.instance.api.crateApiCodecsDecodeOblixArchive(request: request);
+ImportBundleDto decodeOblixArchive({required OblixDecodeRequestDto request}) =>
+    RustLib.instance.api.crateApiCodecsDecodeOblixArchive(request: request);
 
-            class CodecErrorDto implements FrbException {
-                final CodecErrorKindDto kind;
-final String message;
+class CodecErrorDto implements FrbException {
+  final CodecErrorKindDto kind;
+  final String message;
 
-                const CodecErrorDto({required this.kind ,required this.message ,});
+  const CodecErrorDto({required this.kind, required this.message});
 
+  @override
+  int get hashCode => kind.hashCode ^ message.hashCode;
 
-
-
-
-        @override
-        int get hashCode => kind.hashCode^message.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is CodecErrorDto &&
-                runtimeType == other.runtimeType
-                && kind == other.kind&& message == other.message;
-
-            }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CodecErrorDto &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          message == other.message;
+}
 
 enum CodecErrorKindDto {
-                    invalidArchive,
-invalidXml,
-invalidJson,
-invalidUtf8,
-invalidInput,
-missingEntry,
-unsupportedVersion,
-unsafeArchivePath,
-limitExceeded,
-                    ;
-                    
-                }
-
-class EpubExportRequestDto  {
-                final List<EpubNoteInputDto> notes;
-final PlatformInt64 exportedAtMicrosUtc;
-/// UUID text without the `urn:uuid:` prefix.
-final String bookUuid;
-
-                const EpubExportRequestDto({required this.notes ,required this.exportedAtMicrosUtc ,required this.bookUuid ,});
-
-
-
-
-
-        @override
-        int get hashCode => notes.hashCode^exportedAtMicrosUtc.hashCode^bookUuid.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is EpubExportRequestDto &&
-                runtimeType == other.runtimeType
-                && notes == other.notes&& exportedAtMicrosUtc == other.exportedAtMicrosUtc&& bookUuid == other.bookUuid;
-
-            }
-
-class EpubNoteInputDto  {
-                final String title;
-final String content;
-
-                const EpubNoteInputDto({required this.title ,required this.content ,});
-
-
-
-
-
-        @override
-        int get hashCode => title.hashCode^content.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is EpubNoteInputDto &&
-                runtimeType == other.runtimeType
-                && title == other.title&& content == other.content;
-
-            }
-
-class ImportBundleDto  {
-                final List<ImportedNoteDto> notes;
-final List<String> notebookNames;
-final List<List<String>> notebookPaths;
-
-                const ImportBundleDto({required this.notes ,required this.notebookNames ,required this.notebookPaths ,});
-
-
-
-
-
-        @override
-        int get hashCode => notes.hashCode^notebookNames.hashCode^notebookPaths.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is ImportBundleDto &&
-                runtimeType == other.runtimeType
-                && notes == other.notes&& notebookNames == other.notebookNames&& notebookPaths == other.notebookPaths;
-
-            }
-
-class ImportedAttachmentDto  {
-                final String originalName;
-final String? mimeType;
-final Uint8List bytes;
-
-                const ImportedAttachmentDto({required this.originalName ,this.mimeType ,required this.bytes ,});
-
-
-
-
-
-        @override
-        int get hashCode => originalName.hashCode^mimeType.hashCode^bytes.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is ImportedAttachmentDto &&
-                runtimeType == other.runtimeType
-                && originalName == other.originalName&& mimeType == other.mimeType&& bytes == other.bytes;
-
-            }
-
-class ImportedNoteDto  {
-                final String title;
-final String content;
-final String contentType;
-final List<String> tagNames;
-final bool isPinned;
-final bool isArchived;
-final PlatformInt64 createdAtMicrosUtc;
-final PlatformInt64 updatedAtMicrosUtc;
-/// Present only for Oblix archives. Dart parses these with
-/// `DateTime.tryParse` so local-zone/DST and permissive grammar semantics
-/// remain exact. An empty string represents a missing/null source field.
-final String? createdAtRaw;
-final String? updatedAtRaw;
-final String? notebookName;
-final List<String>? notebookPath;
-final List<ImportedAttachmentDto> attachments;
-final int skippedAttachments;
-
-                const ImportedNoteDto({required this.title ,required this.content ,required this.contentType ,required this.tagNames ,required this.isPinned ,required this.isArchived ,required this.createdAtMicrosUtc ,required this.updatedAtMicrosUtc ,this.createdAtRaw ,this.updatedAtRaw ,this.notebookName ,this.notebookPath ,required this.attachments ,required this.skippedAttachments ,});
-
-
-
-
-
-        @override
-        int get hashCode => title.hashCode^content.hashCode^contentType.hashCode^tagNames.hashCode^isPinned.hashCode^isArchived.hashCode^createdAtMicrosUtc.hashCode^updatedAtMicrosUtc.hashCode^createdAtRaw.hashCode^updatedAtRaw.hashCode^notebookName.hashCode^notebookPath.hashCode^attachments.hashCode^skippedAttachments.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is ImportedNoteDto &&
-                runtimeType == other.runtimeType
-                && title == other.title&& content == other.content&& contentType == other.contentType&& tagNames == other.tagNames&& isPinned == other.isPinned&& isArchived == other.isArchived&& createdAtMicrosUtc == other.createdAtMicrosUtc&& updatedAtMicrosUtc == other.updatedAtMicrosUtc&& createdAtRaw == other.createdAtRaw&& updatedAtRaw == other.updatedAtRaw&& notebookName == other.notebookName&& notebookPath == other.notebookPath&& attachments == other.attachments&& skippedAttachments == other.skippedAttachments;
-
-            }
-
-class OblixAttachmentGroupInputDto  {
-                final String noteId;
-final List<OblixAttachmentInputDto> attachments;
-
-                const OblixAttachmentGroupInputDto({required this.noteId ,required this.attachments ,});
-
-
-
-
-
-        @override
-        int get hashCode => noteId.hashCode^attachments.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is OblixAttachmentGroupInputDto &&
-                runtimeType == other.runtimeType
-                && noteId == other.noteId&& attachments == other.attachments;
-
-            }
-
-class OblixAttachmentInputDto  {
-                final String id;
-final String originalName;
-final String mimeType;
-final Uint8List bytes;
-
-                const OblixAttachmentInputDto({required this.id ,required this.originalName ,required this.mimeType ,required this.bytes ,});
-
-
-
-
-
-        @override
-        int get hashCode => id.hashCode^originalName.hashCode^mimeType.hashCode^bytes.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is OblixAttachmentInputDto &&
-                runtimeType == other.runtimeType
-                && id == other.id&& originalName == other.originalName&& mimeType == other.mimeType&& bytes == other.bytes;
-
-            }
-
-class OblixDecodeRequestDto  {
-                final Uint8List bytes;
-/// Used whenever an imported timestamp is absent or invalid.
-final PlatformInt64 nowMicrosUtc;
-
-                const OblixDecodeRequestDto({required this.bytes ,required this.nowMicrosUtc ,});
-
-
-
-
-
-        @override
-        int get hashCode => bytes.hashCode^nowMicrosUtc.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is OblixDecodeRequestDto &&
-                runtimeType == other.runtimeType
-                && bytes == other.bytes&& nowMicrosUtc == other.nowMicrosUtc;
-
-            }
-
-class OblixEncodeRequestDto  {
-                final List<OblixNoteInputDto> notes;
-final List<OblixNotebookInputDto> notebooks;
-/// The Dart encoder only serializes each tag's name.
-final List<String> tagNames;
-final List<OblixAttachmentGroupInputDto> attachmentGroups;
-final PlatformInt64 exportedAtMicrosUtc;
-
-                const OblixEncodeRequestDto({required this.notes ,required this.notebooks ,required this.tagNames ,required this.attachmentGroups ,required this.exportedAtMicrosUtc ,});
-
-
-
-
-
-        @override
-        int get hashCode => notes.hashCode^notebooks.hashCode^tagNames.hashCode^attachmentGroups.hashCode^exportedAtMicrosUtc.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is OblixEncodeRequestDto &&
-                runtimeType == other.runtimeType
-                && notes == other.notes&& notebooks == other.notebooks&& tagNames == other.tagNames&& attachmentGroups == other.attachmentGroups&& exportedAtMicrosUtc == other.exportedAtMicrosUtc;
-
-            }
-
-class OblixNoteInputDto  {
-                final String id;
-final String? notebookId;
-final String title;
-final String content;
-final String contentType;
-final List<String> tagNames;
-final bool isPinned;
-final bool isArchived;
-/// Exact `DateTime.toUtc().toIso8601String()` output supplied by Dart.
-/// Keeping this as text preserves Dart years outside Chrono's range.
-final String createdAtIsoUtc;
-final String updatedAtIsoUtc;
-
-                const OblixNoteInputDto({required this.id ,this.notebookId ,required this.title ,required this.content ,required this.contentType ,required this.tagNames ,required this.isPinned ,required this.isArchived ,required this.createdAtIsoUtc ,required this.updatedAtIsoUtc ,});
-
-
-
-
-
-        @override
-        int get hashCode => id.hashCode^notebookId.hashCode^title.hashCode^content.hashCode^contentType.hashCode^tagNames.hashCode^isPinned.hashCode^isArchived.hashCode^createdAtIsoUtc.hashCode^updatedAtIsoUtc.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is OblixNoteInputDto &&
-                runtimeType == other.runtimeType
-                && id == other.id&& notebookId == other.notebookId&& title == other.title&& content == other.content&& contentType == other.contentType&& tagNames == other.tagNames&& isPinned == other.isPinned&& isArchived == other.isArchived&& createdAtIsoUtc == other.createdAtIsoUtc&& updatedAtIsoUtc == other.updatedAtIsoUtc;
-
-            }
-
-class OblixNotebookInputDto  {
-                final String id;
-final String name;
-final String? parentId;
-final PlatformInt64 sortOrder;
-
-                const OblixNotebookInputDto({required this.id ,required this.name ,this.parentId ,required this.sortOrder ,});
-
-
-
-
-
-        @override
-        int get hashCode => id.hashCode^name.hashCode^parentId.hashCode^sortOrder.hashCode;
-
-
-
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is OblixNotebookInputDto &&
-                runtimeType == other.runtimeType
-                && id == other.id&& name == other.name&& parentId == other.parentId&& sortOrder == other.sortOrder;
-
-            }
-            
+  invalidArchive,
+  invalidXml,
+  invalidJson,
+  invalidUtf8,
+  invalidInput,
+  missingEntry,
+  unsupportedVersion,
+  unsafeArchivePath,
+  limitExceeded,
+}
+
+class EpubExportRequestDto {
+  final List<EpubNoteInputDto> notes;
+  final PlatformInt64 exportedAtMicrosUtc;
+
+  /// UUID text without the `urn:uuid:` prefix.
+  final String bookUuid;
+
+  const EpubExportRequestDto({
+    required this.notes,
+    required this.exportedAtMicrosUtc,
+    required this.bookUuid,
+  });
+
+  @override
+  int get hashCode =>
+      notes.hashCode ^ exportedAtMicrosUtc.hashCode ^ bookUuid.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EpubExportRequestDto &&
+          runtimeType == other.runtimeType &&
+          notes == other.notes &&
+          exportedAtMicrosUtc == other.exportedAtMicrosUtc &&
+          bookUuid == other.bookUuid;
+}
+
+class EpubNoteInputDto {
+  final String title;
+  final String content;
+
+  const EpubNoteInputDto({required this.title, required this.content});
+
+  @override
+  int get hashCode => title.hashCode ^ content.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EpubNoteInputDto &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          content == other.content;
+}
+
+class ImportBundleDto {
+  final List<ImportedNoteDto> notes;
+  final List<String> notebookNames;
+  final List<List<String>> notebookPaths;
+
+  const ImportBundleDto({
+    required this.notes,
+    required this.notebookNames,
+    required this.notebookPaths,
+  });
+
+  @override
+  int get hashCode =>
+      notes.hashCode ^ notebookNames.hashCode ^ notebookPaths.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImportBundleDto &&
+          runtimeType == other.runtimeType &&
+          notes == other.notes &&
+          notebookNames == other.notebookNames &&
+          notebookPaths == other.notebookPaths;
+}
+
+class ImportedAttachmentDto {
+  final String originalName;
+  final String? mimeType;
+  final Uint8List bytes;
+
+  const ImportedAttachmentDto({
+    required this.originalName,
+    this.mimeType,
+    required this.bytes,
+  });
+
+  @override
+  int get hashCode =>
+      originalName.hashCode ^ mimeType.hashCode ^ bytes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImportedAttachmentDto &&
+          runtimeType == other.runtimeType &&
+          originalName == other.originalName &&
+          mimeType == other.mimeType &&
+          bytes == other.bytes;
+}
+
+class ImportedNoteDto {
+  final String title;
+  final String content;
+  final String contentType;
+  final List<String> tagNames;
+  final bool isPinned;
+  final bool isArchived;
+  final PlatformInt64 createdAtMicrosUtc;
+  final PlatformInt64 updatedAtMicrosUtc;
+
+  /// Present only for Oblix archives. Dart parses these with
+  /// `DateTime.tryParse` so local-zone/DST and permissive grammar semantics
+  /// remain exact. An empty string represents a missing/null source field.
+  final String? createdAtRaw;
+  final String? updatedAtRaw;
+  final String? notebookName;
+  final List<String>? notebookPath;
+  final List<ImportedAttachmentDto> attachments;
+  final int skippedAttachments;
+
+  const ImportedNoteDto({
+    required this.title,
+    required this.content,
+    required this.contentType,
+    required this.tagNames,
+    required this.isPinned,
+    required this.isArchived,
+    required this.createdAtMicrosUtc,
+    required this.updatedAtMicrosUtc,
+    this.createdAtRaw,
+    this.updatedAtRaw,
+    this.notebookName,
+    this.notebookPath,
+    required this.attachments,
+    required this.skippedAttachments,
+  });
+
+  @override
+  int get hashCode =>
+      title.hashCode ^
+      content.hashCode ^
+      contentType.hashCode ^
+      tagNames.hashCode ^
+      isPinned.hashCode ^
+      isArchived.hashCode ^
+      createdAtMicrosUtc.hashCode ^
+      updatedAtMicrosUtc.hashCode ^
+      createdAtRaw.hashCode ^
+      updatedAtRaw.hashCode ^
+      notebookName.hashCode ^
+      notebookPath.hashCode ^
+      attachments.hashCode ^
+      skippedAttachments.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImportedNoteDto &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          content == other.content &&
+          contentType == other.contentType &&
+          tagNames == other.tagNames &&
+          isPinned == other.isPinned &&
+          isArchived == other.isArchived &&
+          createdAtMicrosUtc == other.createdAtMicrosUtc &&
+          updatedAtMicrosUtc == other.updatedAtMicrosUtc &&
+          createdAtRaw == other.createdAtRaw &&
+          updatedAtRaw == other.updatedAtRaw &&
+          notebookName == other.notebookName &&
+          notebookPath == other.notebookPath &&
+          attachments == other.attachments &&
+          skippedAttachments == other.skippedAttachments;
+}
+
+class OblixAttachmentGroupInputDto {
+  final String noteId;
+  final List<OblixAttachmentInputDto> attachments;
+
+  const OblixAttachmentGroupInputDto({
+    required this.noteId,
+    required this.attachments,
+  });
+
+  @override
+  int get hashCode => noteId.hashCode ^ attachments.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OblixAttachmentGroupInputDto &&
+          runtimeType == other.runtimeType &&
+          noteId == other.noteId &&
+          attachments == other.attachments;
+}
+
+class OblixAttachmentInputDto {
+  final String id;
+  final String originalName;
+  final String mimeType;
+  final Uint8List bytes;
+
+  const OblixAttachmentInputDto({
+    required this.id,
+    required this.originalName,
+    required this.mimeType,
+    required this.bytes,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ originalName.hashCode ^ mimeType.hashCode ^ bytes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OblixAttachmentInputDto &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          originalName == other.originalName &&
+          mimeType == other.mimeType &&
+          bytes == other.bytes;
+}
+
+class OblixDecodeRequestDto {
+  final Uint8List bytes;
+
+  /// Used whenever an imported timestamp is absent or invalid.
+  final PlatformInt64 nowMicrosUtc;
+
+  const OblixDecodeRequestDto({
+    required this.bytes,
+    required this.nowMicrosUtc,
+  });
+
+  @override
+  int get hashCode => bytes.hashCode ^ nowMicrosUtc.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OblixDecodeRequestDto &&
+          runtimeType == other.runtimeType &&
+          bytes == other.bytes &&
+          nowMicrosUtc == other.nowMicrosUtc;
+}
+
+class OblixEncodeRequestDto {
+  final List<OblixNoteInputDto> notes;
+  final List<OblixNotebookInputDto> notebooks;
+
+  /// The Dart encoder only serializes each tag's name.
+  final List<String> tagNames;
+  final List<OblixAttachmentGroupInputDto> attachmentGroups;
+  final PlatformInt64 exportedAtMicrosUtc;
+
+  const OblixEncodeRequestDto({
+    required this.notes,
+    required this.notebooks,
+    required this.tagNames,
+    required this.attachmentGroups,
+    required this.exportedAtMicrosUtc,
+  });
+
+  @override
+  int get hashCode =>
+      notes.hashCode ^
+      notebooks.hashCode ^
+      tagNames.hashCode ^
+      attachmentGroups.hashCode ^
+      exportedAtMicrosUtc.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OblixEncodeRequestDto &&
+          runtimeType == other.runtimeType &&
+          notes == other.notes &&
+          notebooks == other.notebooks &&
+          tagNames == other.tagNames &&
+          attachmentGroups == other.attachmentGroups &&
+          exportedAtMicrosUtc == other.exportedAtMicrosUtc;
+}
+
+class OblixNoteInputDto {
+  final String id;
+  final String? notebookId;
+  final String title;
+  final String content;
+  final String contentType;
+  final List<String> tagNames;
+  final bool isPinned;
+  final bool isArchived;
+
+  /// Exact `DateTime.toUtc().toIso8601String()` output supplied by Dart.
+  /// Keeping this as text preserves Dart years outside Chrono's range.
+  final String createdAtIsoUtc;
+  final String updatedAtIsoUtc;
+
+  const OblixNoteInputDto({
+    required this.id,
+    this.notebookId,
+    required this.title,
+    required this.content,
+    required this.contentType,
+    required this.tagNames,
+    required this.isPinned,
+    required this.isArchived,
+    required this.createdAtIsoUtc,
+    required this.updatedAtIsoUtc,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      notebookId.hashCode ^
+      title.hashCode ^
+      content.hashCode ^
+      contentType.hashCode ^
+      tagNames.hashCode ^
+      isPinned.hashCode ^
+      isArchived.hashCode ^
+      createdAtIsoUtc.hashCode ^
+      updatedAtIsoUtc.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OblixNoteInputDto &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          notebookId == other.notebookId &&
+          title == other.title &&
+          content == other.content &&
+          contentType == other.contentType &&
+          tagNames == other.tagNames &&
+          isPinned == other.isPinned &&
+          isArchived == other.isArchived &&
+          createdAtIsoUtc == other.createdAtIsoUtc &&
+          updatedAtIsoUtc == other.updatedAtIsoUtc;
+}
+
+class OblixNotebookInputDto {
+  final String id;
+  final String name;
+  final String? parentId;
+  final PlatformInt64 sortOrder;
+
+  const OblixNotebookInputDto({
+    required this.id,
+    required this.name,
+    this.parentId,
+    required this.sortOrder,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ parentId.hashCode ^ sortOrder.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OblixNotebookInputDto &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          parentId == other.parentId &&
+          sortOrder == other.sortOrder;
+}

@@ -3,7 +3,6 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
-
 // Static analysis wrongly picks the IO variant, thus ignore this
 // ignore_for_file: argument_type_not_assignable
 
@@ -27,1238 +26,2556 @@ import 'dart:convert';
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 
+abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
+  RustLibApiImplPlatform({
+    required super.handler,
+    required super.wire,
+    required super.generalizedFrbRustBinding,
+    required super.portManager,
+  });
 
+  @protected
+  String dco_decode_String(dynamic raw);
 
+  @protected
+  ActionKind dco_decode_action_kind(dynamic raw);
 
-                abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
-                  RustLibApiImplPlatform({
-                    required super.handler,
-                    required super.wire,
-                    required super.generalizedFrbRustBinding,
-                    required super.portManager,
-                  });
+  @protected
+  bool dco_decode_bool(dynamic raw);
 
-                  
+  @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw);
 
-                  @protected String dco_decode_String(dynamic raw);
+  @protected
+  CivilDate dco_decode_box_autoadd_civil_date(dynamic raw);
 
-@protected ActionKind dco_decode_action_kind(dynamic raw);
+  @protected
+  CivilTime dco_decode_box_autoadd_civil_time(dynamic raw);
 
-@protected bool dco_decode_bool(dynamic raw);
+  @protected
+  EntityOptions dco_decode_box_autoadd_entity_options(dynamic raw);
 
-@protected bool dco_decode_box_autoadd_bool(dynamic raw);
+  @protected
+  EpubExportRequestDto dco_decode_box_autoadd_epub_export_request_dto(
+    dynamic raw,
+  );
 
-@protected CivilDate dco_decode_box_autoadd_civil_date(dynamic raw);
+  @protected
+  ExportNoteInput dco_decode_box_autoadd_export_note_input(dynamic raw);
 
-@protected CivilTime dco_decode_box_autoadd_civil_time(dynamic raw);
+  @protected
+  double dco_decode_box_autoadd_f_32(dynamic raw);
 
-@protected EntityOptions dco_decode_box_autoadd_entity_options(dynamic raw);
+  @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
 
-@protected EpubExportRequestDto dco_decode_box_autoadd_epub_export_request_dto(dynamic raw);
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
-@protected ExportNoteInput dco_decode_box_autoadd_export_note_input(dynamic raw);
+  @protected
+  NoteCreateInput dco_decode_box_autoadd_note_create_input(dynamic raw);
 
-@protected double dco_decode_box_autoadd_f_32(dynamic raw);
+  @protected
+  NoteMutationState dco_decode_box_autoadd_note_mutation_state(dynamic raw);
 
-@protected int dco_decode_box_autoadd_i_32(dynamic raw);
+  @protected
+  NoteUpdateInput dco_decode_box_autoadd_note_update_input(dynamic raw);
 
-@protected PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+  @protected
+  NotebookCreateInput dco_decode_box_autoadd_notebook_create_input(dynamic raw);
 
-@protected NoteCreateInput dco_decode_box_autoadd_note_create_input(dynamic raw);
+  @protected
+  NotebookMutationState dco_decode_box_autoadd_notebook_mutation_state(
+    dynamic raw,
+  );
 
-@protected NoteMutationState dco_decode_box_autoadd_note_mutation_state(dynamic raw);
+  @protected
+  NotebookUpdateInput dco_decode_box_autoadd_notebook_update_input(dynamic raw);
 
-@protected NoteUpdateInput dco_decode_box_autoadd_note_update_input(dynamic raw);
+  @protected
+  OblixDecodeRequestDto dco_decode_box_autoadd_oblix_decode_request_dto(
+    dynamic raw,
+  );
 
-@protected NotebookCreateInput dco_decode_box_autoadd_notebook_create_input(dynamic raw);
+  @protected
+  OblixEncodeRequestDto dco_decode_box_autoadd_oblix_encode_request_dto(
+    dynamic raw,
+  );
 
-@protected NotebookMutationState dco_decode_box_autoadd_notebook_mutation_state(dynamic raw);
+  @protected
+  OcrPageInput dco_decode_box_autoadd_ocr_page_input(dynamic raw);
 
-@protected NotebookUpdateInput dco_decode_box_autoadd_notebook_update_input(dynamic raw);
+  @protected
+  OcrShapeOptions dco_decode_box_autoadd_ocr_shape_options(dynamic raw);
 
-@protected OblixDecodeRequestDto dco_decode_box_autoadd_oblix_decode_request_dto(dynamic raw);
+  @protected
+  PageLumaSample dco_decode_box_autoadd_page_luma_sample(dynamic raw);
 
-@protected OblixEncodeRequestDto dco_decode_box_autoadd_oblix_encode_request_dto(dynamic raw);
+  @protected
+  PageMeasure dco_decode_box_autoadd_page_measure(dynamic raw);
 
-@protected OcrPageInput dco_decode_box_autoadd_ocr_page_input(dynamic raw);
+  @protected
+  PagePrepare dco_decode_box_autoadd_page_prepare(dynamic raw);
 
-@protected OcrShapeOptions dco_decode_box_autoadd_ocr_shape_options(dynamic raw);
+  @protected
+  PageReadingScore dco_decode_box_autoadd_page_reading_score(dynamic raw);
 
-@protected PageLumaSample dco_decode_box_autoadd_page_luma_sample(dynamic raw);
+  @protected
+  PdfPageInput dco_decode_box_autoadd_pdf_page_input(dynamic raw);
 
-@protected PageMeasure dco_decode_box_autoadd_page_measure(dynamic raw);
+  @protected
+  QuickAddContext dco_decode_box_autoadd_quick_add_context(dynamic raw);
 
-@protected PagePrepare dco_decode_box_autoadd_page_prepare(dynamic raw);
+  @protected
+  ReadingScore dco_decode_box_autoadd_reading_score(dynamic raw);
 
-@protected PdfPageInput dco_decode_box_autoadd_pdf_page_input(dynamic raw);
+  @protected
+  RecurrenceRule dco_decode_box_autoadd_recurrence_rule(dynamic raw);
 
-@protected QuickAddContext dco_decode_box_autoadd_quick_add_context(dynamic raw);
+  @protected
+  ReminderInstant dco_decode_box_autoadd_reminder_instant(dynamic raw);
 
-@protected ReadingScore dco_decode_box_autoadd_reading_score(dynamic raw);
+  @protected
+  ScriptReading dco_decode_box_autoadd_script_reading(dynamic raw);
 
-@protected RecurrenceRule dco_decode_box_autoadd_recurrence_rule(dynamic raw);
+  @protected
+  TaskCreateInput dco_decode_box_autoadd_task_create_input(dynamic raw);
 
-@protected ReminderInstant dco_decode_box_autoadd_reminder_instant(dynamic raw);
+  @protected
+  TaskMutationState dco_decode_box_autoadd_task_mutation_state(dynamic raw);
 
-@protected ScriptReading dco_decode_box_autoadd_script_reading(dynamic raw);
+  @protected
+  TaskUpdateInput dco_decode_box_autoadd_task_update_input(dynamic raw);
 
-@protected TaskCreateInput dco_decode_box_autoadd_task_create_input(dynamic raw);
+  @protected
+  TaskViewContext dco_decode_box_autoadd_task_view_context(dynamic raw);
 
-@protected TaskMutationState dco_decode_box_autoadd_task_mutation_state(dynamic raw);
+  @protected
+  TextLayer dco_decode_box_autoadd_text_layer(dynamic raw);
 
-@protected TaskUpdateInput dco_decode_box_autoadd_task_update_input(dynamic raw);
+  @protected
+  CalendarDay dco_decode_calendar_day(dynamic raw);
 
-@protected TaskViewContext dco_decode_box_autoadd_task_view_context(dynamic raw);
+  @protected
+  CaptureQuality dco_decode_capture_quality(dynamic raw);
 
-@protected TextLayer dco_decode_box_autoadd_text_layer(dynamic raw);
+  @protected
+  CivilDate dco_decode_civil_date(dynamic raw);
 
-@protected CalendarDay dco_decode_calendar_day(dynamic raw);
+  @protected
+  CivilTime dco_decode_civil_time(dynamic raw);
 
-@protected CaptureQuality dco_decode_capture_quality(dynamic raw);
+  @protected
+  CodecErrorDto dco_decode_codec_error_dto(dynamic raw);
 
-@protected CivilDate dco_decode_civil_date(dynamic raw);
+  @protected
+  CodecErrorKindDto dco_decode_codec_error_kind_dto(dynamic raw);
 
-@protected CivilTime dco_decode_civil_time(dynamic raw);
+  @protected
+  CrdtClockInput dco_decode_crdt_clock_input(dynamic raw);
 
-@protected CodecErrorDto dco_decode_codec_error_dto(dynamic raw);
+  @protected
+  CrdtFieldInput dco_decode_crdt_field_input(dynamic raw);
 
-@protected CodecErrorKindDto dco_decode_codec_error_kind_dto(dynamic raw);
+  @protected
+  Entity dco_decode_entity(dynamic raw);
 
-@protected CrdtClockInput dco_decode_crdt_clock_input(dynamic raw);
+  @protected
+  EntityKind dco_decode_entity_kind(dynamic raw);
 
-@protected CrdtFieldInput dco_decode_crdt_field_input(dynamic raw);
+  @protected
+  EntityOptions dco_decode_entity_options(dynamic raw);
 
-@protected Entity dco_decode_entity(dynamic raw);
+  @protected
+  EpubExportRequestDto dco_decode_epub_export_request_dto(dynamic raw);
 
-@protected EntityKind dco_decode_entity_kind(dynamic raw);
+  @protected
+  EpubNoteInputDto dco_decode_epub_note_input_dto(dynamic raw);
 
-@protected EntityOptions dco_decode_entity_options(dynamic raw);
+  @protected
+  ExportNoteInput dco_decode_export_note_input(dynamic raw);
 
-@protected EpubExportRequestDto dco_decode_epub_export_request_dto(dynamic raw);
+  @protected
+  ExportTextFileOutput dco_decode_export_text_file_output(dynamic raw);
 
-@protected EpubNoteInputDto dco_decode_epub_note_input_dto(dynamic raw);
+  @protected
+  double dco_decode_f_32(dynamic raw);
 
-@protected ExportNoteInput dco_decode_export_note_input(dynamic raw);
+  @protected
+  int dco_decode_i_32(dynamic raw);
 
-@protected ExportTextFileOutput dco_decode_export_text_file_output(dynamic raw);
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
 
-@protected double dco_decode_f_32(dynamic raw);
+  @protected
+  ImportBundleDto dco_decode_import_bundle_dto(dynamic raw);
 
-@protected int dco_decode_i_32(dynamic raw);
+  @protected
+  ImportedAttachmentDto dco_decode_imported_attachment_dto(dynamic raw);
 
-@protected PlatformInt64 dco_decode_i_64(dynamic raw);
+  @protected
+  ImportedNoteDto dco_decode_imported_note_dto(dynamic raw);
 
-@protected ImportBundleDto dco_decode_import_bundle_dto(dynamic raw);
+  @protected
+  List<String> dco_decode_list_String(dynamic raw);
 
-@protected ImportedAttachmentDto dco_decode_imported_attachment_dto(dynamic raw);
+  @protected
+  List<CalendarDay> dco_decode_list_calendar_day(dynamic raw);
 
-@protected ImportedNoteDto dco_decode_imported_note_dto(dynamic raw);
+  @protected
+  List<CrdtFieldInput> dco_decode_list_crdt_field_input(dynamic raw);
 
-@protected List<String> dco_decode_list_String(dynamic raw);
+  @protected
+  List<Entity> dco_decode_list_entity(dynamic raw);
 
-@protected List<CalendarDay> dco_decode_list_calendar_day(dynamic raw);
+  @protected
+  List<EntityKind> dco_decode_list_entity_kind(dynamic raw);
 
-@protected List<CrdtFieldInput> dco_decode_list_crdt_field_input(dynamic raw);
+  @protected
+  List<EpubNoteInputDto> dco_decode_list_epub_note_input_dto(dynamic raw);
 
-@protected List<Entity> dco_decode_list_entity(dynamic raw);
+  @protected
+  List<ExportNoteInput> dco_decode_list_export_note_input(dynamic raw);
 
-@protected List<EntityKind> dco_decode_list_entity_kind(dynamic raw);
+  @protected
+  List<ExportTextFileOutput> dco_decode_list_export_text_file_output(
+    dynamic raw,
+  );
 
-@protected List<EpubNoteInputDto> dco_decode_list_epub_note_input_dto(dynamic raw);
+  @protected
+  List<ImportedAttachmentDto> dco_decode_list_imported_attachment_dto(
+    dynamic raw,
+  );
 
-@protected List<ExportNoteInput> dco_decode_list_export_note_input(dynamic raw);
+  @protected
+  List<ImportedNoteDto> dco_decode_list_imported_note_dto(dynamic raw);
 
-@protected List<ExportTextFileOutput> dco_decode_list_export_text_file_output(dynamic raw);
+  @protected
+  List<List<String>> dco_decode_list_list_String(dynamic raw);
 
-@protected List<ImportedAttachmentDto> dco_decode_list_imported_attachment_dto(dynamic raw);
+  @protected
+  List<NamedCrdtClockInput> dco_decode_list_named_crdt_clock_input(dynamic raw);
 
-@protected List<ImportedNoteDto> dco_decode_list_imported_note_dto(dynamic raw);
+  @protected
+  List<NoteDayGroup> dco_decode_list_note_day_group(dynamic raw);
 
-@protected List<List<String>> dco_decode_list_list_String(dynamic raw);
+  @protected
+  List<NoteDayInput> dco_decode_list_note_day_input(dynamic raw);
 
-@protected List<NamedCrdtClockInput> dco_decode_list_named_crdt_clock_input(dynamic raw);
+  @protected
+  List<NotebookNodeInput> dco_decode_list_notebook_node_input(dynamic raw);
 
-@protected List<NoteDayGroup> dco_decode_list_note_day_group(dynamic raw);
+  @protected
+  List<NotebookPathOutput> dco_decode_list_notebook_path_output(dynamic raw);
 
-@protected List<NoteDayInput> dco_decode_list_note_day_input(dynamic raw);
+  @protected
+  List<OblixAttachmentGroupInputDto>
+  dco_decode_list_oblix_attachment_group_input_dto(dynamic raw);
 
-@protected List<NotebookNodeInput> dco_decode_list_notebook_node_input(dynamic raw);
+  @protected
+  List<OblixAttachmentInputDto> dco_decode_list_oblix_attachment_input_dto(
+    dynamic raw,
+  );
 
-@protected List<NotebookPathOutput> dco_decode_list_notebook_path_output(dynamic raw);
+  @protected
+  List<OblixNoteInputDto> dco_decode_list_oblix_note_input_dto(dynamic raw);
 
-@protected List<OblixAttachmentGroupInputDto> dco_decode_list_oblix_attachment_group_input_dto(dynamic raw);
+  @protected
+  List<OblixNotebookInputDto> dco_decode_list_oblix_notebook_input_dto(
+    dynamic raw,
+  );
 
-@protected List<OblixAttachmentInputDto> dco_decode_list_oblix_attachment_input_dto(dynamic raw);
+  @protected
+  List<OcrLineInput> dco_decode_list_ocr_line_input(dynamic raw);
 
-@protected List<OblixNoteInputDto> dco_decode_list_oblix_note_input_dto(dynamic raw);
+  @protected
+  List<OcrPageInput> dco_decode_list_ocr_page_input(dynamic raw);
 
-@protected List<OblixNotebookInputDto> dco_decode_list_oblix_notebook_input_dto(dynamic raw);
+  @protected
+  List<OcrWordInput> dco_decode_list_ocr_word_input(dynamic raw);
 
-@protected List<OcrLineInput> dco_decode_list_ocr_line_input(dynamic raw);
+  @protected
+  List<PagePrepare> dco_decode_list_page_prepare(dynamic raw);
 
-@protected List<OcrPageInput> dco_decode_list_ocr_page_input(dynamic raw);
+  @protected
+  List<PageReadingScore> dco_decode_list_page_reading_score(dynamic raw);
 
-@protected List<PageReadingScore> dco_decode_list_page_reading_score(dynamic raw);
+  @protected
+  List<PdfPageInput> dco_decode_list_pdf_page_input(dynamic raw);
 
-@protected List<PdfPageInput> dco_decode_list_pdf_page_input(dynamic raw);
+  @protected
+  List<PdfTextRun> dco_decode_list_pdf_text_run(dynamic raw);
 
-@protected List<PdfTextRun> dco_decode_list_pdf_text_run(dynamic raw);
+  @protected
+  List<PendingOutboxFieldSeqs> dco_decode_list_pending_outbox_field_seqs(
+    dynamic raw,
+  );
 
-@protected List<PendingOutboxFieldSeqs> dco_decode_list_pending_outbox_field_seqs(dynamic raw);
+  @protected
+  List<PendingOutboxRowInput> dco_decode_list_pending_outbox_row_input(
+    dynamic raw,
+  );
 
-@protected List<PendingOutboxRowInput> dco_decode_list_pending_outbox_row_input(dynamic raw);
+  @protected
+  Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
 
-@protected Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
+  @protected
+  List<int> dco_decode_list_prim_i_32_loose(dynamic raw);
 
-@protected List<int> dco_decode_list_prim_i_32_loose(dynamic raw);
+  @protected
+  Int32List dco_decode_list_prim_i_32_strict(dynamic raw);
 
-@protected Int32List dco_decode_list_prim_i_32_strict(dynamic raw);
+  @protected
+  Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
 
-@protected Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
+  @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
-@protected Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+  @protected
+  List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
-@protected List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
+  @protected
+  Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
-@protected Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+  @protected
+  List<QuickAddSpan> dco_decode_list_quick_add_span(dynamic raw);
 
-@protected List<QuickAddSpan> dco_decode_list_quick_add_span(dynamic raw);
+  @protected
+  List<ReadingScore> dco_decode_list_reading_score(dynamic raw);
 
-@protected List<ReadingScore> dco_decode_list_reading_score(dynamic raw);
+  @protected
+  List<RedactionSpan> dco_decode_list_redaction_span(dynamic raw);
 
-@protected List<RedactionSpan> dco_decode_list_redaction_span(dynamic raw);
+  @protected
+  List<ScriptReading> dco_decode_list_script_reading(dynamic raw);
 
-@protected List<ScriptReading> dco_decode_list_script_reading(dynamic raw);
+  @protected
+  List<SortAssignment> dco_decode_list_sort_assignment(dynamic raw);
 
-@protected List<SortAssignment> dco_decode_list_sort_assignment(dynamic raw);
+  @protected
+  List<SuggestedAction> dco_decode_list_suggested_action(dynamic raw);
 
-@protected List<SuggestedAction> dco_decode_list_suggested_action(dynamic raw);
+  @protected
+  List<SyncBatchEntryInput> dco_decode_list_sync_batch_entry_input(dynamic raw);
 
-@protected List<SyncBatchEntryInput> dco_decode_list_sync_batch_entry_input(dynamic raw);
+  @protected
+  List<TaskRow> dco_decode_list_task_row(dynamic raw);
 
-@protected List<TaskRow> dco_decode_list_task_row(dynamic raw);
+  @protected
+  List<TaskSection> dco_decode_list_task_section(dynamic raw);
 
-@protected List<TaskSection> dco_decode_list_task_section(dynamic raw);
+  @protected
+  List<TaskViewInput> dco_decode_list_task_view_input(dynamic raw);
 
-@protected List<TaskViewInput> dco_decode_list_task_view_input(dynamic raw);
+  @protected
+  List<TextDeltaOp> dco_decode_list_text_delta_op(dynamic raw);
 
-@protected List<TextDeltaOp> dco_decode_list_text_delta_op(dynamic raw);
+  @protected
+  List<TextLayerHit> dco_decode_list_text_layer_hit(dynamic raw);
 
-@protected List<TextLayerHit> dco_decode_list_text_layer_hit(dynamic raw);
+  @protected
+  List<TextLayerLine> dco_decode_list_text_layer_line(dynamic raw);
 
-@protected List<TextLayerLine> dco_decode_list_text_layer_line(dynamic raw);
+  @protected
+  List<TextLayerPage> dco_decode_list_text_layer_page(dynamic raw);
 
-@protected List<TextLayerPage> dco_decode_list_text_layer_page(dynamic raw);
+  @protected
+  List<TextLayerWord> dco_decode_list_text_layer_word(dynamic raw);
 
-@protected MarkdownImportOutput dco_decode_markdown_import_output(dynamic raw);
+  @protected
+  MarkdownImportOutput dco_decode_markdown_import_output(dynamic raw);
 
-@protected MutationAction dco_decode_mutation_action(dynamic raw);
+  @protected
+  MutationAction dco_decode_mutation_action(dynamic raw);
 
-@protected MutationSelection dco_decode_mutation_selection(dynamic raw);
+  @protected
+  MutationSelection dco_decode_mutation_selection(dynamic raw);
 
-@protected NamedCrdtClockInput dco_decode_named_crdt_clock_input(dynamic raw);
+  @protected
+  NamedCrdtClockInput dco_decode_named_crdt_clock_input(dynamic raw);
 
-@protected NoteCreateInput dco_decode_note_create_input(dynamic raw);
+  @protected
+  NoteCreateInput dco_decode_note_create_input(dynamic raw);
 
-@protected NoteDayGroup dco_decode_note_day_group(dynamic raw);
+  @protected
+  NoteDayGroup dco_decode_note_day_group(dynamic raw);
 
-@protected NoteDayInput dco_decode_note_day_input(dynamic raw);
+  @protected
+  NoteDayInput dco_decode_note_day_input(dynamic raw);
 
-@protected NoteMutationPlan dco_decode_note_mutation_plan(dynamic raw);
+  @protected
+  NoteMutationPlan dco_decode_note_mutation_plan(dynamic raw);
 
-@protected NoteMutationState dco_decode_note_mutation_state(dynamic raw);
+  @protected
+  NoteMutationState dco_decode_note_mutation_state(dynamic raw);
 
-@protected NoteUpdateInput dco_decode_note_update_input(dynamic raw);
+  @protected
+  NoteUpdateInput dco_decode_note_update_input(dynamic raw);
 
-@protected NotebookCreateInput dco_decode_notebook_create_input(dynamic raw);
+  @protected
+  NotebookCreateInput dco_decode_notebook_create_input(dynamic raw);
 
-@protected NotebookMutationPlan dco_decode_notebook_mutation_plan(dynamic raw);
+  @protected
+  NotebookMutationPlan dco_decode_notebook_mutation_plan(dynamic raw);
 
-@protected NotebookMutationState dco_decode_notebook_mutation_state(dynamic raw);
+  @protected
+  NotebookMutationState dco_decode_notebook_mutation_state(dynamic raw);
 
-@protected NotebookNodeInput dco_decode_notebook_node_input(dynamic raw);
+  @protected
+  NotebookNodeInput dco_decode_notebook_node_input(dynamic raw);
 
-@protected NotebookPathOutput dco_decode_notebook_path_output(dynamic raw);
+  @protected
+  NotebookPathOutput dco_decode_notebook_path_output(dynamic raw);
 
-@protected NotebookUpdateInput dco_decode_notebook_update_input(dynamic raw);
+  @protected
+  NotebookUpdateInput dco_decode_notebook_update_input(dynamic raw);
 
-@protected NullableIntMutation dco_decode_nullable_int_mutation(dynamic raw);
+  @protected
+  NullableIntMutation dco_decode_nullable_int_mutation(dynamic raw);
 
-@protected NullableStringMutation dco_decode_nullable_string_mutation(dynamic raw);
+  @protected
+  NullableStringMutation dco_decode_nullable_string_mutation(dynamic raw);
 
-@protected NullableTimestampMutation dco_decode_nullable_timestamp_mutation(dynamic raw);
+  @protected
+  NullableTimestampMutation dco_decode_nullable_timestamp_mutation(dynamic raw);
 
-@protected OblixAttachmentGroupInputDto dco_decode_oblix_attachment_group_input_dto(dynamic raw);
+  @protected
+  OblixAttachmentGroupInputDto dco_decode_oblix_attachment_group_input_dto(
+    dynamic raw,
+  );
 
-@protected OblixAttachmentInputDto dco_decode_oblix_attachment_input_dto(dynamic raw);
+  @protected
+  OblixAttachmentInputDto dco_decode_oblix_attachment_input_dto(dynamic raw);
 
-@protected OblixDecodeRequestDto dco_decode_oblix_decode_request_dto(dynamic raw);
+  @protected
+  OblixDecodeRequestDto dco_decode_oblix_decode_request_dto(dynamic raw);
 
-@protected OblixEncodeRequestDto dco_decode_oblix_encode_request_dto(dynamic raw);
+  @protected
+  OblixEncodeRequestDto dco_decode_oblix_encode_request_dto(dynamic raw);
 
-@protected OblixNoteInputDto dco_decode_oblix_note_input_dto(dynamic raw);
+  @protected
+  OblixNoteInputDto dco_decode_oblix_note_input_dto(dynamic raw);
 
-@protected OblixNotebookInputDto dco_decode_oblix_notebook_input_dto(dynamic raw);
+  @protected
+  OblixNotebookInputDto dco_decode_oblix_notebook_input_dto(dynamic raw);
 
-@protected OcrLineInput dco_decode_ocr_line_input(dynamic raw);
+  @protected
+  OcrLineInput dco_decode_ocr_line_input(dynamic raw);
 
-@protected OcrPageInput dco_decode_ocr_page_input(dynamic raw);
+  @protected
+  OcrPageInput dco_decode_ocr_page_input(dynamic raw);
 
-@protected OcrShapeOptions dco_decode_ocr_shape_options(dynamic raw);
+  @protected
+  OcrShapeOptions dco_decode_ocr_shape_options(dynamic raw);
 
-@protected String? dco_decode_opt_String(dynamic raw);
+  @protected
+  OcrWordInput dco_decode_ocr_word_input(dynamic raw);
 
-@protected bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
+  @protected
+  String? dco_decode_opt_String(dynamic raw);
 
-@protected CivilDate? dco_decode_opt_box_autoadd_civil_date(dynamic raw);
+  @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
-@protected CivilTime? dco_decode_opt_box_autoadd_civil_time(dynamic raw);
+  @protected
+  CivilDate? dco_decode_opt_box_autoadd_civil_date(dynamic raw);
 
-@protected double? dco_decode_opt_box_autoadd_f_32(dynamic raw);
+  @protected
+  CivilTime? dco_decode_opt_box_autoadd_civil_time(dynamic raw);
 
-@protected int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
+  @protected
+  double? dco_decode_opt_box_autoadd_f_32(dynamic raw);
 
-@protected PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+  @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
 
-@protected RecurrenceRule? dco_decode_opt_box_autoadd_recurrence_rule(dynamic raw);
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
-@protected ReminderInstant? dco_decode_opt_box_autoadd_reminder_instant(dynamic raw);
+  @protected
+  RecurrenceRule? dco_decode_opt_box_autoadd_recurrence_rule(dynamic raw);
 
-@protected List<String>? dco_decode_opt_list_String(dynamic raw);
+  @protected
+  ReminderInstant? dco_decode_opt_box_autoadd_reminder_instant(dynamic raw);
 
-@protected List<TextDeltaOp>? dco_decode_opt_list_text_delta_op(dynamic raw);
+  @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw);
 
-@protected OutboxRetirementOutput dco_decode_outbox_retirement_output(dynamic raw);
+  @protected
+  List<TextDeltaOp>? dco_decode_opt_list_text_delta_op(dynamic raw);
 
-@protected PageLumaSample dco_decode_page_luma_sample(dynamic raw);
+  @protected
+  OutboxRetirementOutput dco_decode_outbox_retirement_output(dynamic raw);
 
-@protected PageMeasure dco_decode_page_measure(dynamic raw);
+  @protected
+  PageLumaSample dco_decode_page_luma_sample(dynamic raw);
 
-@protected PagePrepare dco_decode_page_prepare(dynamic raw);
+  @protected
+  PageMeasure dco_decode_page_measure(dynamic raw);
 
-@protected PageReadingChoice dco_decode_page_reading_choice(dynamic raw);
+  @protected
+  PagePrepare dco_decode_page_prepare(dynamic raw);
 
-@protected PageReadingScore dco_decode_page_reading_score(dynamic raw);
+  @protected
+  PageReadingChoice dco_decode_page_reading_choice(dynamic raw);
 
-@protected PdfPageAssessment dco_decode_pdf_page_assessment(dynamic raw);
+  @protected
+  PageReadingScore dco_decode_page_reading_score(dynamic raw);
 
-@protected PdfPageInput dco_decode_pdf_page_input(dynamic raw);
+  @protected
+  PdfPageAssessment dco_decode_pdf_page_assessment(dynamic raw);
 
-@protected PdfPagePlan dco_decode_pdf_page_plan(dynamic raw);
+  @protected
+  PdfPageInput dco_decode_pdf_page_input(dynamic raw);
 
-@protected PdfTextRun dco_decode_pdf_text_run(dynamic raw);
+  @protected
+  PdfPagePlan dco_decode_pdf_page_plan(dynamic raw);
 
-@protected PendingOutboxFieldSeqs dco_decode_pending_outbox_field_seqs(dynamic raw);
+  @protected
+  PdfTextRun dco_decode_pdf_text_run(dynamic raw);
 
-@protected PendingOutboxRowInput dco_decode_pending_outbox_row_input(dynamic raw);
+  @protected
+  PendingOutboxFieldSeqs dco_decode_pending_outbox_field_seqs(dynamic raw);
 
-@protected PendingOutboxSummaryOutput dco_decode_pending_outbox_summary_output(dynamic raw);
+  @protected
+  PendingOutboxRowInput dco_decode_pending_outbox_row_input(dynamic raw);
 
-@protected QualityVerdict dco_decode_quality_verdict(dynamic raw);
+  @protected
+  PendingOutboxSummaryOutput dco_decode_pending_outbox_summary_output(
+    dynamic raw,
+  );
 
-@protected QuickAddContext dco_decode_quick_add_context(dynamic raw);
+  @protected
+  QualityVerdict dco_decode_quality_verdict(dynamic raw);
 
-@protected QuickAddParse dco_decode_quick_add_parse(dynamic raw);
+  @protected
+  QuickAddContext dco_decode_quick_add_context(dynamic raw);
 
-@protected QuickAddSpan dco_decode_quick_add_span(dynamic raw);
+  @protected
+  QuickAddParse dco_decode_quick_add_parse(dynamic raw);
 
-@protected QuickAddTokenKind dco_decode_quick_add_token_kind(dynamic raw);
+  @protected
+  QuickAddSpan dco_decode_quick_add_span(dynamic raw);
 
-@protected ReadingScore dco_decode_reading_score(dynamic raw);
+  @protected
+  QuickAddTokenKind dco_decode_quick_add_token_kind(dynamic raw);
 
-@protected RecurrenceAdvance dco_decode_recurrence_advance(dynamic raw);
+  @protected
+  ReadingScore dco_decode_reading_score(dynamic raw);
 
-@protected RecurrenceFreq dco_decode_recurrence_freq(dynamic raw);
+  @protected
+  RecurrenceAdvance dco_decode_recurrence_advance(dynamic raw);
 
-@protected RecurrenceMode dco_decode_recurrence_mode(dynamic raw);
+  @protected
+  RecurrenceFreq dco_decode_recurrence_freq(dynamic raw);
 
-@protected RecurrenceRule dco_decode_recurrence_rule(dynamic raw);
+  @protected
+  RecurrenceMode dco_decode_recurrence_mode(dynamic raw);
 
-@protected RedactionSpan dco_decode_redaction_span(dynamic raw);
+  @protected
+  RecurrenceRule dco_decode_recurrence_rule(dynamic raw);
 
-@protected ReminderInstant dco_decode_reminder_instant(dynamic raw);
+  @protected
+  RedactionSpan dco_decode_redaction_span(dynamic raw);
 
-@protected ScanPreset dco_decode_scan_preset(dynamic raw);
+  @protected
+  ReminderInstant dco_decode_reminder_instant(dynamic raw);
 
-@protected ScannedNoteDraft dco_decode_scanned_note_draft(dynamic raw);
+  @protected
+  ScanPreset dco_decode_scan_preset(dynamic raw);
 
-@protected ScriptChoice dco_decode_script_choice(dynamic raw);
+  @protected
+  ScannedNoteDraft dco_decode_scanned_note_draft(dynamic raw);
 
-@protected ScriptReading dco_decode_script_reading(dynamic raw);
+  @protected
+  ScriptChoice dco_decode_script_choice(dynamic raw);
 
-@protected ScriptReport dco_decode_script_report(dynamic raw);
+  @protected
+  ScriptReading dco_decode_script_reading(dynamic raw);
 
-@protected SortAssignment dco_decode_sort_assignment(dynamic raw);
+  @protected
+  ScriptReport dco_decode_script_report(dynamic raw);
 
-@protected SuggestedAction dco_decode_suggested_action(dynamic raw);
+  @protected
+  SortAssignment dco_decode_sort_assignment(dynamic raw);
 
-@protected SyncBatchEntryInput dco_decode_sync_batch_entry_input(dynamic raw);
+  @protected
+  SuggestedAction dco_decode_suggested_action(dynamic raw);
 
-@protected SyncSettlementPlan dco_decode_sync_settlement_plan(dynamic raw);
+  @protected
+  SyncBatchEntryInput dco_decode_sync_batch_entry_input(dynamic raw);
 
-@protected TaskCreateInput dco_decode_task_create_input(dynamic raw);
+  @protected
+  SyncSettlementPlan dco_decode_sync_settlement_plan(dynamic raw);
 
-@protected TaskMutationPlan dco_decode_task_mutation_plan(dynamic raw);
+  @protected
+  TaskCreateInput dco_decode_task_create_input(dynamic raw);
 
-@protected TaskMutationState dco_decode_task_mutation_state(dynamic raw);
+  @protected
+  TaskMutationPlan dco_decode_task_mutation_plan(dynamic raw);
 
-@protected TaskRow dco_decode_task_row(dynamic raw);
+  @protected
+  TaskMutationState dco_decode_task_mutation_state(dynamic raw);
 
-@protected TaskSection dco_decode_task_section(dynamic raw);
+  @protected
+  TaskRow dco_decode_task_row(dynamic raw);
 
-@protected TaskSectionKind dco_decode_task_section_kind(dynamic raw);
+  @protected
+  TaskSection dco_decode_task_section(dynamic raw);
 
-@protected TaskSort dco_decode_task_sort(dynamic raw);
+  @protected
+  TaskSectionKind dco_decode_task_section_kind(dynamic raw);
 
-@protected TaskUpdateInput dco_decode_task_update_input(dynamic raw);
+  @protected
+  TaskSort dco_decode_task_sort(dynamic raw);
 
-@protected TaskViewContext dco_decode_task_view_context(dynamic raw);
+  @protected
+  TaskUpdateInput dco_decode_task_update_input(dynamic raw);
 
-@protected TaskViewInput dco_decode_task_view_input(dynamic raw);
+  @protected
+  TaskViewContext dco_decode_task_view_context(dynamic raw);
 
-@protected TaskViewPlan dco_decode_task_view_plan(dynamic raw);
+  @protected
+  TaskViewInput dco_decode_task_view_input(dynamic raw);
 
-@protected TextDeltaOp dco_decode_text_delta_op(dynamic raw);
+  @protected
+  TaskViewPlan dco_decode_task_view_plan(dynamic raw);
 
-@protected TextLayer dco_decode_text_layer(dynamic raw);
+  @protected
+  TextDeltaOp dco_decode_text_delta_op(dynamic raw);
 
-@protected TextLayerError dco_decode_text_layer_error(dynamic raw);
+  @protected
+  TextLayer dco_decode_text_layer(dynamic raw);
 
-@protected TextLayerErrorKind dco_decode_text_layer_error_kind(dynamic raw);
+  @protected
+  TextLayerError dco_decode_text_layer_error(dynamic raw);
 
-@protected TextLayerHit dco_decode_text_layer_hit(dynamic raw);
+  @protected
+  TextLayerErrorKind dco_decode_text_layer_error_kind(dynamic raw);
 
-@protected TextLayerLine dco_decode_text_layer_line(dynamic raw);
+  @protected
+  TextLayerHit dco_decode_text_layer_hit(dynamic raw);
 
-@protected TextLayerPage dco_decode_text_layer_page(dynamic raw);
+  @protected
+  TextLayerLine dco_decode_text_layer_line(dynamic raw);
 
-@protected TextOperationResult dco_decode_text_operation_result(dynamic raw);
+  @protected
+  TextLayerPage dco_decode_text_layer_page(dynamic raw);
 
-@protected TextScript dco_decode_text_script(dynamic raw);
+  @protected
+  TextLayerWord dco_decode_text_layer_word(dynamic raw);
 
-@protected int dco_decode_u_32(dynamic raw);
+  @protected
+  TextOperationResult dco_decode_text_operation_result(dynamic raw);
 
-@protected int dco_decode_u_8(dynamic raw);
+  @protected
+  TextScript dco_decode_text_script(dynamic raw);
 
-@protected void dco_decode_unit(dynamic raw);
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
-@protected String sse_decode_String(SseDeserializer deserializer);
+  @protected
+  int dco_decode_u_8(dynamic raw);
 
-@protected ActionKind sse_decode_action_kind(SseDeserializer deserializer);
+  @protected
+  void dco_decode_unit(dynamic raw);
 
-@protected bool sse_decode_bool(SseDeserializer deserializer);
+  @protected
+  String sse_decode_String(SseDeserializer deserializer);
 
-@protected bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
+  @protected
+  ActionKind sse_decode_action_kind(SseDeserializer deserializer);
 
-@protected CivilDate sse_decode_box_autoadd_civil_date(SseDeserializer deserializer);
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer);
 
-@protected CivilTime sse_decode_box_autoadd_civil_time(SseDeserializer deserializer);
+  @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
 
-@protected EntityOptions sse_decode_box_autoadd_entity_options(SseDeserializer deserializer);
+  @protected
+  CivilDate sse_decode_box_autoadd_civil_date(SseDeserializer deserializer);
 
-@protected EpubExportRequestDto sse_decode_box_autoadd_epub_export_request_dto(SseDeserializer deserializer);
+  @protected
+  CivilTime sse_decode_box_autoadd_civil_time(SseDeserializer deserializer);
 
-@protected ExportNoteInput sse_decode_box_autoadd_export_note_input(SseDeserializer deserializer);
+  @protected
+  EntityOptions sse_decode_box_autoadd_entity_options(
+    SseDeserializer deserializer,
+  );
 
-@protected double sse_decode_box_autoadd_f_32(SseDeserializer deserializer);
+  @protected
+  EpubExportRequestDto sse_decode_box_autoadd_epub_export_request_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
+  @protected
+  ExportNoteInput sse_decode_box_autoadd_export_note_input(
+    SseDeserializer deserializer,
+  );
 
-@protected PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+  @protected
+  double sse_decode_box_autoadd_f_32(SseDeserializer deserializer);
 
-@protected NoteCreateInput sse_decode_box_autoadd_note_create_input(SseDeserializer deserializer);
+  @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
 
-@protected NoteMutationState sse_decode_box_autoadd_note_mutation_state(SseDeserializer deserializer);
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
-@protected NoteUpdateInput sse_decode_box_autoadd_note_update_input(SseDeserializer deserializer);
+  @protected
+  NoteCreateInput sse_decode_box_autoadd_note_create_input(
+    SseDeserializer deserializer,
+  );
 
-@protected NotebookCreateInput sse_decode_box_autoadd_notebook_create_input(SseDeserializer deserializer);
+  @protected
+  NoteMutationState sse_decode_box_autoadd_note_mutation_state(
+    SseDeserializer deserializer,
+  );
 
-@protected NotebookMutationState sse_decode_box_autoadd_notebook_mutation_state(SseDeserializer deserializer);
+  @protected
+  NoteUpdateInput sse_decode_box_autoadd_note_update_input(
+    SseDeserializer deserializer,
+  );
 
-@protected NotebookUpdateInput sse_decode_box_autoadd_notebook_update_input(SseDeserializer deserializer);
+  @protected
+  NotebookCreateInput sse_decode_box_autoadd_notebook_create_input(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixDecodeRequestDto sse_decode_box_autoadd_oblix_decode_request_dto(SseDeserializer deserializer);
+  @protected
+  NotebookMutationState sse_decode_box_autoadd_notebook_mutation_state(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixEncodeRequestDto sse_decode_box_autoadd_oblix_encode_request_dto(SseDeserializer deserializer);
+  @protected
+  NotebookUpdateInput sse_decode_box_autoadd_notebook_update_input(
+    SseDeserializer deserializer,
+  );
 
-@protected OcrPageInput sse_decode_box_autoadd_ocr_page_input(SseDeserializer deserializer);
+  @protected
+  OblixDecodeRequestDto sse_decode_box_autoadd_oblix_decode_request_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected OcrShapeOptions sse_decode_box_autoadd_ocr_shape_options(SseDeserializer deserializer);
+  @protected
+  OblixEncodeRequestDto sse_decode_box_autoadd_oblix_encode_request_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected PageLumaSample sse_decode_box_autoadd_page_luma_sample(SseDeserializer deserializer);
+  @protected
+  OcrPageInput sse_decode_box_autoadd_ocr_page_input(
+    SseDeserializer deserializer,
+  );
 
-@protected PageMeasure sse_decode_box_autoadd_page_measure(SseDeserializer deserializer);
+  @protected
+  OcrShapeOptions sse_decode_box_autoadd_ocr_shape_options(
+    SseDeserializer deserializer,
+  );
 
-@protected PagePrepare sse_decode_box_autoadd_page_prepare(SseDeserializer deserializer);
+  @protected
+  PageLumaSample sse_decode_box_autoadd_page_luma_sample(
+    SseDeserializer deserializer,
+  );
 
-@protected PdfPageInput sse_decode_box_autoadd_pdf_page_input(SseDeserializer deserializer);
+  @protected
+  PageMeasure sse_decode_box_autoadd_page_measure(SseDeserializer deserializer);
 
-@protected QuickAddContext sse_decode_box_autoadd_quick_add_context(SseDeserializer deserializer);
+  @protected
+  PagePrepare sse_decode_box_autoadd_page_prepare(SseDeserializer deserializer);
 
-@protected ReadingScore sse_decode_box_autoadd_reading_score(SseDeserializer deserializer);
+  @protected
+  PageReadingScore sse_decode_box_autoadd_page_reading_score(
+    SseDeserializer deserializer,
+  );
 
-@protected RecurrenceRule sse_decode_box_autoadd_recurrence_rule(SseDeserializer deserializer);
+  @protected
+  PdfPageInput sse_decode_box_autoadd_pdf_page_input(
+    SseDeserializer deserializer,
+  );
 
-@protected ReminderInstant sse_decode_box_autoadd_reminder_instant(SseDeserializer deserializer);
+  @protected
+  QuickAddContext sse_decode_box_autoadd_quick_add_context(
+    SseDeserializer deserializer,
+  );
 
-@protected ScriptReading sse_decode_box_autoadd_script_reading(SseDeserializer deserializer);
+  @protected
+  ReadingScore sse_decode_box_autoadd_reading_score(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskCreateInput sse_decode_box_autoadd_task_create_input(SseDeserializer deserializer);
+  @protected
+  RecurrenceRule sse_decode_box_autoadd_recurrence_rule(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskMutationState sse_decode_box_autoadd_task_mutation_state(SseDeserializer deserializer);
+  @protected
+  ReminderInstant sse_decode_box_autoadd_reminder_instant(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskUpdateInput sse_decode_box_autoadd_task_update_input(SseDeserializer deserializer);
+  @protected
+  ScriptReading sse_decode_box_autoadd_script_reading(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskViewContext sse_decode_box_autoadd_task_view_context(SseDeserializer deserializer);
+  @protected
+  TaskCreateInput sse_decode_box_autoadd_task_create_input(
+    SseDeserializer deserializer,
+  );
 
-@protected TextLayer sse_decode_box_autoadd_text_layer(SseDeserializer deserializer);
+  @protected
+  TaskMutationState sse_decode_box_autoadd_task_mutation_state(
+    SseDeserializer deserializer,
+  );
 
-@protected CalendarDay sse_decode_calendar_day(SseDeserializer deserializer);
+  @protected
+  TaskUpdateInput sse_decode_box_autoadd_task_update_input(
+    SseDeserializer deserializer,
+  );
 
-@protected CaptureQuality sse_decode_capture_quality(SseDeserializer deserializer);
+  @protected
+  TaskViewContext sse_decode_box_autoadd_task_view_context(
+    SseDeserializer deserializer,
+  );
 
-@protected CivilDate sse_decode_civil_date(SseDeserializer deserializer);
+  @protected
+  TextLayer sse_decode_box_autoadd_text_layer(SseDeserializer deserializer);
 
-@protected CivilTime sse_decode_civil_time(SseDeserializer deserializer);
+  @protected
+  CalendarDay sse_decode_calendar_day(SseDeserializer deserializer);
 
-@protected CodecErrorDto sse_decode_codec_error_dto(SseDeserializer deserializer);
+  @protected
+  CaptureQuality sse_decode_capture_quality(SseDeserializer deserializer);
 
-@protected CodecErrorKindDto sse_decode_codec_error_kind_dto(SseDeserializer deserializer);
+  @protected
+  CivilDate sse_decode_civil_date(SseDeserializer deserializer);
 
-@protected CrdtClockInput sse_decode_crdt_clock_input(SseDeserializer deserializer);
+  @protected
+  CivilTime sse_decode_civil_time(SseDeserializer deserializer);
 
-@protected CrdtFieldInput sse_decode_crdt_field_input(SseDeserializer deserializer);
+  @protected
+  CodecErrorDto sse_decode_codec_error_dto(SseDeserializer deserializer);
 
-@protected Entity sse_decode_entity(SseDeserializer deserializer);
+  @protected
+  CodecErrorKindDto sse_decode_codec_error_kind_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected EntityKind sse_decode_entity_kind(SseDeserializer deserializer);
+  @protected
+  CrdtClockInput sse_decode_crdt_clock_input(SseDeserializer deserializer);
 
-@protected EntityOptions sse_decode_entity_options(SseDeserializer deserializer);
+  @protected
+  CrdtFieldInput sse_decode_crdt_field_input(SseDeserializer deserializer);
 
-@protected EpubExportRequestDto sse_decode_epub_export_request_dto(SseDeserializer deserializer);
+  @protected
+  Entity sse_decode_entity(SseDeserializer deserializer);
 
-@protected EpubNoteInputDto sse_decode_epub_note_input_dto(SseDeserializer deserializer);
+  @protected
+  EntityKind sse_decode_entity_kind(SseDeserializer deserializer);
 
-@protected ExportNoteInput sse_decode_export_note_input(SseDeserializer deserializer);
+  @protected
+  EntityOptions sse_decode_entity_options(SseDeserializer deserializer);
 
-@protected ExportTextFileOutput sse_decode_export_text_file_output(SseDeserializer deserializer);
+  @protected
+  EpubExportRequestDto sse_decode_epub_export_request_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected double sse_decode_f_32(SseDeserializer deserializer);
+  @protected
+  EpubNoteInputDto sse_decode_epub_note_input_dto(SseDeserializer deserializer);
 
-@protected int sse_decode_i_32(SseDeserializer deserializer);
+  @protected
+  ExportNoteInput sse_decode_export_note_input(SseDeserializer deserializer);
 
-@protected PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+  @protected
+  ExportTextFileOutput sse_decode_export_text_file_output(
+    SseDeserializer deserializer,
+  );
 
-@protected ImportBundleDto sse_decode_import_bundle_dto(SseDeserializer deserializer);
+  @protected
+  double sse_decode_f_32(SseDeserializer deserializer);
 
-@protected ImportedAttachmentDto sse_decode_imported_attachment_dto(SseDeserializer deserializer);
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer);
 
-@protected ImportedNoteDto sse_decode_imported_note_dto(SseDeserializer deserializer);
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
-@protected List<String> sse_decode_list_String(SseDeserializer deserializer);
+  @protected
+  ImportBundleDto sse_decode_import_bundle_dto(SseDeserializer deserializer);
 
-@protected List<CalendarDay> sse_decode_list_calendar_day(SseDeserializer deserializer);
+  @protected
+  ImportedAttachmentDto sse_decode_imported_attachment_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<CrdtFieldInput> sse_decode_list_crdt_field_input(SseDeserializer deserializer);
+  @protected
+  ImportedNoteDto sse_decode_imported_note_dto(SseDeserializer deserializer);
 
-@protected List<Entity> sse_decode_list_entity(SseDeserializer deserializer);
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
 
-@protected List<EntityKind> sse_decode_list_entity_kind(SseDeserializer deserializer);
+  @protected
+  List<CalendarDay> sse_decode_list_calendar_day(SseDeserializer deserializer);
 
-@protected List<EpubNoteInputDto> sse_decode_list_epub_note_input_dto(SseDeserializer deserializer);
+  @protected
+  List<CrdtFieldInput> sse_decode_list_crdt_field_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<ExportNoteInput> sse_decode_list_export_note_input(SseDeserializer deserializer);
+  @protected
+  List<Entity> sse_decode_list_entity(SseDeserializer deserializer);
 
-@protected List<ExportTextFileOutput> sse_decode_list_export_text_file_output(SseDeserializer deserializer);
+  @protected
+  List<EntityKind> sse_decode_list_entity_kind(SseDeserializer deserializer);
 
-@protected List<ImportedAttachmentDto> sse_decode_list_imported_attachment_dto(SseDeserializer deserializer);
+  @protected
+  List<EpubNoteInputDto> sse_decode_list_epub_note_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<ImportedNoteDto> sse_decode_list_imported_note_dto(SseDeserializer deserializer);
+  @protected
+  List<ExportNoteInput> sse_decode_list_export_note_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
+  @protected
+  List<ExportTextFileOutput> sse_decode_list_export_text_file_output(
+    SseDeserializer deserializer,
+  );
 
-@protected List<NamedCrdtClockInput> sse_decode_list_named_crdt_clock_input(SseDeserializer deserializer);
+  @protected
+  List<ImportedAttachmentDto> sse_decode_list_imported_attachment_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<NoteDayGroup> sse_decode_list_note_day_group(SseDeserializer deserializer);
+  @protected
+  List<ImportedNoteDto> sse_decode_list_imported_note_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<NoteDayInput> sse_decode_list_note_day_input(SseDeserializer deserializer);
+  @protected
+  List<List<String>> sse_decode_list_list_String(SseDeserializer deserializer);
 
-@protected List<NotebookNodeInput> sse_decode_list_notebook_node_input(SseDeserializer deserializer);
+  @protected
+  List<NamedCrdtClockInput> sse_decode_list_named_crdt_clock_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<NotebookPathOutput> sse_decode_list_notebook_path_output(SseDeserializer deserializer);
+  @protected
+  List<NoteDayGroup> sse_decode_list_note_day_group(
+    SseDeserializer deserializer,
+  );
 
-@protected List<OblixAttachmentGroupInputDto> sse_decode_list_oblix_attachment_group_input_dto(SseDeserializer deserializer);
+  @protected
+  List<NoteDayInput> sse_decode_list_note_day_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<OblixAttachmentInputDto> sse_decode_list_oblix_attachment_input_dto(SseDeserializer deserializer);
+  @protected
+  List<NotebookNodeInput> sse_decode_list_notebook_node_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<OblixNoteInputDto> sse_decode_list_oblix_note_input_dto(SseDeserializer deserializer);
+  @protected
+  List<NotebookPathOutput> sse_decode_list_notebook_path_output(
+    SseDeserializer deserializer,
+  );
 
-@protected List<OblixNotebookInputDto> sse_decode_list_oblix_notebook_input_dto(SseDeserializer deserializer);
+  @protected
+  List<OblixAttachmentGroupInputDto>
+  sse_decode_list_oblix_attachment_group_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<OcrLineInput> sse_decode_list_ocr_line_input(SseDeserializer deserializer);
+  @protected
+  List<OblixAttachmentInputDto> sse_decode_list_oblix_attachment_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<OcrPageInput> sse_decode_list_ocr_page_input(SseDeserializer deserializer);
+  @protected
+  List<OblixNoteInputDto> sse_decode_list_oblix_note_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<PageReadingScore> sse_decode_list_page_reading_score(SseDeserializer deserializer);
+  @protected
+  List<OblixNotebookInputDto> sse_decode_list_oblix_notebook_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected List<PdfPageInput> sse_decode_list_pdf_page_input(SseDeserializer deserializer);
+  @protected
+  List<OcrLineInput> sse_decode_list_ocr_line_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<PdfTextRun> sse_decode_list_pdf_text_run(SseDeserializer deserializer);
+  @protected
+  List<OcrPageInput> sse_decode_list_ocr_page_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<PendingOutboxFieldSeqs> sse_decode_list_pending_outbox_field_seqs(SseDeserializer deserializer);
+  @protected
+  List<OcrWordInput> sse_decode_list_ocr_word_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<PendingOutboxRowInput> sse_decode_list_pending_outbox_row_input(SseDeserializer deserializer);
+  @protected
+  List<PagePrepare> sse_decode_list_page_prepare(SseDeserializer deserializer);
 
-@protected Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer);
+  @protected
+  List<PageReadingScore> sse_decode_list_page_reading_score(
+    SseDeserializer deserializer,
+  );
 
-@protected List<int> sse_decode_list_prim_i_32_loose(SseDeserializer deserializer);
+  @protected
+  List<PdfPageInput> sse_decode_list_pdf_page_input(
+    SseDeserializer deserializer,
+  );
 
-@protected Int32List sse_decode_list_prim_i_32_strict(SseDeserializer deserializer);
+  @protected
+  List<PdfTextRun> sse_decode_list_pdf_text_run(SseDeserializer deserializer);
 
-@protected Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
+  @protected
+  List<PendingOutboxFieldSeqs> sse_decode_list_pending_outbox_field_seqs(
+    SseDeserializer deserializer,
+  );
 
-@protected Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+  @protected
+  List<PendingOutboxRowInput> sse_decode_list_pending_outbox_row_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
+  @protected
+  Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer);
 
-@protected Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+  @protected
+  List<int> sse_decode_list_prim_i_32_loose(SseDeserializer deserializer);
 
-@protected List<QuickAddSpan> sse_decode_list_quick_add_span(SseDeserializer deserializer);
+  @protected
+  Int32List sse_decode_list_prim_i_32_strict(SseDeserializer deserializer);
 
-@protected List<ReadingScore> sse_decode_list_reading_score(SseDeserializer deserializer);
+  @protected
+  Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
 
-@protected List<RedactionSpan> sse_decode_list_redaction_span(SseDeserializer deserializer);
+  @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
-@protected List<ScriptReading> sse_decode_list_script_reading(SseDeserializer deserializer);
+  @protected
+  List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
-@protected List<SortAssignment> sse_decode_list_sort_assignment(SseDeserializer deserializer);
+  @protected
+  Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
-@protected List<SuggestedAction> sse_decode_list_suggested_action(SseDeserializer deserializer);
+  @protected
+  List<QuickAddSpan> sse_decode_list_quick_add_span(
+    SseDeserializer deserializer,
+  );
 
-@protected List<SyncBatchEntryInput> sse_decode_list_sync_batch_entry_input(SseDeserializer deserializer);
+  @protected
+  List<ReadingScore> sse_decode_list_reading_score(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TaskRow> sse_decode_list_task_row(SseDeserializer deserializer);
+  @protected
+  List<RedactionSpan> sse_decode_list_redaction_span(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TaskSection> sse_decode_list_task_section(SseDeserializer deserializer);
+  @protected
+  List<ScriptReading> sse_decode_list_script_reading(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TaskViewInput> sse_decode_list_task_view_input(SseDeserializer deserializer);
+  @protected
+  List<SortAssignment> sse_decode_list_sort_assignment(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TextDeltaOp> sse_decode_list_text_delta_op(SseDeserializer deserializer);
+  @protected
+  List<SuggestedAction> sse_decode_list_suggested_action(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TextLayerHit> sse_decode_list_text_layer_hit(SseDeserializer deserializer);
+  @protected
+  List<SyncBatchEntryInput> sse_decode_list_sync_batch_entry_input(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TextLayerLine> sse_decode_list_text_layer_line(SseDeserializer deserializer);
+  @protected
+  List<TaskRow> sse_decode_list_task_row(SseDeserializer deserializer);
 
-@protected List<TextLayerPage> sse_decode_list_text_layer_page(SseDeserializer deserializer);
+  @protected
+  List<TaskSection> sse_decode_list_task_section(SseDeserializer deserializer);
 
-@protected MarkdownImportOutput sse_decode_markdown_import_output(SseDeserializer deserializer);
+  @protected
+  List<TaskViewInput> sse_decode_list_task_view_input(
+    SseDeserializer deserializer,
+  );
 
-@protected MutationAction sse_decode_mutation_action(SseDeserializer deserializer);
+  @protected
+  List<TextDeltaOp> sse_decode_list_text_delta_op(SseDeserializer deserializer);
 
-@protected MutationSelection sse_decode_mutation_selection(SseDeserializer deserializer);
+  @protected
+  List<TextLayerHit> sse_decode_list_text_layer_hit(
+    SseDeserializer deserializer,
+  );
 
-@protected NamedCrdtClockInput sse_decode_named_crdt_clock_input(SseDeserializer deserializer);
+  @protected
+  List<TextLayerLine> sse_decode_list_text_layer_line(
+    SseDeserializer deserializer,
+  );
 
-@protected NoteCreateInput sse_decode_note_create_input(SseDeserializer deserializer);
+  @protected
+  List<TextLayerPage> sse_decode_list_text_layer_page(
+    SseDeserializer deserializer,
+  );
 
-@protected NoteDayGroup sse_decode_note_day_group(SseDeserializer deserializer);
+  @protected
+  List<TextLayerWord> sse_decode_list_text_layer_word(
+    SseDeserializer deserializer,
+  );
 
-@protected NoteDayInput sse_decode_note_day_input(SseDeserializer deserializer);
+  @protected
+  MarkdownImportOutput sse_decode_markdown_import_output(
+    SseDeserializer deserializer,
+  );
 
-@protected NoteMutationPlan sse_decode_note_mutation_plan(SseDeserializer deserializer);
+  @protected
+  MutationAction sse_decode_mutation_action(SseDeserializer deserializer);
 
-@protected NoteMutationState sse_decode_note_mutation_state(SseDeserializer deserializer);
+  @protected
+  MutationSelection sse_decode_mutation_selection(SseDeserializer deserializer);
 
-@protected NoteUpdateInput sse_decode_note_update_input(SseDeserializer deserializer);
+  @protected
+  NamedCrdtClockInput sse_decode_named_crdt_clock_input(
+    SseDeserializer deserializer,
+  );
 
-@protected NotebookCreateInput sse_decode_notebook_create_input(SseDeserializer deserializer);
+  @protected
+  NoteCreateInput sse_decode_note_create_input(SseDeserializer deserializer);
 
-@protected NotebookMutationPlan sse_decode_notebook_mutation_plan(SseDeserializer deserializer);
+  @protected
+  NoteDayGroup sse_decode_note_day_group(SseDeserializer deserializer);
 
-@protected NotebookMutationState sse_decode_notebook_mutation_state(SseDeserializer deserializer);
+  @protected
+  NoteDayInput sse_decode_note_day_input(SseDeserializer deserializer);
 
-@protected NotebookNodeInput sse_decode_notebook_node_input(SseDeserializer deserializer);
+  @protected
+  NoteMutationPlan sse_decode_note_mutation_plan(SseDeserializer deserializer);
 
-@protected NotebookPathOutput sse_decode_notebook_path_output(SseDeserializer deserializer);
+  @protected
+  NoteMutationState sse_decode_note_mutation_state(
+    SseDeserializer deserializer,
+  );
 
-@protected NotebookUpdateInput sse_decode_notebook_update_input(SseDeserializer deserializer);
+  @protected
+  NoteUpdateInput sse_decode_note_update_input(SseDeserializer deserializer);
 
-@protected NullableIntMutation sse_decode_nullable_int_mutation(SseDeserializer deserializer);
+  @protected
+  NotebookCreateInput sse_decode_notebook_create_input(
+    SseDeserializer deserializer,
+  );
 
-@protected NullableStringMutation sse_decode_nullable_string_mutation(SseDeserializer deserializer);
+  @protected
+  NotebookMutationPlan sse_decode_notebook_mutation_plan(
+    SseDeserializer deserializer,
+  );
 
-@protected NullableTimestampMutation sse_decode_nullable_timestamp_mutation(SseDeserializer deserializer);
+  @protected
+  NotebookMutationState sse_decode_notebook_mutation_state(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixAttachmentGroupInputDto sse_decode_oblix_attachment_group_input_dto(SseDeserializer deserializer);
+  @protected
+  NotebookNodeInput sse_decode_notebook_node_input(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixAttachmentInputDto sse_decode_oblix_attachment_input_dto(SseDeserializer deserializer);
+  @protected
+  NotebookPathOutput sse_decode_notebook_path_output(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixDecodeRequestDto sse_decode_oblix_decode_request_dto(SseDeserializer deserializer);
+  @protected
+  NotebookUpdateInput sse_decode_notebook_update_input(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixEncodeRequestDto sse_decode_oblix_encode_request_dto(SseDeserializer deserializer);
+  @protected
+  NullableIntMutation sse_decode_nullable_int_mutation(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixNoteInputDto sse_decode_oblix_note_input_dto(SseDeserializer deserializer);
+  @protected
+  NullableStringMutation sse_decode_nullable_string_mutation(
+    SseDeserializer deserializer,
+  );
 
-@protected OblixNotebookInputDto sse_decode_oblix_notebook_input_dto(SseDeserializer deserializer);
+  @protected
+  NullableTimestampMutation sse_decode_nullable_timestamp_mutation(
+    SseDeserializer deserializer,
+  );
 
-@protected OcrLineInput sse_decode_ocr_line_input(SseDeserializer deserializer);
+  @protected
+  OblixAttachmentGroupInputDto sse_decode_oblix_attachment_group_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected OcrPageInput sse_decode_ocr_page_input(SseDeserializer deserializer);
+  @protected
+  OblixAttachmentInputDto sse_decode_oblix_attachment_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected OcrShapeOptions sse_decode_ocr_shape_options(SseDeserializer deserializer);
+  @protected
+  OblixDecodeRequestDto sse_decode_oblix_decode_request_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected String? sse_decode_opt_String(SseDeserializer deserializer);
+  @protected
+  OblixEncodeRequestDto sse_decode_oblix_encode_request_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
+  @protected
+  OblixNoteInputDto sse_decode_oblix_note_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected CivilDate? sse_decode_opt_box_autoadd_civil_date(SseDeserializer deserializer);
+  @protected
+  OblixNotebookInputDto sse_decode_oblix_notebook_input_dto(
+    SseDeserializer deserializer,
+  );
 
-@protected CivilTime? sse_decode_opt_box_autoadd_civil_time(SseDeserializer deserializer);
+  @protected
+  OcrLineInput sse_decode_ocr_line_input(SseDeserializer deserializer);
 
-@protected double? sse_decode_opt_box_autoadd_f_32(SseDeserializer deserializer);
+  @protected
+  OcrPageInput sse_decode_ocr_page_input(SseDeserializer deserializer);
 
-@protected int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
+  @protected
+  OcrShapeOptions sse_decode_ocr_shape_options(SseDeserializer deserializer);
 
-@protected PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+  @protected
+  OcrWordInput sse_decode_ocr_word_input(SseDeserializer deserializer);
 
-@protected RecurrenceRule? sse_decode_opt_box_autoadd_recurrence_rule(SseDeserializer deserializer);
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
 
-@protected ReminderInstant? sse_decode_opt_box_autoadd_reminder_instant(SseDeserializer deserializer);
+  @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
-@protected List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
+  @protected
+  CivilDate? sse_decode_opt_box_autoadd_civil_date(
+    SseDeserializer deserializer,
+  );
 
-@protected List<TextDeltaOp>? sse_decode_opt_list_text_delta_op(SseDeserializer deserializer);
+  @protected
+  CivilTime? sse_decode_opt_box_autoadd_civil_time(
+    SseDeserializer deserializer,
+  );
 
-@protected OutboxRetirementOutput sse_decode_outbox_retirement_output(SseDeserializer deserializer);
+  @protected
+  double? sse_decode_opt_box_autoadd_f_32(SseDeserializer deserializer);
 
-@protected PageLumaSample sse_decode_page_luma_sample(SseDeserializer deserializer);
+  @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
 
-@protected PageMeasure sse_decode_page_measure(SseDeserializer deserializer);
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
 
-@protected PagePrepare sse_decode_page_prepare(SseDeserializer deserializer);
+  @protected
+  RecurrenceRule? sse_decode_opt_box_autoadd_recurrence_rule(
+    SseDeserializer deserializer,
+  );
 
-@protected PageReadingChoice sse_decode_page_reading_choice(SseDeserializer deserializer);
+  @protected
+  ReminderInstant? sse_decode_opt_box_autoadd_reminder_instant(
+    SseDeserializer deserializer,
+  );
 
-@protected PageReadingScore sse_decode_page_reading_score(SseDeserializer deserializer);
+  @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer);
 
-@protected PdfPageAssessment sse_decode_pdf_page_assessment(SseDeserializer deserializer);
+  @protected
+  List<TextDeltaOp>? sse_decode_opt_list_text_delta_op(
+    SseDeserializer deserializer,
+  );
 
-@protected PdfPageInput sse_decode_pdf_page_input(SseDeserializer deserializer);
+  @protected
+  OutboxRetirementOutput sse_decode_outbox_retirement_output(
+    SseDeserializer deserializer,
+  );
 
-@protected PdfPagePlan sse_decode_pdf_page_plan(SseDeserializer deserializer);
+  @protected
+  PageLumaSample sse_decode_page_luma_sample(SseDeserializer deserializer);
 
-@protected PdfTextRun sse_decode_pdf_text_run(SseDeserializer deserializer);
+  @protected
+  PageMeasure sse_decode_page_measure(SseDeserializer deserializer);
 
-@protected PendingOutboxFieldSeqs sse_decode_pending_outbox_field_seqs(SseDeserializer deserializer);
+  @protected
+  PagePrepare sse_decode_page_prepare(SseDeserializer deserializer);
 
-@protected PendingOutboxRowInput sse_decode_pending_outbox_row_input(SseDeserializer deserializer);
+  @protected
+  PageReadingChoice sse_decode_page_reading_choice(
+    SseDeserializer deserializer,
+  );
 
-@protected PendingOutboxSummaryOutput sse_decode_pending_outbox_summary_output(SseDeserializer deserializer);
+  @protected
+  PageReadingScore sse_decode_page_reading_score(SseDeserializer deserializer);
 
-@protected QualityVerdict sse_decode_quality_verdict(SseDeserializer deserializer);
+  @protected
+  PdfPageAssessment sse_decode_pdf_page_assessment(
+    SseDeserializer deserializer,
+  );
 
-@protected QuickAddContext sse_decode_quick_add_context(SseDeserializer deserializer);
+  @protected
+  PdfPageInput sse_decode_pdf_page_input(SseDeserializer deserializer);
 
-@protected QuickAddParse sse_decode_quick_add_parse(SseDeserializer deserializer);
+  @protected
+  PdfPagePlan sse_decode_pdf_page_plan(SseDeserializer deserializer);
 
-@protected QuickAddSpan sse_decode_quick_add_span(SseDeserializer deserializer);
+  @protected
+  PdfTextRun sse_decode_pdf_text_run(SseDeserializer deserializer);
 
-@protected QuickAddTokenKind sse_decode_quick_add_token_kind(SseDeserializer deserializer);
+  @protected
+  PendingOutboxFieldSeqs sse_decode_pending_outbox_field_seqs(
+    SseDeserializer deserializer,
+  );
 
-@protected ReadingScore sse_decode_reading_score(SseDeserializer deserializer);
+  @protected
+  PendingOutboxRowInput sse_decode_pending_outbox_row_input(
+    SseDeserializer deserializer,
+  );
 
-@protected RecurrenceAdvance sse_decode_recurrence_advance(SseDeserializer deserializer);
+  @protected
+  PendingOutboxSummaryOutput sse_decode_pending_outbox_summary_output(
+    SseDeserializer deserializer,
+  );
 
-@protected RecurrenceFreq sse_decode_recurrence_freq(SseDeserializer deserializer);
+  @protected
+  QualityVerdict sse_decode_quality_verdict(SseDeserializer deserializer);
 
-@protected RecurrenceMode sse_decode_recurrence_mode(SseDeserializer deserializer);
+  @protected
+  QuickAddContext sse_decode_quick_add_context(SseDeserializer deserializer);
 
-@protected RecurrenceRule sse_decode_recurrence_rule(SseDeserializer deserializer);
+  @protected
+  QuickAddParse sse_decode_quick_add_parse(SseDeserializer deserializer);
 
-@protected RedactionSpan sse_decode_redaction_span(SseDeserializer deserializer);
+  @protected
+  QuickAddSpan sse_decode_quick_add_span(SseDeserializer deserializer);
 
-@protected ReminderInstant sse_decode_reminder_instant(SseDeserializer deserializer);
+  @protected
+  QuickAddTokenKind sse_decode_quick_add_token_kind(
+    SseDeserializer deserializer,
+  );
 
-@protected ScanPreset sse_decode_scan_preset(SseDeserializer deserializer);
+  @protected
+  ReadingScore sse_decode_reading_score(SseDeserializer deserializer);
 
-@protected ScannedNoteDraft sse_decode_scanned_note_draft(SseDeserializer deserializer);
+  @protected
+  RecurrenceAdvance sse_decode_recurrence_advance(SseDeserializer deserializer);
 
-@protected ScriptChoice sse_decode_script_choice(SseDeserializer deserializer);
+  @protected
+  RecurrenceFreq sse_decode_recurrence_freq(SseDeserializer deserializer);
 
-@protected ScriptReading sse_decode_script_reading(SseDeserializer deserializer);
+  @protected
+  RecurrenceMode sse_decode_recurrence_mode(SseDeserializer deserializer);
 
-@protected ScriptReport sse_decode_script_report(SseDeserializer deserializer);
+  @protected
+  RecurrenceRule sse_decode_recurrence_rule(SseDeserializer deserializer);
 
-@protected SortAssignment sse_decode_sort_assignment(SseDeserializer deserializer);
+  @protected
+  RedactionSpan sse_decode_redaction_span(SseDeserializer deserializer);
 
-@protected SuggestedAction sse_decode_suggested_action(SseDeserializer deserializer);
+  @protected
+  ReminderInstant sse_decode_reminder_instant(SseDeserializer deserializer);
 
-@protected SyncBatchEntryInput sse_decode_sync_batch_entry_input(SseDeserializer deserializer);
+  @protected
+  ScanPreset sse_decode_scan_preset(SseDeserializer deserializer);
 
-@protected SyncSettlementPlan sse_decode_sync_settlement_plan(SseDeserializer deserializer);
+  @protected
+  ScannedNoteDraft sse_decode_scanned_note_draft(SseDeserializer deserializer);
 
-@protected TaskCreateInput sse_decode_task_create_input(SseDeserializer deserializer);
+  @protected
+  ScriptChoice sse_decode_script_choice(SseDeserializer deserializer);
 
-@protected TaskMutationPlan sse_decode_task_mutation_plan(SseDeserializer deserializer);
+  @protected
+  ScriptReading sse_decode_script_reading(SseDeserializer deserializer);
 
-@protected TaskMutationState sse_decode_task_mutation_state(SseDeserializer deserializer);
+  @protected
+  ScriptReport sse_decode_script_report(SseDeserializer deserializer);
 
-@protected TaskRow sse_decode_task_row(SseDeserializer deserializer);
+  @protected
+  SortAssignment sse_decode_sort_assignment(SseDeserializer deserializer);
 
-@protected TaskSection sse_decode_task_section(SseDeserializer deserializer);
+  @protected
+  SuggestedAction sse_decode_suggested_action(SseDeserializer deserializer);
 
-@protected TaskSectionKind sse_decode_task_section_kind(SseDeserializer deserializer);
+  @protected
+  SyncBatchEntryInput sse_decode_sync_batch_entry_input(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskSort sse_decode_task_sort(SseDeserializer deserializer);
+  @protected
+  SyncSettlementPlan sse_decode_sync_settlement_plan(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskUpdateInput sse_decode_task_update_input(SseDeserializer deserializer);
+  @protected
+  TaskCreateInput sse_decode_task_create_input(SseDeserializer deserializer);
 
-@protected TaskViewContext sse_decode_task_view_context(SseDeserializer deserializer);
+  @protected
+  TaskMutationPlan sse_decode_task_mutation_plan(SseDeserializer deserializer);
 
-@protected TaskViewInput sse_decode_task_view_input(SseDeserializer deserializer);
+  @protected
+  TaskMutationState sse_decode_task_mutation_state(
+    SseDeserializer deserializer,
+  );
 
-@protected TaskViewPlan sse_decode_task_view_plan(SseDeserializer deserializer);
+  @protected
+  TaskRow sse_decode_task_row(SseDeserializer deserializer);
 
-@protected TextDeltaOp sse_decode_text_delta_op(SseDeserializer deserializer);
+  @protected
+  TaskSection sse_decode_task_section(SseDeserializer deserializer);
 
-@protected TextLayer sse_decode_text_layer(SseDeserializer deserializer);
+  @protected
+  TaskSectionKind sse_decode_task_section_kind(SseDeserializer deserializer);
 
-@protected TextLayerError sse_decode_text_layer_error(SseDeserializer deserializer);
+  @protected
+  TaskSort sse_decode_task_sort(SseDeserializer deserializer);
 
-@protected TextLayerErrorKind sse_decode_text_layer_error_kind(SseDeserializer deserializer);
+  @protected
+  TaskUpdateInput sse_decode_task_update_input(SseDeserializer deserializer);
 
-@protected TextLayerHit sse_decode_text_layer_hit(SseDeserializer deserializer);
+  @protected
+  TaskViewContext sse_decode_task_view_context(SseDeserializer deserializer);
 
-@protected TextLayerLine sse_decode_text_layer_line(SseDeserializer deserializer);
+  @protected
+  TaskViewInput sse_decode_task_view_input(SseDeserializer deserializer);
 
-@protected TextLayerPage sse_decode_text_layer_page(SseDeserializer deserializer);
+  @protected
+  TaskViewPlan sse_decode_task_view_plan(SseDeserializer deserializer);
 
-@protected TextOperationResult sse_decode_text_operation_result(SseDeserializer deserializer);
+  @protected
+  TextDeltaOp sse_decode_text_delta_op(SseDeserializer deserializer);
 
-@protected TextScript sse_decode_text_script(SseDeserializer deserializer);
+  @protected
+  TextLayer sse_decode_text_layer(SseDeserializer deserializer);
 
-@protected int sse_decode_u_32(SseDeserializer deserializer);
+  @protected
+  TextLayerError sse_decode_text_layer_error(SseDeserializer deserializer);
 
-@protected int sse_decode_u_8(SseDeserializer deserializer);
+  @protected
+  TextLayerErrorKind sse_decode_text_layer_error_kind(
+    SseDeserializer deserializer,
+  );
 
-@protected void sse_decode_unit(SseDeserializer deserializer);
+  @protected
+  TextLayerHit sse_decode_text_layer_hit(SseDeserializer deserializer);
 
-@protected void sse_encode_String(String self, SseSerializer serializer);
+  @protected
+  TextLayerLine sse_decode_text_layer_line(SseDeserializer deserializer);
 
-@protected void sse_encode_action_kind(ActionKind self, SseSerializer serializer);
+  @protected
+  TextLayerPage sse_decode_text_layer_page(SseDeserializer deserializer);
 
-@protected void sse_encode_bool(bool self, SseSerializer serializer);
+  @protected
+  TextLayerWord sse_decode_text_layer_word(SseDeserializer deserializer);
 
-@protected void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
+  @protected
+  TextOperationResult sse_decode_text_operation_result(
+    SseDeserializer deserializer,
+  );
 
-@protected void sse_encode_box_autoadd_civil_date(CivilDate self, SseSerializer serializer);
+  @protected
+  TextScript sse_decode_text_script(SseDeserializer deserializer);
 
-@protected void sse_encode_box_autoadd_civil_time(CivilTime self, SseSerializer serializer);
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
-@protected void sse_encode_box_autoadd_entity_options(EntityOptions self, SseSerializer serializer);
+  @protected
+  int sse_decode_u_8(SseDeserializer deserializer);
 
-@protected void sse_encode_box_autoadd_epub_export_request_dto(EpubExportRequestDto self, SseSerializer serializer);
+  @protected
+  void sse_decode_unit(SseDeserializer deserializer);
 
-@protected void sse_encode_box_autoadd_export_note_input(ExportNoteInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_String(String self, SseSerializer serializer);
 
-@protected void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer);
+  @protected
+  void sse_encode_action_kind(ActionKind self, SseSerializer serializer);
 
-@protected void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer);
 
-@protected void sse_encode_box_autoadd_i_64(PlatformInt64 self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
 
-@protected void sse_encode_box_autoadd_note_create_input(NoteCreateInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_civil_date(
+    CivilDate self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_note_mutation_state(NoteMutationState self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_civil_time(
+    CivilTime self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_note_update_input(NoteUpdateInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_entity_options(
+    EntityOptions self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_notebook_create_input(NotebookCreateInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_epub_export_request_dto(
+    EpubExportRequestDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_notebook_mutation_state(NotebookMutationState self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_export_note_input(
+    ExportNoteInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_notebook_update_input(NotebookUpdateInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer);
 
-@protected void sse_encode_box_autoadd_oblix_decode_request_dto(OblixDecodeRequestDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
-@protected void sse_encode_box_autoadd_oblix_encode_request_dto(OblixEncodeRequestDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_ocr_page_input(OcrPageInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_note_create_input(
+    NoteCreateInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_ocr_shape_options(OcrShapeOptions self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_note_mutation_state(
+    NoteMutationState self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_page_luma_sample(PageLumaSample self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_note_update_input(
+    NoteUpdateInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_page_measure(PageMeasure self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_notebook_create_input(
+    NotebookCreateInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_page_prepare(PagePrepare self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_notebook_mutation_state(
+    NotebookMutationState self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_pdf_page_input(PdfPageInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_notebook_update_input(
+    NotebookUpdateInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_quick_add_context(QuickAddContext self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_oblix_decode_request_dto(
+    OblixDecodeRequestDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_reading_score(ReadingScore self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_oblix_encode_request_dto(
+    OblixEncodeRequestDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_recurrence_rule(RecurrenceRule self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_ocr_page_input(
+    OcrPageInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_reminder_instant(ReminderInstant self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_ocr_shape_options(
+    OcrShapeOptions self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_script_reading(ScriptReading self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_page_luma_sample(
+    PageLumaSample self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_task_create_input(TaskCreateInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_page_measure(
+    PageMeasure self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_task_mutation_state(TaskMutationState self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_page_prepare(
+    PagePrepare self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_task_update_input(TaskUpdateInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_page_reading_score(
+    PageReadingScore self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_task_view_context(TaskViewContext self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_pdf_page_input(
+    PdfPageInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_box_autoadd_text_layer(TextLayer self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_quick_add_context(
+    QuickAddContext self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_calendar_day(CalendarDay self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_reading_score(
+    ReadingScore self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_capture_quality(CaptureQuality self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_recurrence_rule(
+    RecurrenceRule self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_civil_date(CivilDate self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_reminder_instant(
+    ReminderInstant self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_civil_time(CivilTime self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_script_reading(
+    ScriptReading self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_codec_error_dto(CodecErrorDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_task_create_input(
+    TaskCreateInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_codec_error_kind_dto(CodecErrorKindDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_task_mutation_state(
+    TaskMutationState self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_crdt_clock_input(CrdtClockInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_task_update_input(
+    TaskUpdateInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_crdt_field_input(CrdtFieldInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_task_view_context(
+    TaskViewContext self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_entity(Entity self, SseSerializer serializer);
+  @protected
+  void sse_encode_box_autoadd_text_layer(
+    TextLayer self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_entity_kind(EntityKind self, SseSerializer serializer);
+  @protected
+  void sse_encode_calendar_day(CalendarDay self, SseSerializer serializer);
 
-@protected void sse_encode_entity_options(EntityOptions self, SseSerializer serializer);
+  @protected
+  void sse_encode_capture_quality(
+    CaptureQuality self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_epub_export_request_dto(EpubExportRequestDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_civil_date(CivilDate self, SseSerializer serializer);
 
-@protected void sse_encode_epub_note_input_dto(EpubNoteInputDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_civil_time(CivilTime self, SseSerializer serializer);
 
-@protected void sse_encode_export_note_input(ExportNoteInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_codec_error_dto(CodecErrorDto self, SseSerializer serializer);
 
-@protected void sse_encode_export_text_file_output(ExportTextFileOutput self, SseSerializer serializer);
+  @protected
+  void sse_encode_codec_error_kind_dto(
+    CodecErrorKindDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_f_32(double self, SseSerializer serializer);
+  @protected
+  void sse_encode_crdt_clock_input(
+    CrdtClockInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_i_32(int self, SseSerializer serializer);
+  @protected
+  void sse_encode_crdt_field_input(
+    CrdtFieldInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+  @protected
+  void sse_encode_entity(Entity self, SseSerializer serializer);
 
-@protected void sse_encode_import_bundle_dto(ImportBundleDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_entity_kind(EntityKind self, SseSerializer serializer);
 
-@protected void sse_encode_imported_attachment_dto(ImportedAttachmentDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_entity_options(EntityOptions self, SseSerializer serializer);
 
-@protected void sse_encode_imported_note_dto(ImportedNoteDto self, SseSerializer serializer);
+  @protected
+  void sse_encode_epub_export_request_dto(
+    EpubExportRequestDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_String(List<String> self, SseSerializer serializer);
+  @protected
+  void sse_encode_epub_note_input_dto(
+    EpubNoteInputDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_calendar_day(List<CalendarDay> self, SseSerializer serializer);
+  @protected
+  void sse_encode_export_note_input(
+    ExportNoteInput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_crdt_field_input(List<CrdtFieldInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_export_text_file_output(
+    ExportTextFileOutput self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_entity(List<Entity> self, SseSerializer serializer);
+  @protected
+  void sse_encode_f_32(double self, SseSerializer serializer);
 
-@protected void sse_encode_list_entity_kind(List<EntityKind> self, SseSerializer serializer);
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer);
 
-@protected void sse_encode_list_epub_note_input_dto(List<EpubNoteInputDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
-@protected void sse_encode_list_export_note_input(List<ExportNoteInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_import_bundle_dto(
+    ImportBundleDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_export_text_file_output(List<ExportTextFileOutput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_imported_attachment_dto(
+    ImportedAttachmentDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_imported_attachment_dto(List<ImportedAttachmentDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_imported_note_dto(
+    ImportedNoteDto self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_imported_note_dto(List<ImportedNoteDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
-@protected void sse_encode_list_list_String(List<List<String>> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_calendar_day(
+    List<CalendarDay> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_named_crdt_clock_input(List<NamedCrdtClockInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_crdt_field_input(
+    List<CrdtFieldInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_note_day_group(List<NoteDayGroup> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_entity(List<Entity> self, SseSerializer serializer);
 
-@protected void sse_encode_list_note_day_input(List<NoteDayInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_entity_kind(
+    List<EntityKind> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_notebook_node_input(List<NotebookNodeInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_epub_note_input_dto(
+    List<EpubNoteInputDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_notebook_path_output(List<NotebookPathOutput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_export_note_input(
+    List<ExportNoteInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_oblix_attachment_group_input_dto(List<OblixAttachmentGroupInputDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_export_text_file_output(
+    List<ExportTextFileOutput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_oblix_attachment_input_dto(List<OblixAttachmentInputDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_imported_attachment_dto(
+    List<ImportedAttachmentDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_oblix_note_input_dto(List<OblixNoteInputDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_imported_note_dto(
+    List<ImportedNoteDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_oblix_notebook_input_dto(List<OblixNotebookInputDto> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_list_String(
+    List<List<String>> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_ocr_line_input(List<OcrLineInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_named_crdt_clock_input(
+    List<NamedCrdtClockInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_ocr_page_input(List<OcrPageInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_note_day_group(
+    List<NoteDayGroup> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_page_reading_score(List<PageReadingScore> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_note_day_input(
+    List<NoteDayInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_pdf_page_input(List<PdfPageInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_notebook_node_input(
+    List<NotebookNodeInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_pdf_text_run(List<PdfTextRun> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_notebook_path_output(
+    List<NotebookPathOutput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_pending_outbox_field_seqs(List<PendingOutboxFieldSeqs> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_oblix_attachment_group_input_dto(
+    List<OblixAttachmentGroupInputDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_pending_outbox_row_input(List<PendingOutboxRowInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_oblix_attachment_input_dto(
+    List<OblixAttachmentInputDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_f_32_strict(Float32List self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_oblix_note_input_dto(
+    List<OblixNoteInputDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_i_32_loose(List<int> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_oblix_notebook_input_dto(
+    List<OblixNotebookInputDto> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_i_32_strict(Int32List self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_ocr_line_input(
+    List<OcrLineInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_i_64_strict(Int64List self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_ocr_page_input(
+    List<OcrPageInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_u_32_strict(Uint32List self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_ocr_word_input(
+    List<OcrWordInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_page_prepare(
+    List<PagePrepare> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_prim_u_8_strict(Uint8List self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_page_reading_score(
+    List<PageReadingScore> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_quick_add_span(List<QuickAddSpan> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_pdf_page_input(
+    List<PdfPageInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_reading_score(List<ReadingScore> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_pdf_text_run(
+    List<PdfTextRun> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_redaction_span(List<RedactionSpan> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_pending_outbox_field_seqs(
+    List<PendingOutboxFieldSeqs> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_script_reading(List<ScriptReading> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_pending_outbox_row_input(
+    List<PendingOutboxRowInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_sort_assignment(List<SortAssignment> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_f_32_strict(
+    Float32List self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_suggested_action(List<SuggestedAction> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_i_32_loose(
+    List<int> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_sync_batch_entry_input(List<SyncBatchEntryInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_i_32_strict(
+    Int32List self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_task_row(List<TaskRow> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_i_64_strict(
+    Int64List self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_task_section(List<TaskSection> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_task_view_input(List<TaskViewInput> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
-@protected void sse_encode_list_text_delta_op(List<TextDeltaOp> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_prim_u_8_strict(
+    Uint8List self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_text_layer_hit(List<TextLayerHit> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_quick_add_span(
+    List<QuickAddSpan> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_text_layer_line(List<TextLayerLine> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_reading_score(
+    List<ReadingScore> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_list_text_layer_page(List<TextLayerPage> self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_redaction_span(
+    List<RedactionSpan> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_markdown_import_output(MarkdownImportOutput self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_script_reading(
+    List<ScriptReading> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_mutation_action(MutationAction self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_sort_assignment(
+    List<SortAssignment> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_mutation_selection(MutationSelection self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_suggested_action(
+    List<SuggestedAction> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_named_crdt_clock_input(NamedCrdtClockInput self, SseSerializer serializer);
+  @protected
+  void sse_encode_list_sync_batch_entry_input(
+    List<SyncBatchEntryInput> self,
+    SseSerializer serializer,
+  );
 
-@protected void sse_encode_note_create_input(NoteCreateInput self, SseSerializer serializer);
-
-@protected void sse_encode_note_day_group(NoteDayGroup self, SseSerializer serializer);
-
-@protected void sse_encode_note_day_input(NoteDayInput self, SseSerializer serializer);
-
-@protected void sse_encode_note_mutation_plan(NoteMutationPlan self, SseSerializer serializer);
-
-@protected void sse_encode_note_mutation_state(NoteMutationState self, SseSerializer serializer);
-
-@protected void sse_encode_note_update_input(NoteUpdateInput self, SseSerializer serializer);
-
-@protected void sse_encode_notebook_create_input(NotebookCreateInput self, SseSerializer serializer);
-
-@protected void sse_encode_notebook_mutation_plan(NotebookMutationPlan self, SseSerializer serializer);
-
-@protected void sse_encode_notebook_mutation_state(NotebookMutationState self, SseSerializer serializer);
-
-@protected void sse_encode_notebook_node_input(NotebookNodeInput self, SseSerializer serializer);
-
-@protected void sse_encode_notebook_path_output(NotebookPathOutput self, SseSerializer serializer);
-
-@protected void sse_encode_notebook_update_input(NotebookUpdateInput self, SseSerializer serializer);
-
-@protected void sse_encode_nullable_int_mutation(NullableIntMutation self, SseSerializer serializer);
-
-@protected void sse_encode_nullable_string_mutation(NullableStringMutation self, SseSerializer serializer);
-
-@protected void sse_encode_nullable_timestamp_mutation(NullableTimestampMutation self, SseSerializer serializer);
-
-@protected void sse_encode_oblix_attachment_group_input_dto(OblixAttachmentGroupInputDto self, SseSerializer serializer);
-
-@protected void sse_encode_oblix_attachment_input_dto(OblixAttachmentInputDto self, SseSerializer serializer);
-
-@protected void sse_encode_oblix_decode_request_dto(OblixDecodeRequestDto self, SseSerializer serializer);
-
-@protected void sse_encode_oblix_encode_request_dto(OblixEncodeRequestDto self, SseSerializer serializer);
-
-@protected void sse_encode_oblix_note_input_dto(OblixNoteInputDto self, SseSerializer serializer);
-
-@protected void sse_encode_oblix_notebook_input_dto(OblixNotebookInputDto self, SseSerializer serializer);
-
-@protected void sse_encode_ocr_line_input(OcrLineInput self, SseSerializer serializer);
-
-@protected void sse_encode_ocr_page_input(OcrPageInput self, SseSerializer serializer);
-
-@protected void sse_encode_ocr_shape_options(OcrShapeOptions self, SseSerializer serializer);
-
-@protected void sse_encode_opt_String(String? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_civil_date(CivilDate? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_civil_time(CivilTime? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_f_32(double? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_i_64(PlatformInt64? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_recurrence_rule(RecurrenceRule? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_box_autoadd_reminder_instant(ReminderInstant? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
-
-@protected void sse_encode_opt_list_text_delta_op(List<TextDeltaOp>? self, SseSerializer serializer);
-
-@protected void sse_encode_outbox_retirement_output(OutboxRetirementOutput self, SseSerializer serializer);
-
-@protected void sse_encode_page_luma_sample(PageLumaSample self, SseSerializer serializer);
-
-@protected void sse_encode_page_measure(PageMeasure self, SseSerializer serializer);
-
-@protected void sse_encode_page_prepare(PagePrepare self, SseSerializer serializer);
-
-@protected void sse_encode_page_reading_choice(PageReadingChoice self, SseSerializer serializer);
-
-@protected void sse_encode_page_reading_score(PageReadingScore self, SseSerializer serializer);
-
-@protected void sse_encode_pdf_page_assessment(PdfPageAssessment self, SseSerializer serializer);
-
-@protected void sse_encode_pdf_page_input(PdfPageInput self, SseSerializer serializer);
-
-@protected void sse_encode_pdf_page_plan(PdfPagePlan self, SseSerializer serializer);
-
-@protected void sse_encode_pdf_text_run(PdfTextRun self, SseSerializer serializer);
-
-@protected void sse_encode_pending_outbox_field_seqs(PendingOutboxFieldSeqs self, SseSerializer serializer);
-
-@protected void sse_encode_pending_outbox_row_input(PendingOutboxRowInput self, SseSerializer serializer);
-
-@protected void sse_encode_pending_outbox_summary_output(PendingOutboxSummaryOutput self, SseSerializer serializer);
-
-@protected void sse_encode_quality_verdict(QualityVerdict self, SseSerializer serializer);
-
-@protected void sse_encode_quick_add_context(QuickAddContext self, SseSerializer serializer);
-
-@protected void sse_encode_quick_add_parse(QuickAddParse self, SseSerializer serializer);
-
-@protected void sse_encode_quick_add_span(QuickAddSpan self, SseSerializer serializer);
-
-@protected void sse_encode_quick_add_token_kind(QuickAddTokenKind self, SseSerializer serializer);
-
-@protected void sse_encode_reading_score(ReadingScore self, SseSerializer serializer);
-
-@protected void sse_encode_recurrence_advance(RecurrenceAdvance self, SseSerializer serializer);
-
-@protected void sse_encode_recurrence_freq(RecurrenceFreq self, SseSerializer serializer);
-
-@protected void sse_encode_recurrence_mode(RecurrenceMode self, SseSerializer serializer);
-
-@protected void sse_encode_recurrence_rule(RecurrenceRule self, SseSerializer serializer);
-
-@protected void sse_encode_redaction_span(RedactionSpan self, SseSerializer serializer);
-
-@protected void sse_encode_reminder_instant(ReminderInstant self, SseSerializer serializer);
-
-@protected void sse_encode_scan_preset(ScanPreset self, SseSerializer serializer);
-
-@protected void sse_encode_scanned_note_draft(ScannedNoteDraft self, SseSerializer serializer);
-
-@protected void sse_encode_script_choice(ScriptChoice self, SseSerializer serializer);
-
-@protected void sse_encode_script_reading(ScriptReading self, SseSerializer serializer);
-
-@protected void sse_encode_script_report(ScriptReport self, SseSerializer serializer);
-
-@protected void sse_encode_sort_assignment(SortAssignment self, SseSerializer serializer);
-
-@protected void sse_encode_suggested_action(SuggestedAction self, SseSerializer serializer);
-
-@protected void sse_encode_sync_batch_entry_input(SyncBatchEntryInput self, SseSerializer serializer);
-
-@protected void sse_encode_sync_settlement_plan(SyncSettlementPlan self, SseSerializer serializer);
-
-@protected void sse_encode_task_create_input(TaskCreateInput self, SseSerializer serializer);
-
-@protected void sse_encode_task_mutation_plan(TaskMutationPlan self, SseSerializer serializer);
-
-@protected void sse_encode_task_mutation_state(TaskMutationState self, SseSerializer serializer);
-
-@protected void sse_encode_task_row(TaskRow self, SseSerializer serializer);
-
-@protected void sse_encode_task_section(TaskSection self, SseSerializer serializer);
-
-@protected void sse_encode_task_section_kind(TaskSectionKind self, SseSerializer serializer);
-
-@protected void sse_encode_task_sort(TaskSort self, SseSerializer serializer);
-
-@protected void sse_encode_task_update_input(TaskUpdateInput self, SseSerializer serializer);
-
-@protected void sse_encode_task_view_context(TaskViewContext self, SseSerializer serializer);
-
-@protected void sse_encode_task_view_input(TaskViewInput self, SseSerializer serializer);
-
-@protected void sse_encode_task_view_plan(TaskViewPlan self, SseSerializer serializer);
-
-@protected void sse_encode_text_delta_op(TextDeltaOp self, SseSerializer serializer);
-
-@protected void sse_encode_text_layer(TextLayer self, SseSerializer serializer);
-
-@protected void sse_encode_text_layer_error(TextLayerError self, SseSerializer serializer);
-
-@protected void sse_encode_text_layer_error_kind(TextLayerErrorKind self, SseSerializer serializer);
-
-@protected void sse_encode_text_layer_hit(TextLayerHit self, SseSerializer serializer);
-
-@protected void sse_encode_text_layer_line(TextLayerLine self, SseSerializer serializer);
-
-@protected void sse_encode_text_layer_page(TextLayerPage self, SseSerializer serializer);
-
-@protected void sse_encode_text_operation_result(TextOperationResult self, SseSerializer serializer);
-
-@protected void sse_encode_text_script(TextScript self, SseSerializer serializer);
-
-@protected void sse_encode_u_32(int self, SseSerializer serializer);
-
-@protected void sse_encode_u_8(int self, SseSerializer serializer);
-
-@protected void sse_encode_unit(void self, SseSerializer serializer);
-                }
-                
-
+  @protected
+  void sse_encode_list_task_row(List<TaskRow> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_task_section(
+    List<TaskSection> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_task_view_input(
+    List<TaskViewInput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_text_delta_op(
+    List<TextDeltaOp> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_text_layer_hit(
+    List<TextLayerHit> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_text_layer_line(
+    List<TextLayerLine> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_text_layer_page(
+    List<TextLayerPage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_text_layer_word(
+    List<TextLayerWord> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_markdown_import_output(
+    MarkdownImportOutput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_mutation_action(
+    MutationAction self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_mutation_selection(
+    MutationSelection self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_named_crdt_clock_input(
+    NamedCrdtClockInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_note_create_input(
+    NoteCreateInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_note_day_group(NoteDayGroup self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_note_day_input(NoteDayInput self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_note_mutation_plan(
+    NoteMutationPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_note_mutation_state(
+    NoteMutationState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_note_update_input(
+    NoteUpdateInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notebook_create_input(
+    NotebookCreateInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notebook_mutation_plan(
+    NotebookMutationPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notebook_mutation_state(
+    NotebookMutationState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notebook_node_input(
+    NotebookNodeInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notebook_path_output(
+    NotebookPathOutput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notebook_update_input(
+    NotebookUpdateInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_nullable_int_mutation(
+    NullableIntMutation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_nullable_string_mutation(
+    NullableStringMutation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_nullable_timestamp_mutation(
+    NullableTimestampMutation self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_oblix_attachment_group_input_dto(
+    OblixAttachmentGroupInputDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_oblix_attachment_input_dto(
+    OblixAttachmentInputDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_oblix_decode_request_dto(
+    OblixDecodeRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_oblix_encode_request_dto(
+    OblixEncodeRequestDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_oblix_note_input_dto(
+    OblixNoteInputDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_oblix_notebook_input_dto(
+    OblixNotebookInputDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ocr_line_input(OcrLineInput self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ocr_page_input(OcrPageInput self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_ocr_shape_options(
+    OcrShapeOptions self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_ocr_word_input(OcrWordInput self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_civil_date(
+    CivilDate? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_civil_time(
+    CivilTime? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_32(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_recurrence_rule(
+    RecurrenceRule? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_reminder_instant(
+    ReminderInstant? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_list_String(List<String>? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_list_text_delta_op(
+    List<TextDeltaOp>? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_outbox_retirement_output(
+    OutboxRetirementOutput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_page_luma_sample(
+    PageLumaSample self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_page_measure(PageMeasure self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_page_prepare(PagePrepare self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_page_reading_choice(
+    PageReadingChoice self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_page_reading_score(
+    PageReadingScore self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pdf_page_assessment(
+    PdfPageAssessment self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pdf_page_input(PdfPageInput self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pdf_page_plan(PdfPagePlan self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pdf_text_run(PdfTextRun self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pending_outbox_field_seqs(
+    PendingOutboxFieldSeqs self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pending_outbox_row_input(
+    PendingOutboxRowInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pending_outbox_summary_output(
+    PendingOutboxSummaryOutput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_quality_verdict(
+    QualityVerdict self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_quick_add_context(
+    QuickAddContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_quick_add_parse(QuickAddParse self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_quick_add_span(QuickAddSpan self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_quick_add_token_kind(
+    QuickAddTokenKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_reading_score(ReadingScore self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_recurrence_advance(
+    RecurrenceAdvance self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_recurrence_freq(
+    RecurrenceFreq self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_recurrence_mode(
+    RecurrenceMode self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_recurrence_rule(
+    RecurrenceRule self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_redaction_span(RedactionSpan self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reminder_instant(
+    ReminderInstant self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_scan_preset(ScanPreset self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_scanned_note_draft(
+    ScannedNoteDraft self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_script_choice(ScriptChoice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_script_reading(ScriptReading self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_script_report(ScriptReport self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_sort_assignment(
+    SortAssignment self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_suggested_action(
+    SuggestedAction self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sync_batch_entry_input(
+    SyncBatchEntryInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_sync_settlement_plan(
+    SyncSettlementPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_create_input(
+    TaskCreateInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_mutation_plan(
+    TaskMutationPlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_mutation_state(
+    TaskMutationState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_row(TaskRow self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_task_section(TaskSection self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_task_section_kind(
+    TaskSectionKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_sort(TaskSort self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_task_update_input(
+    TaskUpdateInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_view_context(
+    TaskViewContext self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_task_view_input(TaskViewInput self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_task_view_plan(TaskViewPlan self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_delta_op(TextDeltaOp self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_layer(TextLayer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_layer_error(
+    TextLayerError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_text_layer_error_kind(
+    TextLayerErrorKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_text_layer_hit(TextLayerHit self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_layer_line(TextLayerLine self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_layer_page(TextLayerPage self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_layer_word(TextLayerWord self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_text_operation_result(
+    TextOperationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_text_script(TextScript self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_8(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_unit(void self, SseSerializer serializer);
+}
 
 // Section: wire_class
 
 class RustLibWire implements BaseWire {
-            RustLibWire.fromExternalLibrary(ExternalLibrary lib);
+  RustLibWire.fromExternalLibrary(ExternalLibrary lib);
+}
 
-            
-        }
-        @JS('wasm_bindgen') external RustLibWasmModule get wasmModule;
+@JS('wasm_bindgen')
+external RustLibWasmModule get wasmModule;
 
-        @JS() @anonymous extension type RustLibWasmModule._(JSObject _) implements JSObject {
-            
-        }
-        
+@JS()
+@anonymous
+extension type RustLibWasmModule._(JSObject _) implements JSObject {}

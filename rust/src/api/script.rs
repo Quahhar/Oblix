@@ -288,7 +288,7 @@ pub fn score_script_reading(reading: ScriptReading) -> ReadingScore {
         .page
         .lines
         .iter()
-        .filter_map(|line| line.confidence)
+        .filter_map(|line| line.effective_confidence())
         .collect();
     // A recognizer that reports nothing is not thereby confident. Treating an
     // absent score as certainty would let a silent model beat a candid one.
@@ -418,6 +418,7 @@ mod tests {
             bottom: top + 30.0,
             block_index: 0,
             confidence,
+            words: Vec::new(),
         }
     }
 

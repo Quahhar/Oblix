@@ -21,6 +21,23 @@ bool get guidedScanSupported => Platform.isAndroid;
 /// Most pages a single guided session will take.
 const int maxScanPages = 10;
 
+/// How long one page may spend chasing a better reading before the app settles
+/// for what it has.
+///
+/// Recognition is the expensive step and a bad page can want several: four
+/// extra script models, then a prepared image per candidate. Each is worth
+/// running on its own merits, and all of them together are worth more than a
+/// user will wait for — ten pages at ten seconds each is a scan that looks
+/// hung. The budget is checked between passes rather than interrupting one, so
+/// it never abandons work already paid for; overshooting by a single
+/// recognition is the intended behaviour.
+const Duration _pageBudget = Duration(seconds: 6);
+
+/// The share of that budget the script search may take. Reading the page in
+/// the right alphabet comes first — a prepared image of a page read by the
+/// wrong model is a better photograph of the wrong answer.
+const double _scriptBudgetShare = 0.6;
+
 final ImagePicker _picker = ImagePicker();
 
 /// Created lazily and reused per script: constructing a recognizer loads a
@@ -167,12 +184,13 @@ Future<(List<OcrLineValue>, ScriptValue)> _recognizeAnyScript(
   String path,
   Size size,
 ) async {
+  final spent = Stopwatch()..start();
   final latin = await _recognize(path);
   final page = (lines: latin, width: size.width, height: size.height);
   final firstTry = scoreScriptReading(script: ScriptValue.latin, page: page);
   if (!readingLooksWrong(firstTry)) {
     return (
-      await _reReadPrepared(path, page, TextRecognitionScript.latin),
+      await _reReadPrepared(path, page, TextRecognitionScript.latin, spent),
       ScriptValue.latin,
     );
   }
@@ -180,7 +198,12 @@ Future<(List<OcrLineValue>, ScriptValue)> _recognizeAnyScript(
   final readings = <({ScriptValue script, OcrPageValue page})>[
     (script: ScriptValue.latin, page: page),
   ];
+  final scriptDeadline = _pageBudget * _scriptBudgetShare;
   for (final (recognizer, script) in _scripts.skip(1)) {
+    // Checked before each model rather than after: the value of the search is
+    // in comparing readings, so stopping with the ones already gathered is a
+    // sound answer where abandoning a model mid-pass would not be.
+    if (spent.elapsed >= scriptDeadline) break;
     try {
       final lines = await _recognize(path, recognizer);
       readings.add((
@@ -198,7 +221,7 @@ Future<(List<OcrLineValue>, ScriptValue)> _recognizeAnyScript(
   }
   final won = readings[choice.chosen];
   return (
-    await _reReadPrepared(path, won.page, _modelFor(won.script)),
+    await _reReadPrepared(path, won.page, _modelFor(won.script), spent),
     choice.script,
   );
 }
@@ -213,39 +236,68 @@ TextRecognitionScript _modelFor(ScriptValue script) {
   return TextRecognitionScript.latin;
 }
 
-/// Read the page a second time from a better image, and keep the better result.
+/// Read the page again from better images, and keep the best result.
 ///
 /// This is where character accuracy is actually won. Everything downstream
 /// works on boxes the model has already emitted and cannot recover a glyph the
-/// model misread off a tilted, small or badly lit photograph. So the core is
-/// asked whether a different *image* of this page is worth producing, and if it
-/// is, the same model reads it again.
+/// model misread off a tilted, small, badly lit or upside-down photograph. So
+/// the core is asked which *images* of this page are worth producing, and the
+/// same model reads each of them.
 ///
-/// The retry is a candidate, never a replacement: preprocessing can also make a
-/// page worse, so both readings are scored and the original holds a tie. The
-/// cost of a page that did not improve is the time spent, not text lost.
+/// Several candidates rather than one, because the corrections do not stand or
+/// fall together: a page can be helped by being turned and hurt by having its
+/// contrast stretched, and one fused image can only be taken or left as a
+/// whole. Each is read and scored separately, and the core picks.
+///
+/// Every retry is a candidate, never a replacement: preprocessing can also make
+/// a page worse, so all the readings are scored together and the original holds
+/// a tie. The cost of a page that did not improve is the time spent, not text
+/// lost.
 Future<List<OcrLineValue>> _reReadPrepared(
   String path,
   OcrPageValue first,
   TextRecognitionScript model,
+  Stopwatch spent,
 ) async {
-  final prepared = await preparePageForRecognition(path: path, page: first);
-  if (prepared == null) return first.lines;
+  final candidates = await prepareCandidatesForRecognition(
+    path: path,
+    page: first,
+    reading: scorePageReading(page: first),
+  );
+  if (candidates.isEmpty) return first.lines;
   try {
-    final lines = await _recognize(prepared.path, model);
-    final retry = (
-      // The boxes come back in prepared-image pixels; everything downstream
-      // expects source pixels, and the page's own attachment is the source.
-      lines: mapPreparedLinesToSource(lines: lines, prepare: prepared.plan),
-      width: first.width,
-      height: first.height,
-    );
-    final choice = choosePageReading(readings: [first, retry]);
-    return choice.chosen == 1 ? retry.lines : first.lines;
+    // Index 0 is the incumbent throughout, which is what lets the core give
+    // the original the benefit of a tie.
+    final readings = <OcrPageValue>[first];
+    for (final candidate in candidates) {
+      if (spent.elapsed >= _pageBudget) break;
+      try {
+        final lines = await _recognize(candidate.path, model);
+        readings.add((
+          // The boxes come back in prepared-image pixels; everything
+          // downstream expects source pixels, and the page's own attachment is
+          // the source.
+          lines: mapPreparedLinesToSource(
+            lines: lines,
+            prepare: candidate.plan,
+          ),
+          width: first.width,
+          height: first.height,
+        ));
+      } catch (_) {
+        // An image this device could not read is one candidate fewer.
+      }
+    }
+    if (readings.length == 1) return first.lines;
+
+    final choice = choosePageReading(readings: readings);
+    return choice.chosen > 0 ? readings[choice.chosen].lines : first.lines;
   } catch (_) {
     return first.lines;
   } finally {
-    await _discardPrepared(prepared.path);
+    for (final candidate in candidates) {
+      await _discardPrepared(candidate.path);
+    }
   }
 }
 
@@ -263,9 +315,9 @@ Future<List<OcrLineValue>> _recognize(
 ]) async {
   final RecognizedText recognized;
   try {
-    recognized = await _sharedRecognizer(script).processImage(
-      InputImage.fromFilePath(path),
-    );
+    recognized = await _sharedRecognizer(
+      script,
+    ).processImage(InputImage.fromFilePath(path));
   } catch (error) {
     throw ScanFailedException('Could not read that image: $error');
   }
@@ -278,6 +330,21 @@ Future<List<OcrLineValue>> _recognize(
   ) {
     for (final line in recognized.blocks[blockIndex].lines) {
       final box = line.boundingBox;
+      // Word boxes are carried through rather than discarded. The core reads
+      // three things off them the line boxes cannot give it: which way a page
+      // of single-box rows leans, a confidence for a line ML Kit scored only
+      // per element, and an exact box to draw a search highlight in.
+      final words = <OcrWordValue>[
+        for (final element in line.elements)
+          (
+            text: element.text,
+            left: element.boundingBox.left.toDouble(),
+            top: element.boundingBox.top.toDouble(),
+            right: element.boundingBox.right.toDouble(),
+            bottom: element.boundingBox.bottom.toDouble(),
+            confidence: element.confidence,
+          ),
+      ];
       lines.add((
         text: line.text,
         left: box.left.toDouble(),
@@ -286,6 +353,7 @@ Future<List<OcrLineValue>> _recognize(
         bottom: box.bottom.toDouble(),
         blockIndex: blockIndex,
         confidence: line.confidence,
+        words: words,
       ));
     }
   }
@@ -306,9 +374,7 @@ Future<List<OcrLineValue>> _recognize(
 /// the Latin model would file it as empty rather than as unread.
 Future<OcrPageValue?> recognizeImageFile(String path) async {
   if (!scanningSupported) {
-    throw const ScanUnsupportedException(
-      'Recognition needs Android or iOS.',
-    );
+    throw const ScanUnsupportedException('Recognition needs Android or iOS.');
   }
   try {
     final size = await _imageSize(path);
