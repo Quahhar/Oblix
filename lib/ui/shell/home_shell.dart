@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import '../../core/auth/profile_cache.dart';
 import '../screens/home_timeline_screen.dart';
 import '../screens/notebooks_screen.dart';
-import '../screens/profile_screen.dart';
 import '../screens/scan_screen.dart';
+import '../screens/settings_screen.dart';
 import '../screens/tasks_screen.dart';
 import '../theme/oblix_theme.dart';
 import '../theme/theme_controller.dart';
@@ -23,10 +23,8 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  static const _collapsedHeight = 56.0;
-
-  /// Tall enough for the slot row plus the "more tools" tray beneath it.
-  static const _expandedHeight = 322.0;
+  static const _collapsedHeight = 92.0;
+  static const _expandedHeight = 246.0;
 
   int _tab = 0;
   double _dockHeight = _collapsedHeight;
@@ -87,9 +85,11 @@ class _HomeShellState extends State<HomeShell> {
     setState(() => _tab = tab);
   }
 
-  /// Profile is a tab, not a route, so the dock survives the trip.
   void _openProfile() {
-    setState(() => _tab = DockController.profileTabIndex);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
   }
 
   Future<void> _pickShortcut(int slot) async {
@@ -143,7 +143,6 @@ class _HomeShellState extends State<HomeShell> {
             HomeTimelineScreen(),
             NotebooksScreen(),
             TasksScreen(),
-            ProfileScreen(),
           ],
         ),
         bottomNavigationBar: SafeArea(
@@ -174,7 +173,7 @@ class _HomeShellState extends State<HomeShell> {
                     onToggleEditing: () => setState(() => _editing = !_editing),
                     onDestination: _openDestination,
                     onPickShortcut: _pickShortcut,
-                    onAssign: DockController.instance.assign,
+                    onSwap: DockController.instance.assign,
                     onProfile: _openProfile,
                   ),
                 ),
@@ -186,10 +185,6 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 }
-
-/// Smallest box the expanded dock layout fits in: header, a row of large
-/// slots, the tray, and the footer hint.
-const double _expandedLayoutMinHeight = 280;
 
 /// Rendered dock surface, public so it can be isolated in responsive widget
 /// tests without booting repositories or authentication.
@@ -205,7 +200,7 @@ class NavigationDock extends StatelessWidget {
   final VoidCallback onToggleEditing;
   final ValueChanged<DockDestination> onDestination;
   final ValueChanged<int> onPickShortcut;
-  final Future<void> Function(DockDestination, DockDestination) onAssign;
+  final Future<void> Function(DockDestination, DockDestination) onSwap;
   final VoidCallback onProfile;
 
   const NavigationDock({
@@ -221,9 +216,13 @@ class NavigationDock extends StatelessWidget {
     required this.onToggleEditing,
     required this.onDestination,
     required this.onPickShortcut,
-    required this.onAssign,
+    required this.onSwap,
     required this.onProfile,
   });
+
+  /// Smallest box the expanded layout fits in: handle, header, the row of
+  /// large slots, the tray and the footer hint.
+  static const _expandedLayoutMinHeight = 218.0;
 
   @override
   Widget build(BuildContext context) {
@@ -234,12 +233,15 @@ class NavigationDock extends StatelessWidget {
       onVerticalDragEnd: onDragEnd,
       child: _DockSurface(
         liquidGlass: liquidGlass,
+        // Which layout to draw is a question about the box the dock is
+        // actually in, not about the one it is heading for. [height] is the
+        // target the caller is animating towards, and it arrives at its final
+        // value on the first frame — so deciding from it renders the expanded
+        // layout inside a box still 92px tall for the length of the animation,
+        // which is an overflow every time the dock is opened. The constraints
+        // are the honest answer at every frame.
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // The dock is mid-animation for most of these builds, so the
-            // expanded layout only takes over once the box can actually hold
-            // its header, slot row, tray, and footer. Switching earlier
-            // overflows on the way up.
             final expanded = constraints.maxHeight >= _expandedLayoutMinHeight;
             return ClipRect(
               child: expanded
@@ -247,25 +249,19 @@ class NavigationDock extends StatelessWidget {
                       order: order,
                       selectedTab: selectedTab,
                       editing: editing,
-                      tray: DockController.trayFor(order),
                       onToggle: onToggle,
                       onToggleEditing: onToggleEditing,
                       onDestination: onDestination,
                       onPickShortcut: onPickShortcut,
-                      onAssign: onAssign,
+                      onSwap: onSwap,
                       onProfile: onProfile,
                     )
-                  : Stack(
+                  : Column(
                       children: [
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          child: _DockHandle(onTap: onToggle),
-                        ),
-                        Positioned.fill(
+                        _DockHandle(onTap: onToggle),
+                        Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 1),
+                            padding: const EdgeInsets.fromLTRB(10, 0, 10, 5),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
@@ -280,9 +276,6 @@ class NavigationDock extends StatelessWidget {
                                 _ProfileDockItem(
                                   compact: true,
                                   editing: false,
-                                  selected:
-                                      selectedTab ==
-                                      DockController.profileTabIndex,
                                   onTap: onProfile,
                                 ),
                               ],
@@ -303,24 +296,22 @@ class _ExpandedDock extends StatelessWidget {
   final List<DockDestination> order;
   final int selectedTab;
   final bool editing;
-  final List<DockDestination> tray;
   final VoidCallback onToggle;
   final VoidCallback onToggleEditing;
   final ValueChanged<DockDestination> onDestination;
   final ValueChanged<int> onPickShortcut;
-  final Future<void> Function(DockDestination, DockDestination) onAssign;
+  final Future<void> Function(DockDestination, DockDestination) onSwap;
   final VoidCallback onProfile;
 
   const _ExpandedDock({
     required this.order,
     required this.selectedTab,
     required this.editing,
-    required this.tray,
     required this.onToggle,
     required this.onToggleEditing,
     required this.onDestination,
     required this.onPickShortcut,
-    required this.onAssign,
+    required this.onSwap,
     required this.onProfile,
   });
 
@@ -362,14 +353,13 @@ class _ExpandedDock extends StatelessWidget {
                       onTap: editing
                           ? () => onPickShortcut(i)
                           : () => onDestination(order[i]),
-                      onAssign: onAssign,
+                      onSwap: onSwap,
                     ),
                   ),
                 Expanded(
                   child: _ProfileDockItem(
                     compact: false,
                     editing: editing,
-                    selected: selectedTab == DockController.profileTabIndex,
                     onTap: onProfile,
                   ),
                 ),
@@ -377,146 +367,18 @@ class _ExpandedDock extends StatelessWidget {
             ),
           ),
         ),
-        if (tray.isNotEmpty) _DockTray(tray: tray, onOpen: onDestination),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 13),
           child: Text(
             editing
-                ? 'Drag to reorder, or drag a tool up onto a slot. Profile is fixed.'
-                : 'Tap a tool to use it, or drag it up to keep it in the bar.',
+                ? 'Drag to reorder or tap a shortcut to replace it. Profile is fixed.'
+                : 'Drag down to close',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
             style: OblixType.ui(c, size: 11.5, color: c.inkMuted),
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Tools the deck is not currently showing. Tap one to use it now; drag one up
-/// onto a slot to keep it in the bar. Profile is not here — it cannot move.
-class _DockTray extends StatelessWidget {
-  final List<DockDestination> tray;
-  final ValueChanged<DockDestination> onOpen;
-
-  const _DockTray({required this.tray, required this.onOpen});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Divider(height: 1, indent: 20, endIndent: 20, color: c.hairline),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
-          child: Row(
-            children: [
-              Text('MORE TOOLS', style: OblixType.eyebrow(c)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  height: 1,
-                  color: c.ink.withValues(alpha: 0.10),
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              for (final destination in tray)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: _TrayChip(
-                    destination: destination,
-                    onTap: () => onOpen(destination),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _TrayChip extends StatelessWidget {
-  final DockDestination destination;
-  final VoidCallback onTap;
-
-  const _TrayChip({required this.destination, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final chip = GlassPill(
-      onTap: onTap,
-      // The tray is a short horizontal strip; a blur per chip is not worth it.
-      blur: false,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-      child: _TrayChipBody(destination: destination),
-    );
-    return Semantics(
-      button: true,
-      label:
-          '${destination.label}. ${destination.blurb}. '
-          'Drag onto a shortcut to keep it in the bar.',
-      child: Draggable<DockDestination>(
-        data: destination,
-        // A tray chip's whole job is to be dragged out, so it does not wait for
-        // a long press the way an already-placed slot does.
-        feedback: Material(
-          color: Colors.transparent,
-          child: _TrayChipBody(destination: destination, dragging: true),
-        ),
-        childWhenDragging: Opacity(opacity: 0.35, child: chip),
-        child: chip,
-      ),
-    );
-  }
-}
-
-class _TrayChipBody extends StatelessWidget {
-  final DockDestination destination;
-  final bool dragging;
-
-  const _TrayChipBody({required this.destination, this.dragging = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = OblixColors.of(context);
-    final body = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(destination.icon, size: 17, color: c.accentDeep),
-        const SizedBox(width: 7),
-        Text(
-          destination.label,
-          style: OblixType.ui(c, size: 13, weight: FontWeight.w600),
-        ),
-      ],
-    );
-    if (!dragging) return body;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-      decoration: ShapeDecoration(
-        color: c.surface,
-        shape: StadiumBorder(side: BorderSide(color: c.accent)),
-        shadows: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: body,
     );
   }
 }
@@ -536,14 +398,11 @@ class _DockHandle extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          // The grabber paints 4px tall; the strip it responds to is wide open
-          // horizontally but was only 16 high, which is a hard target to hit
-          // with a thumb. The extra height is transparent padding.
-          height: 26,
+          height: 24,
           child: Center(
             child: Container(
-              width: 44,
-              height: 4,
+              width: 50,
+              height: 5,
               decoration: BoxDecoration(
                 color: c.inkFaint.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(99),
@@ -583,22 +442,22 @@ class _CompactDockItem extends StatelessWidget {
         child: SizedBox(
           width: 68,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 1),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 21, color: color),
-                const SizedBox(height: 2),
+                Icon(icon, size: 23, color: color),
+                const SizedBox(height: 3),
                 Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: OblixType.ui(
                     c,
-                    size: 9.5,
+                    size: 10.5,
                     weight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: color,
-                  ).copyWith(height: 1),
+                  ),
                 ),
               ],
             ),
@@ -614,14 +473,14 @@ class _EditableDockSlot extends StatelessWidget {
   final bool selected;
   final bool editing;
   final VoidCallback onTap;
-  final Future<void> Function(DockDestination, DockDestination) onAssign;
+  final Future<void> Function(DockDestination, DockDestination) onSwap;
 
   const _EditableDockSlot({
     required this.destination,
     required this.selected,
     required this.editing,
     required this.onTap,
-    required this.onAssign,
+    required this.onSwap,
   });
 
   @override
@@ -633,11 +492,9 @@ class _EditableDockSlot extends StatelessWidget {
       editing: editing,
       onTap: onTap,
     );
-    // Accepts both a sibling slot being reordered and a tool dragged up out of
-    // the tray; DockController.assign tells the two cases apart.
     final target = DragTarget<DockDestination>(
       onWillAcceptWithDetails: (details) => details.data != destination,
-      onAcceptWithDetails: (details) => onAssign(details.data, destination),
+      onAcceptWithDetails: (details) => onSwap(details.data, destination),
       builder: (context, candidates, _) => AnimatedScale(
         duration: const Duration(milliseconds: 140),
         scale: candidates.isEmpty ? 1 : 1.08,
@@ -758,13 +615,11 @@ class _LargeDockItem extends StatelessWidget {
 class _ProfileDockItem extends StatelessWidget {
   final bool compact;
   final bool editing;
-  final bool selected;
   final VoidCallback onTap;
 
   const _ProfileDockItem({
     required this.compact,
     required this.editing,
-    required this.selected,
     required this.onTap,
   });
 
@@ -774,7 +629,6 @@ class _ProfileDockItem extends StatelessWidget {
     if (compact) {
       return Semantics(
         button: true,
-        selected: selected,
         label: 'Profile',
         child: InkWell(
           onTap: onTap,
@@ -782,24 +636,24 @@ class _ProfileDockItem extends StatelessWidget {
           child: SizedBox(
             width: 68,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1),
+              // Two rather than the four its neighbours use: an avatar is a
+              // laid-out circle where their icons are glyphs, and at the same
+              // nominal 23 it stands a pixel taller — enough to overflow the
+              // collapsed row. The content is centred either way, so the
+              // smaller inset costs nothing visually.
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ValueListenableBuilder<String?>(
                     valueListenable: ProfileCache.instance.name,
                     builder: (context, name, _) =>
-                        OblixAvatar(name: name, size: 21),
+                        OblixAvatar(name: name, size: 23),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     'Profile',
-                    style: OblixType.ui(
-                      c,
-                      size: 9.5,
-                      weight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? c.accentDeep : c.inkMuted,
-                    ).copyWith(height: 1),
+                    style: OblixType.ui(c, size: 10.5, color: c.inkMuted),
                   ),
                 ],
               ),
@@ -811,7 +665,6 @@ class _ProfileDockItem extends StatelessWidget {
 
     return Semantics(
       button: true,
-      selected: selected,
       label: 'Profile, fixed shortcut',
       child: InkWell(
         onTap: onTap,
@@ -832,11 +685,9 @@ class _ProfileDockItem extends StatelessWidget {
                         width: 58,
                         height: 58,
                         decoration: BoxDecoration(
-                          color: selected ? c.accentSoft : c.avatarBg,
+                          color: c.avatarBg,
                           shape: BoxShape.circle,
-                          border: Border.all(
-                            color: selected ? c.accent : c.hairline,
-                          ),
+                          border: Border.all(color: c.hairline),
                         ),
                         child: Center(child: OblixAvatar(name: name, size: 42)),
                       ),
@@ -861,12 +712,7 @@ class _ProfileDockItem extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   'Profile',
-                  style: OblixType.ui(
-                    c,
-                    size: 11.5,
-                    weight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color: selected ? c.ink : c.inkSecondary,
-                  ),
+                  style: OblixType.ui(c, size: 11.5, color: c.inkSecondary),
                 ),
               ],
             ),

@@ -42,45 +42,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Scan waits in the expanded tray, not in the bar', (
-    tester,
-  ) async {
-    await _setPhoneSize(tester, const Size(390, 844));
-    await tester.pumpWidget(const _DockHarness());
-
-    // Collapsed: still the same four, Scan is nowhere.
-    expect(find.text('Scan'), findsNothing);
-
-    await tester.drag(
-      find.bySemanticsLabel('Expand or collapse navigation dock'),
-      const Offset(0, -260),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('MORE TOOLS'), findsOneWidget);
-    expect(find.text('Scan'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('dragging Scan onto a slot puts it in the bar', (tester) async {
-    await _setPhoneSize(tester, const Size(390, 844));
-    await tester.pumpWidget(const _DockHarness(expanded: true));
-    await tester.pumpAndSettle();
-
-    await tester.drag(
-      find.text('Scan'),
-      _offsetBetween(tester, 'Scan', 'Task'),
-    );
-    await tester.pumpAndSettle();
-
-    // Scan took Task's slot; Task went back to the tray, so both are still
-    // on screen — but Scan is now a deck tile and Task is the tray chip.
-    expect(find.text('Scan'), findsOneWidget);
-    expect(find.text('Task'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('expanded glass dock fits a narrow phone', (tester) async {
     await _setPhoneSize(tester, const Size(320, 700));
     await tester.pumpWidget(
@@ -96,9 +57,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
-
-Offset _offsetBetween(WidgetTester tester, String from, String to) =>
-    tester.getCenter(find.text(to)) - tester.getCenter(find.text(from));
 
 Future<void> _setPhoneSize(WidgetTester tester, Size size) async {
   tester.view.devicePixelRatio = 1;
@@ -123,8 +81,8 @@ class _DockHarness extends StatefulWidget {
 }
 
 class _DockHarnessState extends State<_DockHarness> {
-  static const _collapsed = 56.0;
-  static const _expanded = 322.0;
+  static const _collapsed = 92.0;
+  static const _expanded = 246.0;
 
   late double _height = widget.expanded ? _expanded : _collapsed;
   var _editing = false;
@@ -190,19 +148,18 @@ class _DockHarnessState extends State<_DockHarness> {
               ),
               onToggle: () => _snap(_height == _collapsed),
               onToggleEditing: () => setState(() => _editing = !_editing),
+              // Scan has no tab of its own; in the harness it simply leaves the
+              // selection where it was, as pushing a route would in the shell.
               onDestination: (destination) => setState(
                 () => _selectedTab = destination.tabIndex ?? _selectedTab,
               ),
               onPickShortcut: (_) {},
-              // Mirrors DockController.assign: a deck item trades places, a
-              // tray item takes the slot over.
-              onAssign: (incoming, target) async {
+              onSwap: (source, target) async {
                 setState(() {
+                  final sourceIndex = _order.indexOf(source);
                   final targetIndex = _order.indexOf(target);
-                  if (targetIndex < 0) return;
-                  final incomingIndex = _order.indexOf(incoming);
-                  if (incomingIndex >= 0) _order[incomingIndex] = target;
-                  _order[targetIndex] = incoming;
+                  _order[sourceIndex] = target;
+                  _order[targetIndex] = source;
                 });
               },
               onProfile: () {},
